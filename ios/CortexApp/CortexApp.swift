@@ -384,6 +384,27 @@ struct ReviewView: View {
         _biomarkers = State(initialValue: document.extraction?.biomarkers ?? [])
     }
 
+    @ViewBuilder
+    private func candidateEditor(_ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let reasons = biomarkers[index].attentionReasons
+            if !reasons.isEmpty { Label(reasons.joined(separator: " · "), systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange) }
+            if let page = biomarkers[index].page { Text("Candidate from page \(page)").font(.caption).foregroundStyle(.secondary) }
+            if let evidence = biomarkers[index].evidence, !evidence.isEmpty { Text(evidence).font(.caption).textSelection(.enabled) }
+            TextField("Test name", text: $biomarkers[index].name)
+            HStack {
+                TextField("Value", value: $biomarkers[index].value, format: .number).keyboardType(.decimalPad)
+                TextField("Unit", text: $biomarkers[index].unit)
+            }
+            TextField("Date (YYYY-MM-DD)", text: Binding(get: { biomarkers[index].observedAt ?? "" }, set: { biomarkers[index].observedAt = $0.isEmpty ? nil : $0 }))
+            TextField("Lab reference range", text: $biomarkers[index].referenceRange)
+            Button("Remove", role: .destructive) {
+                let id = biomarkers[index].id
+                DispatchQueue.main.async { biomarkers.removeAll { $0.id == id } }
+            }.font(.caption)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -394,20 +415,20 @@ struct ReviewView: View {
                         Task { previewURL = try? await model.downloadOriginal(document) }
                     }
                     if biomarkers.isEmpty { Text("No lab values were detected. You can still approve this report with no observations.").foregroundStyle(.secondary) }
-                    ForEach(biomarkers.indices, id: \.self) { index in
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let page = biomarkers[index].page { Text("Candidate from page \(page)").font(.caption).foregroundStyle(.secondary) }
-                            if let evidence = biomarkers[index].evidence, !evidence.isEmpty { Text(evidence).font(.caption).textSelection(.enabled) }
-                            TextField("Test name", text: $biomarkers[index].name)
-                            HStack {
-                                TextField("Value", value: $biomarkers[index].value, format: .number).keyboardType(.decimalPad)
-                                TextField("Unit", text: $biomarkers[index].unit)
-                            }
-                            TextField("Date (YYYY-MM-DD)", text: Binding(get: { biomarkers[index].observedAt ?? "" }, set: { biomarkers[index].observedAt = $0.isEmpty ? nil : $0 }))
-                            TextField("Lab reference range", text: $biomarkers[index].referenceRange)
+                }
+                let needsAttention = biomarkers.indices.filter { !biomarkers[$0].attentionReasons.isEmpty }
+                let looksRight = biomarkers.indices.filter { biomarkers[$0].attentionReasons.isEmpty }
+                if !needsAttention.isEmpty {
+                    Section("Needs your attention (\(needsAttention.count))") {
+                        ForEach(needsAttention, id: \.self) { candidateEditor($0) }
+                    }
+                }
+                if !looksRight.isEmpty {
+                    Section {
+                        DisclosureGroup("\(looksRight.count) recognised and complete. Tap to check") {
+                            ForEach(looksRight, id: \.self) { candidateEditor($0) }
                         }
                     }
-                    .onDelete { biomarkers.remove(atOffsets: $0) }
                 }
                 if let preview = document.extraction?.textPreview, !preview.isEmpty {
                     Section("Report text preview") { Text(preview).font(.caption).textSelection(.enabled) }
@@ -443,8 +464,33 @@ struct SourceRow: View {
     }
 }
 
+struct WhyThisAnswerView: View {
+    let answer: CortexAnswer
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("From your approved records") {
+                    let records = answer.sources.filter { $0.type == "user_record" }
+                    if records.isEmpty { Text("No personal records were used.").foregroundStyle(.secondary) }
+                    ForEach(records) { SourceRow(source: $0) }
+                }
+                Section("From published research") {
+                    let research = answer.sources.filter { $0.type == "research_source" }
+                    if research.isEmpty { Text("No approved research was cited.").foregroundStyle(.secondary) }
+                    ForEach(research) { SourceRow(source: $0) }
+                }
+                Section("What this answer could not use") { ForEach(answer.limitations, id: \.self) { Text($0).font(.footnote) } }
+            }
+            .navigationTitle("Why this answer?")
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
 struct AnswerView: View {
     let answer: CortexAnswer
+    @State private var showingWhy = false
     var body: some View {
         NavigationStack {
             List {
@@ -453,7 +499,11 @@ struct AnswerView: View {
                 Section("Limitations") { ForEach(answer.limitations, id: \.self) { Text($0).font(.footnote) } }
             }
             .navigationTitle("Health summary")
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { ShareLink(item: answer.answer) } }
+            .sheet(isPresented: $showingWhy) { WhyThisAnswerView(answer: answer) }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Why this answer?") { showingWhy = true } }
+                ToolbarItem(placement: .topBarTrailing) { ShareLink(item: answer.answer) }
+            }
         }
     }
 }
@@ -477,6 +527,17 @@ struct Biomarker: Codable, Identifiable, Sendable {
     var candidateID: String?; var biomarkerCode: String?; var page: Int?; var evidence: String?
     var name: String; var value: Double; var unit: String; var observedAt: String?; var referenceRange: String
 }
+extension Biomarker {
+    /// Reasons a reviewer should look at this candidate first. Empty means every field was read and the analyte is known.
+    var attentionReasons: [String] {
+        var reasons: [String] = []
+        if (biomarkerCode ?? "").isEmpty { reasons.append("Unrecognised test name") }
+        if unit.isEmpty || unit == "(unit not detected)" { reasons.append("Unit missing") }
+        if (observedAt ?? "").isEmpty { reasons.append("No report date") }
+        return reasons
+    }
+}
+
 struct Observation: Codable, Identifiable, Sendable {
     let id: String; let name: String; let value: Double; let unit: String; let verificationStatus: String
 }

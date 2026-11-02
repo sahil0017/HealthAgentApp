@@ -70,10 +70,32 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 ## M9. iOS app
 
 - [~] Consent, upload, review, approve, ask flow written; **never compiled (needs Xcode)**
-- [ ] Build and run in Simulator; fix compile errors
+- [ ] Build and run in Simulator; fix compile errors (the views below are written but uncompiled)
 - [ ] UI tests for the main flow
 - [ ] Offline handling and error states
 - [ ] Accessibility pass
+
+## M9a. Intelligence UX
+
+Principles: never hide uncertainty; one primary action per screen; every claim is one tap from its source; safety states are normal UI, not alarms.
+
+- [~] Review triage: uncertain candidates first (unknown name, missing unit or date), confident ones collapsed
+- [~] "Why this answer?" sheet: records used, research cited, what could not be used
+- [~] Citation rows with PubMed identifier and link
+- [ ] Side-by-side review: PDF page with the evidence line highlighted next to the value
+- [ ] Learning feedback after approval ("Learned: mg/dL is valid for Glucose")
+- [ ] Unknown-label card with live research status
+- [ ] Inline `[R#]` citation chips that open the abstract (journal, year, evidence type)
+- [ ] Designed abstention state with a next step (for example "Upload your lipid panel")
+- [ ] Suggested follow-up questions from the user's own records
+- [ ] "Show only recorded facts" toggle next to the AI label
+- [ ] Biomarker history chart with the reference range shaded and report dates on points
+- [ ] "What changed" summary after each approval; visible unit conversion
+- [ ] "Learn about this" per biomarker from approved sources; saved reading list; request research with progress
+- [ ] Consent screen as a plain list of what the AI can use
+- [ ] "What left my device" log (public terms only)
+- [ ] Deletion controls that state embeddings and files are included
+- [ ] Curator inbox: grouped proposals, evidence, agreement count, approve/reject, mismatch flags
 
 ## M10. Devices and vision
 
