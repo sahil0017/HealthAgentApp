@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cortex}
+      POSTGRES_USER: ${POSTGRES_USER:-cortex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/bootstrap-env}
+    ports: ["${POSTGRES_PORT:-5433}:5432"]
+    volumes:
+      - cortex-postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  objectstore:
+    # S3-compatible private object storage. The pinned MinIO image is no longer published, so local dev uses SeaweedFS.
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -s3.port=9000 -dir=/data -ip.bind=0.0.0.0
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:?run scripts/bootstrap-env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?run scripts/bootstrap-env}
+    ports: ["9000:9000"]
+    volumes: ["cortex-objects:/data"]
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD:?run scripts/bootstrap-env}@postgres:5432/${POSTGRES_DB:-cortex}?sslmode=disable
+      CORTEX_DEV_TOKEN: ${CORTEX_DEV_TOKEN:?run scripts/bootstrap-env}
+      CORTEX_AUTH_MODE: ${CORTEX_AUTH_MODE:-development}
+      CORTEX_DEV_OWNER_ID: ${CORTEX_DEV_OWNER_ID:-local-development-user}
+      S3_ENDPOINT: objectstore:9000
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-localhost:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?run scripts/bootstrap-env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?run scripts/bootstrap-env}
+      S3_BUCKET: cortex-private
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://cortex-ai:8000}
+      HTTP_ADDR: :8080
+      CORTEX_MCP_SIGNING_KEY: ${CORTEX_MCP_SIGNING_KEY:?run scripts/bootstrap-env}
+      CORTEX_ADMIN_OWNER_IDS: ${CORTEX_ADMIN_OWNER_IDS:-}
+      CORTEX_RERANK_ENABLED: ${CORTEX_RERANK_ENABLED:-false}
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_started }
+      cortex-ai: { condition: service_healthy }
+
+  worker:
+    build: ./backend
+    entrypoint: ["/cortex-worker"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD:?run scripts/bootstrap-env}@postgres:5432/${POSTGRES_DB:-cortex}?sslmode=disable
+      S3_ENDPOINT: objectstore:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?run scripts/bootstrap-env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?run scripts/bootstrap-env}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://cortex-ai:8000}
+      S3_BUCKET: cortex-private
+    depends_on:
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_started }
+
+  cortex-ai:
+    build:
+      context: ./cortex-ai
+      args:
+        CORTEX_INFERENCE: ${CORTEX_INFERENCE:-1}
+        EMBEDDING_MODEL: ${CORTEX_EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}
+        EMBEDDING_REVISION: ${CORTEX_EMBEDDING_REVISION:-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a}
+        RERANKER_MODEL: ${CORTEX_RERANKER_MODEL:-}
+        RERANKER_REVISION: ${CORTEX_RERANKER_REVISION:-}
+    environment:
+      CORTEX_ENV: ${CORTEX_ENV:-development}
+      CORTEX_EMBEDDING_REQUIRED: ${CORTEX_EMBEDDING_REQUIRED:-true}
+      CORTEX_INFERENCE_ENABLED: ${CORTEX_INFERENCE_ENABLED:-false}
+      CORTEX_MODEL_ID: ${CORTEX_MODEL_ID:-}
+      CORTEX_OLLAMA_URL: ${CORTEX_OLLAMA_URL:-http://host.docker.internal:11434}
+      CORTEX_OLLAMA_MODEL: ${CORTEX_OLLAMA_MODEL:-}
+      CORTEX_OLLAMA_TIMEOUT_SECONDS: ${CORTEX_OLLAMA_TIMEOUT_SECONDS:-90}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+
+volumes:
+  cortex-postgres:
+  cortex-objects:

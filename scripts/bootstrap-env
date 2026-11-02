@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Generates random local secrets into .env. Existing non-empty values are kept, so reruns are safe.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+[ -f .env ] || cp .env.example .env
+
+rand() { openssl rand -hex "$1"; }
+
+set_default() {
+  local key="$1" value="$2"
+  if grep -Eq "^${key}=.+" .env; then return; fi
+  if grep -Eq "^${key}=" .env; then
+    local tmp; tmp="$(mktemp)"
+    awk -v k="$key" -v v="$value" 'BEGIN{FS=OFS="="} $1==k {print k "=" v; next} {print}' .env >"$tmp" && cat "$tmp" >.env && rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$key" "$value" >>.env
+  fi
+}
+
+set_default POSTGRES_PASSWORD "$(rand 24)"
+set_default S3_ACCESS_KEY "cx$(rand 8)"
+set_default S3_SECRET_KEY "$(rand 24)"
+set_default CORTEX_DEV_TOKEN "$(rand 32)"
+set_default CORTEX_MCP_SIGNING_KEY "$(rand 32)"
+chmod 600 .env
+echo ".env ready. Secrets were generated locally and are not committed."

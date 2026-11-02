@@ -1,0 +1,2 @@
+transformers==5.22.1
+sentence-transformers==6.2.0

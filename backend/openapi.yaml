@@ -1,0 +1,285 @@
+openapi: 3.1.0
+info:
+  title: CORTEX Core API
+  version: 1.0.0
+  description: Swift-facing profile, consent, document review, and observation API.
+servers:
+  - url: http://localhost:8080/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/session:
+    post:
+      security: []
+      summary: Exchange local development credential for a session
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionEnvelope' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      summary: Revoke current session
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Error' }
+  /users/me:
+    get:
+      summary: Get authenticated user
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles:
+    get:
+      summary: List profiles
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Create profile
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Get profile
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    patch:
+      summary: Update profile name, timezone, or measurement system
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/consents:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List consent records
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Record consent for a purpose and policy version
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/consents/{purpose}:
+    parameters:
+      - { $ref: '#/components/parameters/profileID' }
+      - name: purpose
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Grant or withdraw consent for a purpose
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /consents/{consentID}:
+    parameters:
+      - name: consentID
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get a consent record
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    delete:
+      summary: Withdraw consent while preserving its history
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/documents:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List documents
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/documents/upload-intents:
+    post:
+      summary: Create a short-lived signed upload intent
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Error' }
+  /profiles/{profileID}/documents/{documentID}:
+    get:
+      summary: Read document status and review candidates
+      parameters:
+        - { $ref: '#/components/parameters/profileID' }
+        - name: documentID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /documents/{documentID}/complete:
+    post:
+      summary: Verify uploaded object and mark it ready for manual review
+      parameters: [{ $ref: '#/components/parameters/documentID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Error' }
+  /documents/{documentID}:
+    parameters: [{ $ref: '#/components/parameters/documentID' }]
+    get:
+      summary: Get document metadata
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    patch:
+      summary: Update document filename or category
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    delete:
+      summary: Delete document and derived observations
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /documents/{documentID}/download:
+    get:
+      summary: Create short-lived signed download URL
+      parameters: [{ $ref: '#/components/parameters/documentID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/documents/{documentID}/approve:
+    post:
+      summary: Save manually reviewed biomarkers
+      parameters:
+        - { $ref: '#/components/parameters/profileID' }
+        - name: documentID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/observations:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List verified observations
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Create a manually entered observation
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers:
+    get:
+      summary: List biomarker catalog entries
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers/{code}/history:
+    get:
+      summary: Read a biomarker history
+      parameters:
+        - { $ref: '#/components/parameters/profileID' }
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /observations/{observationID}/verify:
+    post:
+      summary: Verify an observation
+      parameters:
+        - name: observationID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /observations/{observationID}/corrections:
+    post:
+      summary: Record a corrected observation revision
+      parameters:
+        - name: observationID
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/questions:
+    post:
+      summary: Submit a question with the profile's approved observation context
+      description: Retrieves the profile's most relevant verified records from pgvector, then asks the AI service. The `data` object holds `answer`, `sources` (record sources carry `observation_id`), `limitations` and `workflow`.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/mcp-tokens:
+    post:
+      summary: Mint a 10-minute MCP token scoped to this owner and profile (records:read)
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+  /mcp:
+    post:
+      summary: MCP JSON-RPC endpoint (initialize, tools/list, tools/call)
+      description: Authenticated only by a scoped MCP token, never by a user session. Tools search_records, list_observations and biomarker_history are read-only, always bound to the token's profile, require active AI-processing and health-data consent, and are audited.
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { description: JSON-RPC 2.0 response }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    profileID:
+      name: profileID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    documentID:
+      name: documentID
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  requestBodies:
+    JSON:
+      required: true
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+  responses:
+    Success:
+      description: Successful response envelope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Envelope' }
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+  schemas:
+    Envelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {}
+        meta:
+          type: object
+          properties:
+            request_id: { type: string }
+    SessionEnvelope:
+      allOf:
+        - { $ref: '#/components/schemas/Envelope' }
+      description: data contains access_token, token_type, and expires_at.
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            request_id: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
