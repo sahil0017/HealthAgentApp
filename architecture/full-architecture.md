@@ -29,7 +29,7 @@ flowchart LR
     PG[(PostgreSQL<br/>pgvector enabled)]
     Objects[(Private S3-compatible<br/>object storage)]
     Models[Model runtimes<br/>planned, replaceable]
-    Research[Approved research sources<br/>planned]
+    Research[Approved research sources<br/>implemented: LOINC, UCUM, MedlinePlus, PubMed]
     HealthKit[HealthKit and devices<br/>planned]
     Vision[Camera and imaging<br/>planned]
 
@@ -295,6 +295,10 @@ Use readiness checks for dependencies and liveness checks that do not require do
 ### Observability
 
 Add OpenTelemetry traces across API → worker → AI workflow → tool/model calls, plus metrics for queue age, processing outcomes, latency, retries, model errors, and retrieval quality. Propagate correlation IDs. Do not record prompts, report text, observation values, tokens, or image content in ordinary logs or traces.
+
+## Learned knowledge and research agent
+
+Clinical reference data is learned, never shipped. The AI service exposes `POST /v1/research/{biomarker,literature,discover}` and `GET /v1/research/unit`. All outbound calls pass a host-allowlisted, https-only, rate-limited fetcher and carry public terms only. The Go worker owns a durable `research_tasks` queue (retry with back-off). Results land in `knowledge_entries` as `pending` with evidence links and an agreement count; an administrator approves or rejects each one. Approval writes the biomarker catalog (which drives document extraction), learned units, or embedded `research_chunks` (pgvector plus full-text) that the health question workflow cites. Reference ranges come from the user's own reports; a MedlinePlus summary is kept only as an explanatory note.
 
 ## Delivery roadmap
 

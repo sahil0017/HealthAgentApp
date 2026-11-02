@@ -205,7 +205,7 @@ paths:
   /profiles/{profileID}/questions:
     post:
       summary: Submit a question with the profile's approved observation context
-      description: Retrieves the profile's most relevant verified records from pgvector, then asks the AI service. The `data` object holds `answer`, `sources` (record sources carry `observation_id`), `limitations` and `workflow`.
+      description: Retrieves the profile's most relevant verified records from pgvector, then asks the AI service. Approved research literature is retrieved as well and cited as `[R#]` with its PubMed identifier. The `data` object holds `answer`, `sources` (record sources carry `observation_id`), `limitations` and `workflow`.
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
@@ -223,6 +223,40 @@ paths:
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
         '200': { description: JSON-RPC 2.0 response }
+  /knowledge/entries:
+    get:
+      summary: List learned knowledge proposals (administrators only)
+      description: Query `status` (pending, approved, rejected), `kind` (biomarker, unit, research_source) and `limit`. `data` holds `entries` and `research_queue` counts.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Error' }
+  /knowledge/research:
+    post:
+      summary: Queue a research task (administrators only)
+      description: "Body `{kind: biomarker|literature, term}`. The AI service queries only allowlisted public sources (LOINC, UCUM, MedlinePlus, PubMed); no patient data is sent."
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '202': { $ref: '#/components/responses/Success' }
+  /knowledge/entries/bulk-approve:
+    post:
+      summary: Approve pending biomarker or unit proposals in bulk (administrators only)
+      description: "Body `{kind: biomarker|unit, min_agreement, limit}`. Literature (`research_source`) must be approved individually."
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /knowledge/entries/{entryID}/approve:
+    post:
+      summary: Approve one pending proposal (administrators only)
+      description: Biomarkers enter the catalog, units are added to the biomarker's learned units, and literature is embedded into the research index. Reviewed entries return 409 `ENTRY_NOT_PENDING`.
+      parameters: [{ name: entryID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /knowledge/entries/{entryID}/reject:
+    post:
+      summary: Reject one pending proposal (administrators only)
+      parameters: [{ name: entryID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
 components:
   securitySchemes:
     bearerAuth:

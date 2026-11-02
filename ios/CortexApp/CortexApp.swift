@@ -426,13 +426,30 @@ struct ReviewView: View {
     }
 }
 
+struct SourceRow: View {
+    let source: AnswerSource
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let link = source.url.flatMap({ URL(string: $0) }), link.scheme == "https" {
+                Link(source.description, destination: link)
+            } else {
+                Text(source.description)
+            }
+            if source.type == "research_source" {
+                Text([source.identifier, "Published research"].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct AnswerView: View {
     let answer: CortexAnswer
     var body: some View {
         NavigationStack {
             List {
                 Section("CORTEX") { Text(answer.answer).textSelection(.enabled) }
-                if !answer.sources.isEmpty { Section("Sources") { ForEach(answer.sources) { Text($0.description) } } }
+                if !answer.sources.isEmpty { Section("Sources") { ForEach(answer.sources) { SourceRow(source: $0) } } }
                 Section("Limitations") { ForEach(answer.limitations, id: \.self) { Text($0).font(.footnote) } }
             }
             .navigationTitle("Health summary")
@@ -464,7 +481,11 @@ struct Observation: Codable, Identifiable, Sendable {
     let id: String; let name: String; let value: Double; let unit: String; let verificationStatus: String
 }
 struct QuestionInput: Encodable { let question: String }
-struct AnswerSource: Codable, Identifiable, Sendable { var id: String { "\(type)-\(description)" }; let type: String; let description: String }
+struct AnswerSource: Codable, Identifiable, Sendable {
+    var id: String { "\(type)-\(identifier ?? "")-\(description)" }
+    let type: String; let description: String
+    let identifier: String?; let url: String?; let verificationStatus: String?
+}
 struct CortexAnswer: Codable, Identifiable, Sendable {
     var id: String { answer }
     let answer: String; let sources: [AnswerSource]; let limitations: [String]

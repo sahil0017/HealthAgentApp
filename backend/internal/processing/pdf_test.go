@@ -71,3 +71,31 @@ func TestPDFTextProcessorMarksImagesForManualReview(t *testing.T) {
 		t.Fatalf("image result = %#v", got)
 	}
 }
+
+func TestParseCandidatesCapturesReferenceRangeAndReportDate(t *testing.T) {
+	catalog := []CatalogEntry{{Code: "GLUCOSE", Name: "Glucose", Terms: []string{"glucose"}}, {Code: "LDL", Name: "LDL", Terms: []string{"ldl"}}}
+	text := "Date of birth: 1980-02-03\nCollected: 2026-10-15\nGlucose 104 mg/dL 70 - 99\nLDL 131 mg/dL (<100)\nFerritin 45 ng/mL"
+	got, _ := ParseCandidates(text, 1, catalog)
+	if len(got) != 3 {
+		t.Fatalf("got %d candidates: %+v", len(got), got)
+	}
+	if got[0].ReferenceRange != "70 - 99" || got[1].ReferenceRange != "<100" || got[2].ReferenceRange != "" {
+		t.Fatalf("ranges: %q %q %q", got[0].ReferenceRange, got[1].ReferenceRange, got[2].ReferenceRange)
+	}
+	for _, c := range got {
+		if c.ObservedAt == nil || *c.ObservedAt != "2026-10-15" {
+			t.Fatalf("observed_at should be the collection date, got %v", c.ObservedAt)
+		}
+	}
+}
+
+func TestReportDateIgnoresUnlabelledAndImpossibleDates(t *testing.T) {
+	for _, in := range []string{"Date of birth: 1980-02-03", "Collected: 2026-02-31", "Collected: 2999-01-01", "no dates"} {
+		if d := ReportDate(in); d != nil {
+			t.Errorf("%q should yield no date, got %s", in, *d)
+		}
+	}
+	if d := ReportDate("Report date: March 4, 2026"); d == nil || *d != "2026-03-04" {
+		t.Fatalf("month-name date not parsed: %v", d)
+	}
+}

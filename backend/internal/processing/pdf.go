@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	pdf "github.com/giraffesyo/pdf"
 )
@@ -147,8 +148,18 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 	ix := buildIndex(catalog)
 	candidates = make([]Candidate, 0)
 	seen := map[string]bool{}
+	observedAt := ReportDate(text)
 	for _, line := range strings.Split(text, "\n") {
-		for _, match := range linePattern.FindAllStringSubmatch(line, -1) {
+		matches := linePattern.FindAllStringSubmatchIndex(line, -1)
+		for mi, loc := range matches {
+			match := make([]string, 4)
+			for g := range match {
+				match[g] = line[loc[2*g]:loc[2*g+1]]
+			}
+			tailEnd := len(line)
+			if mi+1 < len(matches) {
+				tailEnd = matches[mi+1][0]
+			}
 			label, raw := strings.TrimSpace(match[1]), strings.TrimSpace(match[2])
 			unit := strings.ReplaceAll(strings.TrimSpace(match[3]), "μ", "µ")
 			if strings.ContainsAny(raw, "<>≤≥") || len(normalizeTerm(label)) < 2 || !plausibleUnit(unit, ix.units) {
@@ -158,7 +169,7 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 				continue
 			}
-			c := Candidate{Name: label, Value: value, Unit: unit, Page: page, Evidence: strings.TrimSpace(line)}
+			c := Candidate{Name: label, Value: value, Unit: unit, Page: page, Evidence: strings.TrimSpace(line), ObservedAt: observedAt, ReferenceRange: referenceRange(line[loc[1]:tailEnd])}
 			if e, ok := ix.lookup(label); ok {
 				c.BiomarkerCode, c.Name = e.Code, e.Name
 			} else if key := normalizeTerm(label); !seen[key] && len(key) <= 60 {
@@ -169,4 +180,47 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 		}
 	}
 	return candidates, unknown
+}
+
+var rangePattern = regexp.MustCompile(`(\d+(?:[.,]\d+)?\s*(?:-|–|—|to)\s*\d+(?:[.,]\d+)?|[<>≤≥]=?\s*\d+(?:[.,]\d+)?)`)
+
+// referenceRange returns a range printed on the report itself, right after the result.
+func referenceRange(tail string) string {
+	m := rangePattern.FindString(tail)
+	return strings.Join(strings.Fields(m), " ")
+}
+
+var (
+	isoDate       = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
+	monthDate     = regexp.MustCompile(`(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b`)
+	dateLabelHint = regexp.MustCompile(`(?i)collect|report|specimen|drawn|sample|received|date of (service|test)`)
+	months        = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+)
+
+// ReportDate returns a date only from a line labelled as a collection or report date, so birth dates are never mistaken for it.
+func ReportDate(text string) *string {
+	for _, line := range strings.Split(text, "\n") {
+		if !dateLabelHint.MatchString(line) {
+			continue
+		}
+		var y, mo, d int
+		if m := isoDate.FindStringSubmatch(line); m != nil {
+			y, _ = strconv.Atoi(m[1])
+			mo, _ = strconv.Atoi(m[2])
+			d, _ = strconv.Atoi(m[3])
+		} else if m := monthDate.FindStringSubmatch(line); m != nil {
+			mo = months[strings.ToLower(m[1])]
+			d, _ = strconv.Atoi(m[2])
+			y, _ = strconv.Atoi(m[3])
+		} else {
+			continue
+		}
+		t := time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC)
+		if mo < 1 || mo > 12 || t.Day() != d || y < 1990 || t.After(time.Now().AddDate(0, 0, 1)) {
+			continue
+		}
+		out := t.Format("2006-01-02")
+		return &out
+	}
+	return nil
 }

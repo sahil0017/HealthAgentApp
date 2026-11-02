@@ -25,3 +25,18 @@ Verified observations are embedded by the stateless AI service (`POST /v1/embed`
 `POST /api/v1/profiles/{id}/mcp-tokens` mints a 10-minute HMAC-signed token (`CORTEX_MCP_SIGNING_KEY`, at least 32 bytes; ephemeral if unset) that `POST /api/v1/mcp` accepts for read-only tools. The token carries the owner and profile, so tool arguments cannot widen access.
 
 Set `CORTEX_OLLAMA_MODEL` (for example `qwen2.5:1.5b`) to have the AI service write the plain-language explanation through Ollama on the host; output still passes the safety policy and is labelled AI-generated. Ollama models bypass the Hugging Face model registry, so treat this as a local-development runtime.
+
+## Learned knowledge (no built-in clinical data)
+
+The repository ships no biomarker catalog, reference ranges, extraction patterns or research corpus. A research agent in the AI service learns them from public standards and stores everything as `pending` until an administrator approves it.
+
+- **First start:** the worker queues a `discover` task on an empty catalog. The agent lists MedlinePlus lab tests, resolves each against LOINC, and proposes biomarkers (`knowledge_entries`, migration 007). Only LOINC items with a measurable property are proposed; synonyms must share words with the LOINC component.
+- **Extraction** is driven by the approved catalog. Labels that match nothing are still surfaced for review and queue a `biomarker` research task. Reference ranges and the report date are read from the report itself; the date is taken only from a line labelled collected/report/specimen.
+- **Units** are learned after a reviewed approval: only `CODE|unit` is queued, validated against UCUM, and approved by an administrator.
+- **Literature:** `POST /knowledge/research {kind: "literature", term}` fetches PubMed abstracts. Approving one embeds it so `/questions` can cite it as `[R#]`.
+- **Privacy:** only public terms leave the system, through a host-allowlisted client (`clinicaltables.nlm.nih.gov`, `ucum.nlm.nih.gov`, `eutils.ncbi.nlm.nih.gov`, `medlineplus.gov`).
+- **Admin access:** set `CORTEX_ADMIN_OWNER_IDS` (comma-separated owner IDs). In `CORTEX_AUTH_MODE=development` every session is an administrator; never use that mode in production.
+
+## Secrets
+
+`docker compose` refuses to start without secrets. Run `scripts/bootstrap-env` once to generate a random `.env` (mode 600, gitignored), then `set -a; . ./.env; set +a`.

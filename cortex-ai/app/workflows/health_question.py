@@ -38,7 +38,8 @@ def orchestrate(state: HealthQuestionState) -> dict[str, Any]:
     domains = ["medical_records"]
     if state["observations"] or LAB_TERMS.search(question):
         domains.append("lab_intelligence")
-    if RESEARCH_TERMS.search(question):
+    # Retrieved approved sources decide relevance; the keyword match only surfaces the "no sources" limitation.
+    if state.get("research_chunks") or RESEARCH_TERMS.search(question):
         domains.append("health_research")
     return {"domains": domains}
 

@@ -2,14 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi import File, HTTPException, UploadFile
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import config
 from app.research import agent as research_agent, sources as research_sources
-from app.extraction.biomarkers import extract_candidates
-from app.extraction.documents import read_pages
 from app.inference.generate import generate_explanation
 from app.inference.registry import REGISTRY, ModelRecord
 from app.rag.service import EmbeddingUnavailable, service as embedding_service
@@ -173,31 +171,6 @@ def capabilities() -> dict[str, object]:
         "mcp": "served_by_api_gateway",
         "embeddings": embedding_service.status(),
         "model_inference": config.INFERENCE_STATUS,
-    }
-
-
-@app.post("/v1/extract/document")
-async def extract_document(file: UploadFile = File(...)) -> dict[str, object]:
-    raw = await file.read(15 * 1024 * 1024 + 1)
-    if not raw or len(raw) > 15 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Document size is invalid")
-    try:
-        pages = read_pages(raw, file.filename)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail="Document text could not be read") from exc
-    text = "\n".join(page_text for _, page_text in pages)
-    if not text.strip():
-        return {
-            "biomarkers": [],
-            "text_preview": "",
-            "warnings": ["No selectable text was found. Scanned-document OCR is not configured yet."],
-        }
-    candidates, warnings = extract_candidates(pages)
-    return {
-        "biomarkers": [c.as_dict() for c in candidates],
-        "text_preview": text[:2000],
-        "warnings": ["Automated extraction can be wrong. Review every value, unit, date, and reference range before saving."]
-        + warnings,
     }
 
 

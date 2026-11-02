@@ -56,3 +56,11 @@ def test_explanation_failure_falls_back_to_facts():
     assert "HbA1c increased" in result["answer"]
     assert "AI-generated" not in result["answer"]
     assert any("unavailable" in item for item in result["limitations"])
+
+
+def test_retrieved_research_chunks_route_to_health_research():
+    from app.workflows.health_question import orchestrate
+
+    base = {"question": "how is prediabetes managed", "observations": []}
+    assert "health_research" not in orchestrate({**base, "research_chunks": []})["domains"]
+    assert "health_research" in orchestrate({**base, "research_chunks": [{"text": "x"}]})["domains"]

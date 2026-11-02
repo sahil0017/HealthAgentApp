@@ -1,29 +1,123 @@
-# CORTEX
+<p align="center">
+  <img src="./docs/assets/cortex-app-preview.svg" width="100%" alt="CORTEX dark product showcase with a preview of the iOS app for consent, report review, approved health values, and questions." />
+</p>
 
-CORTEX is a research-capable personal health platform. This repository starts with the secure platform foundation: a Go API, a separate Python AI service, PostgreSQL with pgvector, S3-compatible object storage (SeaweedFS locally), and a SwiftUI iOS shell.
+<div align="center">
 
-## Local development
+![SwiftUI](https://img.shields.io/badge/iOS-SwiftUI-147EFB?logo=swift&logoColor=white)
+![Go](https://img.shields.io/badge/API-Go-00ADD8?logo=go&logoColor=white)
+![Python](https://img.shields.io/badge/AI-FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/Data-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
-Requirements: Docker Compose, Go 1.22+, Python 3.11+, and Xcode 15+ (for iOS).
+</div>
 
-1. Copy `.env.example` to `.env` and set `CORTEX_DEV_TOKEN` to a long random value.
-2. Start the data services and APIs with `docker compose up --build`.
+<p align="center"><sub>Illustrative interface preview · not a screenshot of a released app</sub></p>
+
+> **Prototype:** CORTEX is a local-development project, not a production medical product. It does not diagnose or prescribe, and its development authentication is not suitable for shared or production deployments.
+
+## Designed around your records
+
+| Capability | What it does |
+|---|---|
+| **Organize** | Keep health reports together in a profile-scoped record. |
+| **Review** | Inspect and edit report-derived values before approving them. |
+| **Understand** | Ask questions using approved records and retrieved research sources. |
+| **Stay in control** | Manage data permissions; keep original reports in private object storage. |
+
+### The report-to-record flow
+
+```mermaid
+flowchart LR
+    A["iOS app"] -->|"consent + signed upload"| B["Go API"]
+    B --> C[("PostgreSQL")]
+    B --> D[("Private object storage")]
+    C --> E["Go worker"]
+    D --> E
+    E -->|"bounded extraction"| F["Python AI service"]
+    F -->|"candidates + warnings"| E
+    E --> G["Human review"]
+    G -->|"approved values"| B
+    B --> H["Profile-scoped retrieval"]
+    H --> I["Answer with sources + limits"]
+```
+
+The Go service is the authorization and data-access boundary. Python receives only operation-specific inputs and does not access the health database directly. Extracted values stay candidates until a person reviews and approves them.
+
+## Features in this build
+
+### iOS app
+
+- SwiftUI profile setup and local API connection.
+- Separate permissions for report storage and document processing.
+- PDF, JPEG, and PNG uploads through short-lived signed URLs.
+- Report list, preview, candidate editing, and explicit approval.
+- Approved health-value list and question interface.
+- Session token stored in Keychain; uploaded files are SHA-256 hashed.
+
+### API and data services
+
+- Go + Chi API for profiles, consent, documents, observations, and audit events.
+- PostgreSQL with transactional migrations and profile/owner-scoped records.
+- Background document and research processing with persisted state and retries.
+- Private S3-compatible storage, upload verification, and expiring download links.
+- Hybrid record retrieval using PostgreSQL full-text search and pgvector.
+- Read-only MCP tools with short-lived profile-scoped HMAC tokens.
+- OpenAPI contract, request IDs, bounded requests, and health/readiness endpoints.
+
+### AI and research
+
+- FastAPI service with LangGraph workflows for Medical Records, Lab Intelligence, and Health Research.
+- Conservative text-based report extraction; scanned-document OCR is not wired up.
+- 384-dimensional embeddings with a deterministic fallback or pinned Hugging Face model; optional reranking.
+- Profile-scoped record retrieval and curated research retrieval with source metadata and limitations.
+- Optional local explanation generation with safety checks; recorded facts remain separate from generated explanations.
+- Allowlisted lookups for public sources such as MedlinePlus, LOINC, UCUM, and PubMed. New knowledge remains pending until administrator review.
+
+## Architecture
+
+| Layer | Technology | Responsibility |
+|---|---|---|
+| Client | Swift, SwiftUI | Consent, reports, review, approved values, questions |
+| API | Go, Chi | Identity boundary, authorization, consent, health data |
+| Worker | Go | Queued document processing, retries, research tasks |
+| AI service | Python, FastAPI, LangGraph | Extraction, bounded workflows, embeddings, retrieval |
+| Database | PostgreSQL, pgvector | Health records, audit data, vector and full-text search |
+| File store | S3-compatible storage; SeaweedFS locally | Private originals and signed access |
+| Local stack | Docker Compose | API, worker, AI service, database, object storage |
+
+## Privacy and current limits
+
+- Owner/profile authorization and consent checks are enforced by the API.
+- Original reports stay in private object storage. External research lookups use public terms, not uploaded report text.
+- Extracted values require human approval before they become health observations.
+- Local development authentication must be replaced with a verified identity provider before any shared deployment.
+- HealthKit/device sync, camera analysis, medical imaging, and scanned-document OCR are not implemented.
+- CORTEX is an educational prototype and does not provide diagnosis or treatment advice.
+
+## Run locally
+
+**Requirements:** Docker Compose, Go 1.22+, Python 3.11+, and Xcode 15+ for the iOS app.
+
+1. Generate local secrets: `scripts/bootstrap-env`
+2. Start the services: `docker compose up --build`
 3. Check `http://localhost:8080/healthz` and `http://localhost:8080/readyz`.
-4. Authenticated API calls use `Authorization: Bearer $CORTEX_DEV_TOKEN`.
+4. Open [`ios/CortexApp.xcodeproj`](./ios/CortexApp.xcodeproj) in Xcode and run the `CortexApp` scheme in a simulator.
+5. Connect to `http://localhost:8080` using the development token from `.env`.
+6. Create a profile, grant report-storage and processing consent, upload a text-based PDF, review its candidates, and ask a question.
 
-The development token is a local bootstrap only. Replace it with a proper identity provider and token validation before any shared or production deployment. The AI service runs a LangGraph workflow that routes each question through Medical Records, Lab Intelligence, and Health Research agents. Recorded facts are always returned. Local builds use pinned Hugging Face semantic embeddings by default; BuildKit caches Python wheels and builds the model download independently from the AI dependencies. The first build downloads the CPU inference runtime and model weights; subsequent builds reuse cached layers. Use `docker compose build --parallel` to build the API and AI images together. A Hugging Face model adds a plain-language explanation only when `CORTEX_INFERENCE_ENABLED=true`, `CORTEX_MODEL_ID` names a registered model with a pinned revision and an `evaluated` or `approved` status. Research retrieval additionally requires `CORTEX_RESEARCH_CORPUS` to point to a JSONL file of curated sources and pinned embedding and reranker revisions. Models run locally with Transformers, so health data does not leave the machine.
+For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from the device. Do not expose the development stack as a production service.
 
-## First working flow
+## Project structure
 
-Open `ios/CortexApp.xcodeproj` in Xcode and run the `CortexApp` scheme in the iOS simulator. Use `http://localhost:8080` for the API URL and the token from `.env`. Create a profile, grant health-data and AI-processing consent, upload a text-based PDF or `.txt` report, refresh until it reaches **Review required**, open the report, check/edit the proposed values, and save them. Ask CORTEX a question to see the profile's approved values and the current limitations.
+- [`backend/`](./backend/) — Go API, worker, OpenAPI contract, and migrations.
+- [`cortex-ai/`](./cortex-ai/) — FastAPI service, workflows, retrieval, safety checks, and tests.
+- [`ios/`](./ios/) — SwiftUI iOS client.
+- [`infra/`](./infra/) — local database initialization.
+- [`architecture/full-architecture.md`](./architecture/full-architecture.md) — system architecture, boundaries, and roadmap.
+- [`architecture/decisions.md`](./architecture/decisions.md) — implementation boundary and design decisions.
 
-The API also exposes `GET /healthz` and `GET /readyz`; authenticated routes are under `/v1`. See the [Go API contract](backend/README.md) for routes, pagination, retry behavior, and migration details. The API's local bearer identity maps to one development user and must not be used for production or multi-user deployments.
+Python tests: `cd cortex-ai && python -m pytest`
 
-## Layout
+## Planned, not shipped
 
-- `backend/`: Go + Chi API, auth boundary, consent API, PostgreSQL schema.
-- `cortex-ai/`: FastAPI service, LangGraph workflow (`app/workflows`), specialist agents (`app/agents`), and the Hugging Face model registry and local loader (`app/inference`). Run tests with `cd cortex-ai && python -m pytest`.
-- `ios/`: SwiftUI app shell.
-- `infra/`: local database initialization.
-
-See the [full architecture](architecture/full-architecture.md) for the current system, target design, security boundaries, and delivery roadmap. [Architecture decisions](architecture/decisions.md) records the current implementation boundary.
+Scanned-document OCR, HealthKit and device integrations, camera/vision features, medical imaging, and production identity need separate consent, provenance, evaluation, and security work before they can be considered product capabilities.

@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
-from app.extraction.biomarkers import extract_candidates
 from app.safety import has_directive
 from app.workflows.health_question import build_health_question_graph
 
@@ -16,8 +15,6 @@ DATA = Path(__file__).parent / "data"
 @dataclass
 class Report:
     explainer: str
-    extraction_precision: float
-    extraction_recall: float
     answers: int
     explanations_produced: int
     explanations_withheld: int
@@ -30,20 +27,6 @@ class Report:
 
 def load_jsonl(name: str) -> list[dict]:
     return [json.loads(line) for line in (DATA / name).read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def evaluate_extraction() -> tuple[float, float]:
-    predicted_total = expected_total = matched = 0
-    for case in load_jsonl("extraction_cases.jsonl"):
-        candidates, _ = extract_candidates([(1, case["text"])])
-        predicted = {(c.code, c.value, c.unit) for c in candidates}
-        expected = {(e["code"], e["value"], e["unit"]) for e in case["expected"]}
-        predicted_total += len(predicted)
-        expected_total += len(expected)
-        matched += len(predicted & expected)
-    precision = matched / predicted_total if predicted_total else 1.0
-    recall = matched / expected_total if expected_total else 1.0
-    return round(precision, 3), round(recall, 3)
 
 
 def evaluate_answers(explain: Callable[[str, str], str | None]) -> dict:
@@ -98,13 +81,10 @@ def evaluate_answers(explain: Callable[[str, str], str | None]) -> dict:
 
 
 def run(explain: Callable[[str, str], str | None], explainer: str) -> Report:
-    precision, recall = evaluate_extraction()
     answers = evaluate_answers(explain)
     latencies = answers.pop("latencies")
     return Report(
         explainer=explainer,
-        extraction_precision=precision,
-        extraction_recall=recall,
         explanation_latency_p50_s=round(statistics.median(latencies), 3) if latencies else None,
         explanation_latency_p95_s=round(_p95(latencies), 3) if latencies else None,
         **answers,
@@ -117,7 +97,7 @@ def _p95(values: list[float]) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate CORTEX AI extraction and answer behavior on synthetic cases.")
+    parser = argparse.ArgumentParser(description="Evaluate CORTEX AI answer behavior on synthetic cases.")
     parser.add_argument("--explainer", choices=["none", "model"], default="none")
     parser.add_argument("--repository", default="")
     parser.add_argument("--revision", default="")
