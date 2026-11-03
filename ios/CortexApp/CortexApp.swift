@@ -31,6 +31,7 @@ final class CortexModel: ObservableObject {
     @Published var busy = false
     @Published var message: String?
     @Published var answer: CortexAnswer?
+    @Published var questions: [SavedQuestion] = []
     @Published var overview: Overview?
     @Published var timeline: [TimelineItem] = []
     @Published var history: [HistoryEntry] = []
@@ -212,6 +213,7 @@ final class CortexModel: ObservableObject {
             let body = try encoder.encode(QuestionInput(question: question))
             let data = try await request(path: "/api/v1/profiles/\(profile.id)/questions", method: "POST", body: body)
             answer = try decoder.decode(CortexAnswer.self, from: data)
+            await loadQuestions()
         } catch { message = error.localizedDescription }
     }
 
@@ -253,6 +255,7 @@ struct ContentView: View {
     @State private var showingImporter = false
     @State private var selectedDocument: MedicalDocument?
     @State private var question = ""
+    @State private var showingQuestionHistory = false
     @State private var documentType = "LAB_REPORT"
     @State private var supersedesDocumentID: String?
     @State private var documentToDelete: MedicalDocument?
@@ -298,7 +301,8 @@ struct ContentView: View {
             .navigationDestination(isPresented: Binding(get: { detailDocument != nil }, set: { if !$0 { detailDocument = nil } })) {
                 if let doc = detailDocument { DocumentDetailView(documentId: doc.id, fileName: doc.fileName, documentType: doc.documentType) }
             }
-            .sheet(item: $model.answer) { answer in AnswerView(answer: answer) }
+            .sheet(item: $model.answer) { answer in AnswerView(answer: answer).environmentObject(model) }
+            .sheet(isPresented: $showingQuestionHistory) { QuestionHistoryView().environmentObject(model) }
             .alert("CORTEX", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK") { model.message = nil }
             } message: { Text(model.message ?? "") }
@@ -383,6 +387,7 @@ struct ContentView: View {
                 TextField("For example: summarize my recent lab values", text: $question, axis: .vertical)
                 Button("Ask CORTEX") { let prompt = question; question = ""; Task { await model.ask(prompt) } }
                     .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || model.consents["ai_processing"] != true)
+                Button("Past questions", systemImage: "clock.arrow.circlepath") { showingQuestionHistory = true }
             }
         }
         .refreshable { await model.refresh() }
@@ -521,14 +526,41 @@ struct WhyThisAnswerView: View {
 }
 
 struct AnswerView: View {
+    @EnvironmentObject private var model: CortexModel
+    @Environment(\.dismiss) private var dismiss
     let answer: CortexAnswer
     @State private var showingWhy = false
     var body: some View {
         NavigationStack {
             List {
-                Section("CORTEX") { Text(answer.answer).textSelection(.enabled) }
+                if answer.urgent { Section { UrgentBanner(triage: answer.triage) }.listRowInsets(EdgeInsets()) }
+                if let question = answer.question { Section("You asked") { Text(question) } }
+                Section("CORTEX") {
+                    Text(answer.answer).textSelection(.enabled)
+                    if !answer.urgent {
+                        ConfidenceBadge(confidence: answer.confidence)
+                        if !answer.uncertainty.isEmpty { Text(answer.uncertainty).font(.footnote).foregroundStyle(.secondary) }
+                    }
+                }
                 if !answer.sources.isEmpty { Section("Sources") { ForEach(answer.sources) { SourceRow(source: $0) } } }
                 Section("Limitations") { ForEach(answer.limitations, id: \.self) { Text($0).font(.footnote) } }
+                if !answer.suggestedQuestions.isEmpty {
+                    Section("Ask next") {
+                        ForEach(answer.suggestedQuestions, id: \.self) { suggestion in
+                            Button(suggestion) { dismiss(); Task { await model.ask(suggestion) } }
+                        }
+                    }
+                }
+                if answer.savedID != nil && !answer.urgent {
+                    Section("Was this helpful?") {
+                        HStack {
+                            Button("Helpful", systemImage: answer.feedback == "helpful" ? "hand.thumbsup.fill" : "hand.thumbsup") { Task { await model.rate(answer, helpful: true) } }
+                            Spacer()
+                            Button("Not helpful", systemImage: answer.feedback == "not_helpful" ? "hand.thumbsdown.fill" : "hand.thumbsdown") { Task { await model.rate(answer, helpful: false) } }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
             }
             .navigationTitle("Health summary")
             .sheet(isPresented: $showingWhy) { WhyThisAnswerView(answer: answer) }
@@ -580,8 +612,45 @@ struct AnswerSource: Codable, Identifiable, Sendable {
     let identifier: String?; let url: String?; let verificationStatus: String?
 }
 struct CortexAnswer: Codable, Identifiable, Sendable {
-    var id: String { answer }
+    var savedID: String?
+    var question: String?
     let answer: String; let sources: [AnswerSource]; let limitations: [String]
+    var urgent = false
+    var triage = "none"
+    var confidence = "insufficient"
+    var uncertainty = ""
+    var suggestedQuestions: [String] = []
+    var feedback: String?
+    var createdAt: String?
+    var id: String { savedID ?? answer }
+
+    enum CodingKeys: String, CodingKey {
+        case savedID = "id", question, answer, sources, limitations, urgent, triage, confidence, uncertainty, suggestedQuestions, feedback, createdAt
+    }
+
+    init(savedID: String?, question: String?, answer: String, sources: [AnswerSource], limitations: [String], urgent: Bool, triage: String,
+         confidence: String, uncertainty: String, suggestedQuestions: [String], feedback: String?, createdAt: String?) {
+        self.savedID = savedID; self.question = question; self.answer = answer; self.sources = sources; self.limitations = limitations
+        self.urgent = urgent; self.triage = triage; self.confidence = confidence; self.uncertainty = uncertainty
+        self.suggestedQuestions = suggestedQuestions; self.feedback = feedback; self.createdAt = createdAt
+    }
+
+    // Older API versions omit the newer fields, so every one of them is optional on the wire.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        savedID = try c.decodeIfPresent(String.self, forKey: .savedID)
+        question = try c.decodeIfPresent(String.self, forKey: .question)
+        answer = try c.decode(String.self, forKey: .answer)
+        sources = try c.decodeIfPresent([AnswerSource].self, forKey: .sources) ?? []
+        limitations = try c.decodeIfPresent([String].self, forKey: .limitations) ?? []
+        urgent = try c.decodeIfPresent(Bool.self, forKey: .urgent) ?? false
+        triage = try c.decodeIfPresent(String.self, forKey: .triage) ?? "none"
+        confidence = try c.decodeIfPresent(String.self, forKey: .confidence) ?? "insufficient"
+        uncertainty = try c.decodeIfPresent(String.self, forKey: .uncertainty) ?? ""
+        suggestedQuestions = try c.decodeIfPresent([String].self, forKey: .suggestedQuestions) ?? []
+        feedback = try c.decodeIfPresent(String.self, forKey: .feedback)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
 }
 
 enum CortexError: LocalizedError {

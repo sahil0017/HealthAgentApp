@@ -19,6 +19,7 @@ var expectedRoutes = []string{
 	"DELETE /goals/{goalID}",
 	"DELETE /history/{entryID}",
 	"DELETE /profiles/{profileID}",
+	"DELETE /profiles/{profileID}/questions/{questionID}",
 	"GET /consents/{consentID}",
 	"GET /documents/{documentID}",
 	"GET /documents/{documentID}/download",
@@ -46,6 +47,8 @@ var expectedRoutes = []string{
 	"GET /profiles/{profileID}/history",
 	"GET /profiles/{profileID}/observations",
 	"GET /profiles/{profileID}/overview",
+	"GET /profiles/{profileID}/questions",
+	"GET /profiles/{profileID}/questions/{questionID}",
 	"GET /profiles/{profileID}/timeline",
 	"GET /users/me",
 	"PATCH /documents/{documentID}",
@@ -76,6 +79,7 @@ var expectedRoutes = []string{
 	"POST /profiles/{profileID}/observations",
 	"POST /profiles/{profileID}/questions",
 	"PUT /profiles/{profileID}/consents/{purpose}",
+	"PUT /profiles/{profileID}/questions/{questionID}/feedback",
 }
 
 func TestRouteTableMatchesTheAPIContract(t *testing.T) {

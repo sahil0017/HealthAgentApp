@@ -145,6 +145,29 @@ def main():
         fail(f"extracted text is missing the PDF content: {body}")
     print("ok   extracted text matches the PDF")
 
+    # Module 07: cited Q&A through the api -> cortex-ai, with history, feedback and emergency triage.
+    status, _ = call("PUT", f"/api/v1/profiles/{profile}/consents/ai_processing", {"granted": True})
+    expect("consent ai_processing is granted", status, 200)
+    status, body = call("POST", f"/api/v1/profiles/{profile}/questions", {"question": "How is my health?"})
+    expect("a health question is answered by cortex-ai", status, 200)
+    answer = data(body)
+    for key in ("id", "answer", "confidence", "uncertainty", "suggested_questions", "limitations"):
+        if key not in answer:
+            fail(f"answer is missing {key}: {answer}")
+    expect("an answer without approved records admits it has little to go on", answer["confidence"], "insufficient")
+    question_id = answer["id"]
+
+    status, body = call("POST", f"/api/v1/profiles/{profile}/questions", {"question": "I have crushing chest pain"})
+    expect("an emergency question is answered", status, 200)
+    expect("an emergency question is flagged urgent", data(body)["urgent"], True)
+
+    status, body = call("GET", f"/api/v1/profiles/{profile}/questions")
+    expect("question history lists both questions", (status, len(data(body)["questions"])), (200, 2))
+    status, body = call("PUT", f"/api/v1/profiles/{profile}/questions/{question_id}/feedback", {"rating": "helpful"})
+    expect("feedback is saved", (status, data(body)["feedback"]), (200, "helpful"))
+    expect("a question can be deleted", call("DELETE", f"/api/v1/profiles/{profile}/questions/{question_id}")[0], 204)
+    expect("a deleted question is gone", call("GET", f"/api/v1/profiles/{profile}/questions/{question_id}")[0], 404)
+
     expect("an unknown session cannot read the profile", call("GET", f"/api/v1/profiles/{profile}", token="not-a-session")[0], 401)
     expect("profile export works", call("GET", f"/api/v1/profiles/{profile}/export")[0], 200)
     expect("profile is deleted with its data", call("DELETE", f"/api/v1/profiles/{profile}", {"confirm": "DELETE"})[0] in (200, 204), True)

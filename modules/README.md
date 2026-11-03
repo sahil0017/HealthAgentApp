@@ -13,7 +13,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started
 | 04 | Multimodal Body Observation | ⬜ | [04-body-observation.md](04-body-observation.md) |
 | 05 | Connected Diagnostics | ⬜ | [05-connected-diagnostics.md](05-connected-diagnostics.md) |
 | 06 | Medical Imaging | ⬜ | [06-medical-imaging.md](06-medical-imaging.md) |
-| 07 | CORTEX Personal Health AI | 🟡 | [07-health-ai.md](07-health-ai.md) |
+| 07 | CORTEX Personal Health AI | 🟢 | [07-health-ai.md](07-health-ai.md) |
 | 08 | Agentic Health Research | 🟡 | [08-health-research.md](08-health-research.md) |
 | 09 | Lifestyle & Symptom | ⬜ | [09-lifestyle-symptoms.md](09-lifestyle-symptoms.md) |
 | 10 | Environmental Health | ⬜ | [10-environmental.md](10-environmental.md) |
@@ -39,7 +39,7 @@ backend/internal/
 | `modules/commandcentre` | 01 |
 | `modules/biomarkers` | 03 |
 | `modules/vault` | 02 |
-| `modules/healthai` | 07 (ask, MCP, records) |
+| `modules/healthai` | 07 (ask, history, feedback, MCP, records) |
 | `modules/research` | 08 (knowledge base, research queue) |
 | `modules/governance` | 12 (consent, export, delete, access history) |
 
@@ -54,4 +54,4 @@ Rules, enforced by `internal/archtest`:
 Testing: `cd backend && TEST_DATABASE_URL=... go test -p 1 ./...`. Keep `-p 1`: packages share one scratch DB.
 Without `TEST_DATABASE_URL`, database tests skip.
 
-Status for modules 01, 03, 07, 08 and 12 was taken from the route list and file names, and not re-audited line by line.
+Status for modules 08 and 12 was taken from the route list and file names, and not re-audited line by line.
