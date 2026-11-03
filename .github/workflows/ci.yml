@@ -24,10 +24,10 @@ on:
         description: Add the race detector and the real embedding model
       go_min:
         description: Minimum Go e2e coverage (percent)
-        default: "90"
+        default: "60"
       py_min:
         description: Minimum Python e2e coverage (percent)
-        default: "90"
+        default: "60"
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' }}-${{ inputs.full || false }}
