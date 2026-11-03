@@ -115,6 +115,8 @@ For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from
 - [`infra/`](./infra/) — local database initialization.
 - [`architecture/full-architecture.md`](./architecture/full-architecture.md) — system architecture, boundaries, and roadmap.
 - [`architecture/milestones.md`](./architecture/milestones.md) — end-to-end milestone checklist and current status.
+- [`architecture/requirements.md`](./architecture/requirements.md) — the 12 product areas, with honest status.
+- [`architecture/technical-architecture.md`](./architecture/technical-architecture.md) — technical architecture, UX system and tech stack.
 - [`architecture/decisions.md`](./architecture/decisions.md) — implementation boundary and design decisions.
 
 Python tests: `cd cortex-ai && python -m pytest`

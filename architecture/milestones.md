@@ -115,6 +115,53 @@ Principles: never hide uncertainty; one primary action per screen; every claim i
 - [ ] DICOM/MONAI/OHIF design review
 - [ ] Consultation preparation and optional follow-up integrations with user confirmation
 
+## Feature-map coverage
+
+Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
+
+| Area | Milestones | Gap |
+|---|---|---|
+| 01 Command centre | M9, M9a | **New: M13** |
+| 02 Vault | M2, M7 | OCR, classification (M7) |
+| 03 Biomarkers | M4, M7 | ranges, trends (M7) |
+| 04 Body observation | M10 | needs own review |
+| 05 Connected diagnostics | M10 | HealthKit |
+| 06 Imaging | M12 | later |
+| 07 Personal AI | M5, M8 | summaries, comparison |
+| 08 Research | M4, M8 | investigations, evidence grading |
+| 09 Lifestyle | none | **New: M14** |
+| 10 Environmental | none | **New: M15** |
+| 11 Care navigation | M12 | **New: M16** |
+| 12 Governance | M1, M6 | **New: M17** |
+
+## M13. Command centre
+- [ ] Timeline read model across documents, labs, devices and visits
+- [ ] Today tab: changes, attention items, next follow-up
+- [ ] Goals and progress; data-completeness checks
+- [ ] Notifications (APNs) and reminders
+
+## M14. Lifestyle and symptoms
+- [ ] Symptom journal, nutrition, sleep, exercise, stress
+- [ ] Medication and supplement records
+- [ ] Correlation view, labelled as correlation not cause
+
+## M15. Environmental context
+- [ ] Coarse-location consent
+- [ ] AQI and weather ingestion and history
+- [ ] Optional overlays and alerts
+
+## M16. Care navigation
+- [ ] Visit preparation and question lists
+- [ ] Appointments and follow-up tracking
+- [ ] Shareable summaries with expiry
+- [ ] Caregiver roles and permissions
+
+## M17. Data governance
+- [ ] Access-history screen
+- [ ] Data export
+- [ ] Deletion covering objects and embeddings
+- [ ] Retention controls and AI/agent activity history
+
 ## Suggested order
 
 1. Verify M4 on the rebuilt stack, then commit any fixes.
