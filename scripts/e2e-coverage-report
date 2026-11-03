@@ -16,12 +16,15 @@ grep -v -E "internal/archtest/|_test\.go" .cover/out/go.cov > .cover/out/go.filt
 go_total=$(awk '/^total:/ {gsub("%","",$3); print $3}' .cover/out/go-func.txt)
 
 python3 -m pip install --quiet coverage
+RC=e2e/coveragerc
+# The real models are off in the fast profile, so their modules are excluded there and measured in the full run.
+if [ "${CORTEX_INFERENCE:-0}" != "1" ]; then RC=e2e/coveragerc.fast; fi
 rm -f .coverage
 # coverage combine only reads files named .coverage.*; the service writes a plain .coverage
 if [ -f .cover/py/.coverage ]; then mv .cover/py/.coverage .cover/py/.coverage.service; fi
-python3 -m coverage combine --rcfile=e2e/coveragerc .cover/py
-python3 -m coverage report --rcfile=e2e/coveragerc > .cover/out/py-report.txt || true
-python3 -m coverage xml --rcfile=e2e/coveragerc -o .cover/out/py.xml >/dev/null || true
+python3 -m coverage combine --rcfile="$RC" .cover/py
+python3 -m coverage report --rcfile="$RC" > .cover/out/py-report.txt || true
+python3 -m coverage xml --rcfile="$RC" -o .cover/out/py.xml >/dev/null || true
 py_total=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' .cover/out/py-report.txt)
 
 {

@@ -92,3 +92,30 @@ def test_access_history_and_export(api, profile):
     assert "observations" in export and "consents" in export
     assert "object_key" not in str(export)
     assert api.get(f"/profiles/{uuid.uuid4()}/export").status_code == 404
+
+
+def test_session_management_list_refresh_revoke_and_logout_everywhere(api):
+    user = "e2e-sessions-" + uuid.uuid4().hex[:6]
+    first, second = sign_in(user), sign_in(user)
+    listed = api.ok(api.get("/auth/sessions", token=first), 200)
+    assert len(listed) == 2 and sum(1 for s in listed if s["current"]) == 1
+
+    refreshed = api.ok(api.post("/auth/refresh", token=first), 200)
+    assert refreshed["access_token"] != first
+    assert api.get("/profiles", token=first).status_code == 401
+    assert api.post("/auth/refresh", token=first).status_code == 401
+    token = refreshed["access_token"]
+
+    assert api.delete("/auth/sessions/not-a-uuid", token=token).status_code == 400
+    assert api.delete(f"/auth/sessions/{uuid.uuid4()}", token=token).status_code == 404
+    other = next(s for s in api.ok(api.get("/auth/sessions", token=token), 200) if not s["current"])
+    assert api.ok(api.delete(f"/auth/sessions/{other['id']}", token=token), 200)["revoked"] is True
+    assert api.get("/profiles", token=second).status_code == 401
+
+    assert api.ok(api.post("/auth/logout-all", token=token), 200)["revoked"] >= 1
+    assert api.get("/profiles", token=token).status_code == 401
+
+
+def test_auth_config_is_public(api):
+    response = api.call("GET", "/api/v1/auth/config", token="")
+    assert response.status_code == 200 and "providers" in response.json()["data"]

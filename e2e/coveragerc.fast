@@ -1,0 +1,26 @@
+# Fast pull-request profile: the local LLM, the real embedding/reranker models and the offline corpus retriever are
+# switched off, so HTTP traffic cannot reach them. They are measured in the nightly full run (e2e/coveragerc) and by
+# cortex-ai's own unit tests; they are listed here explicitly rather than lowering the threshold.
+[run]
+branch = True
+source = app
+relative_files = False
+omit =
+    */app/evaluation/*
+    */app/inference/*
+    */app/rag/embeddings.py
+    */app/rag/rerank.py
+    */app/rag/corpus.py
+    */app/rag/chunking.py
+    */app/rag/index.py
+    */app/rag/retriever.py
+    */app/safety/policy.py
+
+[paths]
+source =
+    cortex-ai/app
+    /app/app
+
+[report]
+show_missing = True
+skip_empty = True

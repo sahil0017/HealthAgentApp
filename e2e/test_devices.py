@@ -48,3 +48,120 @@ def test_device_lifecycle_sync_and_summary(api, profile):
 
     api.ok(api.delete(f"/profiles/{profile}/devices/{device['id']}"), 200)
     assert api.ok(api.get(f"/profiles/{profile}/device-readings/summary"), 200)["summaries"] == []
+
+
+def connect(api, profile, external="ah"):
+    api.ok(api.put(f"/profiles/{profile}/consents/health_data_integration", {"granted": True}), 200)
+    return api.ok(api.post(f"/profiles/{profile}/devices", {"kind": "smartwatch", "source": "healthkit", "name": "Watch", "external_id": external, "manufacturer": "Acme", "model": "W1"}), 201)
+
+
+def test_device_validation(api, profile):
+    api.ok(api.put(f"/profiles/{profile}/consents/health_data_integration", {"granted": True}), 200)
+    base = f"/profiles/{profile}/devices"
+    good = {"kind": "scale", "source": "manual", "name": "Scale"}
+    for bad in (
+        {**good, "kind": "toaster"},
+        {**good, "source": "carrier-pigeon"},
+        {**good, "name": "  "},
+        {**good, "name": "x" * 121},
+        {**good, "manufacturer": "m" * 121},
+        {**good, "unknown_field": 1},
+    ):
+        assert api.post(base, bad).status_code == 400, bad
+    assert api.post(base, good).status_code == 201  # no external id: always a new device
+    assert api.post(base, good).status_code == 201
+    assert len(api.ok(api.get(base), 200)) == 2
+
+
+def test_device_update_and_ownership_errors(api, profile):
+    device = connect(api, profile)
+    path = f"/profiles/{profile}/devices/{device['id']}"
+    assert api.patch(path, {}).status_code == 400
+    assert api.patch(path, {"name": " "}).status_code == 400
+    assert api.patch(path, {"status": "asleep"}).status_code == 400
+    renamed = api.ok(api.patch(path, {"name": "Renamed"}), 200)
+    assert renamed["name"] == "Renamed"
+    api.ok(api.patch(path, {"status": "disconnected"}), 200)
+    again = api.ok(api.post(f"/profiles/{profile}/devices", {"kind": "smartwatch", "source": "healthkit", "name": "Watch 2", "external_id": "ah"}), 200)
+    assert again["status"] == "connected" and again["id"] == device["id"]
+
+    missing = f"/profiles/{profile}/devices/00000000-0000-0000-0000-000000000000"
+    assert api.patch(missing, {"name": "x"}).status_code == 404
+    assert api.delete(missing).status_code == 404
+    assert api.get(f"/profiles/{profile}/devices/not-a-uuid/syncs").status_code == 404
+    assert api.post(f"/profiles/{profile}/devices/not-a-uuid/readings", {"readings": readings(1)}).status_code == 404
+
+
+def test_sync_validation_history_and_readings(api, profile):
+    device = connect(api, profile)
+    path = f"/profiles/{profile}/devices/{device['id']}/readings"
+    assert api.post(path, {"readings": []}).status_code == 400
+    assert api.post(path, {"readings": readings(1) * 501}).status_code == 400
+    mixed = [
+        {"metric": "nonsense", "value": 1, "unit": "bpm", "measured_at": stamp(1)},
+        {"metric": "heart_rate", "unit": "bpm", "measured_at": stamp(1)},
+        {"metric": "heart_rate", "value": 70, "unit": "furlongs", "measured_at": stamp(1)},
+        {"metric": "heart_rate", "value": 70, "unit": "bpm", "measured_at": "yesterday"},
+        {"metric": "heart_rate", "value": 70, "unit": "bpm", "measured_at": "2999-01-01T00:00:00Z"},
+        {"metric": "heart_rate", "value": 70, "unit": "bpm", "measured_at": "1980-01-01T00:00:00Z"},
+        {"metric": "heart_rate", "value": 70, "unit": "bpm", "measured_at": stamp(1), "utc_offset_minutes": 5000},
+        {"metric": "body_temperature", "value": 98.6, "unit": "°F", "measured_at": stamp(2), "utc_offset_minutes": 330},
+        {"metric": "body_weight", "value": 150, "unit": "lb", "measured_at": stamp(2)},
+        {"metric": "blood_glucose", "value": 5.5, "unit": "mmol/L", "measured_at": stamp(2)},
+        {"metric": "steps", "value": 4000, "unit": "count", "measured_at": stamp(3), "external_id": "step-a"},
+        {"metric": "steps", "value": 3000, "unit": "count", "measured_at": stamp(3), "external_id": "step-b"},
+        {"metric": "sleep_duration", "value": 450, "unit": "min", "measured_at": stamp(3)},
+    ]
+    result = api.ok(api.post(path, {"readings": mixed}), 200)
+    assert (result["accepted"], result["rejected"]) == (6, 7)
+    assert {e["index"] for e in result["errors"]} == {0, 1, 2, 3, 4, 5, 6}
+
+    syncs = api.ok(api.get(f"/profiles/{profile}/devices/{device['id']}/syncs"), 200)
+    assert syncs[0]["accepted"] == 6
+    assert api.get(f"/profiles/{profile}/devices/{device['id']}/syncs?limit=0").status_code == 400
+
+    base = f"/profiles/{profile}/device-readings"
+    everything = api.ok(api.get(base), 200)
+    assert len(everything) == 6 and all(r["measurement_kind"] == "device" for r in everything)
+    temp = api.ok(api.get(base + "?metric=body_temperature"), 200)
+    assert temp[0]["unit"] == "°C" and abs(temp[0]["value"] - 37.0) < 0.1
+    assert len(api.ok(api.get(base + f"?from={ago(10)}&to={ago(0)}&limit=2&offset=1"), 200)) == 2
+    assert api.get(base + "?metric=nonsense").status_code == 400
+    assert api.get(base + "?from=nope").status_code == 400
+    assert api.get(base + "?limit=-1").status_code == 400
+
+    steps = api.ok(api.get(base + "/steps/daily?days=30"), 200)
+    assert steps["cumulative"] is True and steps["days"][0]["sum"] == 7000
+    assert api.get(base + "/steps/daily?days=0").status_code == 400
+    assert api.get(base + "/nonsense/daily").status_code == 400
+    assert api.get(base + "/nonsense/lab-comparison").status_code == 400
+
+    glucose = api.ok(api.get(base + "/blood_glucose/lab-comparison?window_days=7"), 200)
+    assert glucose["pairs"] == [] and "not interchangeable" in glucose["note"]
+    assert api.get(base + "/blood_glucose/lab-comparison?window_days=99").status_code == 400
+
+    summary = {s["metric"]: s for s in api.ok(api.get(base + "/summary"), 200)["summaries"]}
+    assert {"steps", "body_weight", "blood_glucose", "body_temperature", "sleep_duration"} <= set(summary)
+    assert abs(summary["body_weight"]["latest_value"] - 68.04) < 0.1
+    assert abs(summary["sleep_duration"]["latest_value"] - 7.5) < 0.01
+
+
+def test_summary_trend_and_typical_range(api, profile):
+    device = connect(api, profile, "trend")
+    path = f"/profiles/{profile}/devices/{device['id']}/readings"
+    batch = []
+    for day in range(0, 60):
+        batch.append({"metric": "resting_heart_rate", "value": 75 if day < 30 else 55, "unit": "bpm", "measured_at": stamp(day), "external_id": f"t{day}"})
+    batch += [{"metric": "oxygen_saturation", "value": 90, "unit": "%", "measured_at": stamp(d), "external_id": f"o{d}"} for d in range(5)]
+    api.ok(api.post(path, {"readings": batch}), 200)
+    summary = {s["metric"]: s for s in api.ok(api.get(f"/profiles/{profile}/device-readings/summary"), 200)["summaries"]}
+    assert summary["resting_heart_rate"]["trend"] == "rising"
+    assert summary["oxygen_saturation"]["outside_typical_range"] is True
+
+
+def test_device_data_is_private_between_profiles(api, profile, bare_profile):
+    device = connect(api, profile, "private")
+    assert api.get(f"/profiles/{bare_profile}/devices/{device['id']}/syncs").status_code == 404
+    assert api.post(f"/profiles/{bare_profile}/devices/{device['id']}/readings", {"readings": readings(1)}).status_code == 404
+    assert api.get(f"/profiles/{bare_profile}/device-readings").status_code == 200
+    assert api.ok(api.get(f"/profiles/{bare_profile}/device-readings"), 200) == []
