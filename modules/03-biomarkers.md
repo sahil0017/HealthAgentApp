@@ -4,7 +4,7 @@
 - Biomarker catalog, history, units, reference ranges, trends, missing data, verification
 
 ## Code
-- backend/internal/api/observations.go, insights.go, knowledge.go
+- backend/internal/modules/biomarkers/, backend/internal/domain/biomarker/, backend/internal/repo/observations/, backend/internal/modules/research/knowledge.go
 - backend/internal/knowledge/
 
 ## Done

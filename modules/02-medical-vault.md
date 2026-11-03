@@ -1,7 +1,7 @@
 # 02 Medical Intelligence Vault — 🟢 feature-complete (pending build verification)
 
 ## Done
-- [x] Upload (direct and signed upload intents), download, list, delete — `backend/internal/api/documents.go`, `document_lifecycle.go`
+- [x] Upload (direct and signed upload intents), download, list, delete — `backend/internal/modules/vault/documents.go`, `document_lifecycle.go`
 - [x] Supported types: PDF, JPEG, PNG
 - [x] Document types: lab, prescription, discharge summary, radiology, certificate, vaccination, other
 - [x] PDF text extraction and biomarker candidates — `backend/internal/processing/pdf.go`
@@ -26,5 +26,5 @@
 - [ ] Classification is keyword-based by design; OCR is English unless `CORTEX_OCR_LANGS` + language packs are set
 
 ## Tests
-`go test ./internal/processing/ ./internal/worker/ ./internal/api/ -run 'Classify|OCR|Image|Persist|DocumentSearch'`
+`go test ./internal/processing/ ./internal/worker/ ./internal/api/ ./internal/modules/vault/ -run 'Classify|OCR|Image|Persist|DocumentSearch'`
 DB-backed tests need `TEST_DATABASE_URL` pointing at a scratch database.

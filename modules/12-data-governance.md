@@ -4,7 +4,7 @@
 - Consent, access history, export, deletion, AI permissions, provenance, retention
 
 ## Code
-- backend/internal/api/consents.go, governance.go, middleware.go
+- backend/internal/modules/governance/, backend/internal/platform/core, backend/internal/platform/httpx/middleware.go
 
 ## Done
 - [x] Consents, access history, export, delete with confirmation

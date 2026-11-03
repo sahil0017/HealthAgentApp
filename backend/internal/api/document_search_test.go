@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"cortex/backend/internal/modules/vault"
+	"cortex/backend/internal/platform/embedding"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +25,7 @@ func fakeEmbedder(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			vectors := make([][]float32, len(in.Texts))
 			for i, text := range in.Texts {
-				v := make([]float32, embeddingDimensions)
+				v := make([]float32, embedding.Dimensions)
 				lower := strings.ToLower(text)
 				if strings.Contains(lower, "ferritin") || strings.Contains(lower, "iron") || strings.Contains(lower, "anemia") {
 					v[0] = 1
@@ -39,19 +41,17 @@ func fakeEmbedder(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("AI_SERVICE_URL", srv.URL)
-	modelMu.Lock()
-	modelName = ""
-	modelMu.Unlock()
+	embedding.ResetModelCache()
 }
 
-func searchHits(t *testing.T, h http.Handler, url string) []documentSearchHit {
+func searchHits(t *testing.T, h http.Handler, url string) []vault.DocumentSearchHit {
 	t.Helper()
 	w := call(h, "GET", url, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("%s: status %d body=%s", url, w.Code, w.Body)
 	}
 	var env struct {
-		Data []documentSearchHit `json:"data"`
+		Data []vault.DocumentSearchHit `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatal(err)
@@ -61,10 +61,10 @@ func searchHits(t *testing.T, h http.Handler, url string) []documentSearchHit {
 
 func TestDocumentSearchFindsMeaningNotJustWords(t *testing.T) {
 	fakeEmbedder(t)
-	a, h := governanceAPI(t, "00000000-0000-0000-0000-0000000000a2", nil)
+	a, h := newAPI(t, "00000000-0000-0000-0000-0000000000a2", nil)
 	profileID := seedProfile(t, a, "00000000-0000-0000-0000-0000000000a2", "k/sem-1")
 	ctx := context.Background()
-	if _, err := a.db.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,'Ferritin 45 ng/mL low iron stores' FROM medical_documents WHERE profile_id=$1 LIMIT 1`, profileID); err != nil {
+	if _, err := a.DB.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,'Ferritin 45 ng/mL low iron stores' FROM medical_documents WHERE profile_id=$1 LIMIT 1`, profileID); err != nil {
 		t.Fatal(err)
 	}
 	hits := searchHits(t, h, "/profiles/"+profileID+"/documents/search?q=anemia")
@@ -78,7 +78,7 @@ func TestDocumentSearchFindsMeaningNotJustWords(t *testing.T) {
 		t.Fatalf("chunks = %d, want 1", n)
 	}
 	// Changed page text is re-embedded rather than served stale.
-	if _, err := a.db.Pool.Exec(ctx, `UPDATE document_extraction_pages SET extracted_text='Grocery list eggs milk' WHERE document_id IN (SELECT id FROM medical_documents WHERE profile_id=$1)`, profileID); err != nil {
+	if _, err := a.DB.Pool.Exec(ctx, `UPDATE document_extraction_pages SET extracted_text='Grocery list eggs milk' WHERE document_id IN (SELECT id FROM medical_documents WHERE profile_id=$1)`, profileID); err != nil {
 		t.Fatal(err)
 	}
 	if hits := searchHits(t, h, "/profiles/"+profileID+"/documents/search?q=anemia"); len(hits) != 1 || strings.Contains(hits[0].Snippet, "Ferritin") {
@@ -88,7 +88,7 @@ func TestDocumentSearchFindsMeaningNotJustWords(t *testing.T) {
 		t.Fatal("page was not re-indexed")
 	}
 	// Derived embeddings must disappear with the document and the profile.
-	if _, err := a.db.Pool.Exec(ctx, `DELETE FROM medical_documents WHERE profile_id=$1`, profileID); err != nil {
+	if _, err := a.DB.Pool.Exec(ctx, `DELETE FROM medical_documents WHERE profile_id=$1`, profileID); err != nil {
 		t.Fatal(err)
 	}
 	if n := count(t, a, `SELECT count(*) FROM document_page_chunks WHERE profile_id=$1`, profileID); n != 0 {
@@ -98,13 +98,13 @@ func TestDocumentSearchFindsMeaningNotJustWords(t *testing.T) {
 
 func TestDocumentSearchWithoutAIConsentUsesKeywordOnly(t *testing.T) {
 	fakeEmbedder(t)
-	a, h := governanceAPI(t, "00000000-0000-0000-0000-0000000000a3", nil)
+	a, h := newAPI(t, "00000000-0000-0000-0000-0000000000a3", nil)
 	profileID := seedProfile(t, a, "00000000-0000-0000-0000-0000000000a3", "k/nc-1")
 	ctx := context.Background()
-	if _, err := a.db.Pool.Exec(ctx, `UPDATE consents SET granted=false WHERE profile_id=$1`, profileID); err != nil {
+	if _, err := a.DB.Pool.Exec(ctx, `UPDATE consents SET granted=false WHERE profile_id=$1`, profileID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.db.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,'Ferritin 45 ng/mL' FROM medical_documents WHERE profile_id=$1 LIMIT 1`, profileID); err != nil {
+	if _, err := a.DB.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,'Ferritin 45 ng/mL' FROM medical_documents WHERE profile_id=$1 LIMIT 1`, profileID); err != nil {
 		t.Fatal(err)
 	}
 	hits := searchHits(t, h, "/profiles/"+profileID+"/documents/search?q=ferritin")
@@ -116,30 +116,14 @@ func TestDocumentSearchWithoutAIConsentUsesKeywordOnly(t *testing.T) {
 	}
 }
 
-func TestChunkTextRespectsLimits(t *testing.T) {
-	if got := chunkText("  "); len(got) != 0 {
-		t.Fatalf("blank text gave %d chunks", len(got))
-	}
-	long := strings.Repeat("word ", 5000)
-	got := chunkText(long)
-	if len(got) != maxChunksPerPage {
-		t.Fatalf("chunks = %d, want cap %d", len(got), maxChunksPerPage)
-	}
-	for _, c := range got {
-		if len(c) > pageChunkChars {
-			t.Fatalf("chunk of %d chars exceeds %d", len(c), pageChunkChars)
-		}
-	}
-}
-
 func TestDocumentSearchIsScopedCitedAndAudited(t *testing.T) {
 	fakeEmbedder(t)
-	a, h := governanceAPI(t, "00000000-0000-0000-0000-0000000000a1", nil)
+	a, h := newAPI(t, "00000000-0000-0000-0000-0000000000a1", nil)
 	profileID := seedProfile(t, a, "00000000-0000-0000-0000-0000000000a1", "k/search-1")
 	other := seedProfile(t, a, "00000000-0000-0000-0000-0000000000a1", "k/search-2")
 	ctx := context.Background()
 	for _, p := range []struct{ profile, text string }{{profileID, "Ferritin 45 ng/mL low iron stores"}, {other, "Ferritin 999 other profile"}} {
-		if _, err := a.db.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,$2 FROM medical_documents WHERE profile_id=$1 LIMIT 1`, p.profile, p.text); err != nil {
+		if _, err := a.DB.Pool.Exec(ctx, `INSERT INTO document_extraction_pages(document_id,page_number,extracted_text) SELECT id,1,$2 FROM medical_documents WHERE profile_id=$1 LIMIT 1`, p.profile, p.text); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -148,7 +132,7 @@ func TestDocumentSearchIsScopedCitedAndAudited(t *testing.T) {
 		t.Fatalf("status = %d body=%s", w.Code, w.Body)
 	}
 	var env struct {
-		Data []documentSearchHit `json:"data"`
+		Data []vault.DocumentSearchHit `json:"data"`
 	}
 	err := json.Unmarshal(w.Body.Bytes(), &env)
 	hits := env.Data

@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"cortex/backend/internal/store"
-	"github.com/go-chi/chi/v5"
+	"cortex/backend/internal/domain/health"
+	"cortex/backend/internal/modules/commandcentre"
+	"cortex/backend/internal/modules/identity"
+	"cortex/backend/internal/platform/core"
 )
 
 type ccEnv struct {
-	a       *API
+	a       *core.Core
 	h       http.Handler
 	profile string
 	owner   string
@@ -24,51 +25,9 @@ type ccEnv struct {
 
 func commandCentre(t *testing.T, ownerID string, consents ...string) *ccEnv {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
+	a, r := newAPI(t, ownerID, nil)
 	ctx := context.Background()
-	db, err := store.Connect(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(db.Close)
-	a := &API{db: db, remover: &fakeRemover{}}
-	r := chi.NewRouter()
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			who := ownerID
-			if v := req.Header.Get("X-Test-Owner"); v != "" {
-				who = v
-			}
-			next.ServeHTTP(w, req.WithContext(context.WithValue(req.Context(), ownerKey{}, who)))
-		})
-	})
-	r.Get("/profiles/{profileID}", a.getProfile)
-	r.Get("/profiles/{profileID}/biomarkers/summary", a.biomarkerSummaries)
-	r.Get("/profiles/{profileID}/biomarkers/{code}/trend", a.biomarkerTrend)
-	r.Patch("/profiles/{profileID}", a.updateProfile)
-	r.Get("/profiles/{profileID}/overview", a.overview)
-	r.Get("/profiles/{profileID}/timeline", a.timeline)
-	r.Get("/profiles/{profileID}/history", a.listHistory)
-	r.Post("/profiles/{profileID}/history", a.createHistory)
-	r.Patch("/history/{entryID}", a.updateHistory)
-	r.Delete("/history/{entryID}", a.deleteHistory)
-	r.Get("/profiles/{profileID}/goals", a.listGoals)
-	r.Post("/profiles/{profileID}/goals", a.createGoal)
-	r.Patch("/goals/{goalID}", a.updateGoal)
-	r.Delete("/goals/{goalID}", a.deleteGoal)
-	r.Get("/profiles/{profileID}/follow-ups", a.listFollowUps)
-	r.Post("/profiles/{profileID}/follow-ups", a.createFollowUp)
-	r.Patch("/follow-ups/{followUpID}", a.updateFollowUp)
-	r.Delete("/follow-ups/{followUpID}", a.deleteFollowUp)
-	r.Get("/profiles/{profileID}/export", a.exportProfile)
-	r.Delete("/profiles/{profileID}", a.deleteProfile)
-
+	db := a.DB
 	// The catalog is learned, not shipped, so tests bring their own entries.
 	for _, b := range []struct{ code, name, units string }{{"HBA1C", "Hemoglobin A1c", "{%,mmol/mol}"}, {"GLUCOSE", "Glucose", "{mg/dL,mmol/L}"}} {
 		if _, err := db.Pool.Exec(ctx, `INSERT INTO biomarker_catalog(code,display_name,supported_units) VALUES($1,$2,$3::text[]) ON CONFLICT(code) DO UPDATE SET display_name=EXCLUDED.display_name,supported_units=EXCLUDED.supported_units`, b.code, b.name, b.units); err != nil {
@@ -118,7 +77,7 @@ func data[T any](t *testing.T, envelope map[string]json.RawMessage) T {
 
 func (e *ccEnv) observe(t *testing.T, code, name string, value float64, unit, on, status string) {
 	t.Helper()
-	_, err := e.a.db.Pool.Exec(context.Background(), `INSERT INTO observations(profile_id,owner_id,biomarker_code,name,value,unit,observed_at,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8)`, e.profile, e.owner, code, name, value, unit, on, status)
+	_, err := e.a.DB.Pool.Exec(context.Background(), `INSERT INTO observations(profile_id,owner_id,biomarker_code,name,value,unit,observed_at,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7::date,$8)`, e.profile, e.owner, code, name, value, unit, on, status)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,12 +123,12 @@ func TestHistoryLifecycleValidationAndOwnership(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("create: %d", code)
 	}
-	entry := data[historyEntry](t, env)
+	entry := data[commandcentre.HistoryEntry](t, env)
 	if entry.Title != "Asthma" || entry.Status != "active" || *entry.StartedOn != "2015-04-01" {
 		t.Fatalf("unexpected entry %+v", entry)
 	}
 	code, env = e.do("PATCH", "/history/"+entry.ID, `{"status":"resolved","ended_on":"2020-01-01"}`)
-	if code != 200 || data[historyEntry](t, env).Status != "resolved" {
+	if code != 200 || data[commandcentre.HistoryEntry](t, env).Status != "resolved" {
 		t.Fatalf("update: %d", code)
 	}
 	if code, _ := e.do("PATCH", "/history/"+entry.ID, `{"ended_on":"2001-01-01"}`); code != 400 {
@@ -177,7 +136,7 @@ func TestHistoryLifecycleValidationAndOwnership(t *testing.T) {
 	}
 	e.do("POST", base, `{"kind":"allergy","title":"Penicillin"}`)
 	_, env = e.do("GET", base+"?kind=allergy", "")
-	if list := data[[]historyEntry](t, env); len(list) != 1 || list[0].Title != "Penicillin" {
+	if list := data[[]commandcentre.HistoryEntry](t, env); len(list) != 1 || list[0].Title != "Penicillin" {
 		t.Fatalf("kind filter: %+v", list)
 	}
 	if code, _ := e.doAs("intruder", "PATCH", "/history/"+entry.ID, `{"title":"hijack"}`); code != 404 {
@@ -203,21 +162,21 @@ func TestFollowUpCompletionAndReopening(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("create: %d", code)
 	}
-	item := data[followUp](t, env)
+	item := data[commandcentre.FollowUp](t, env)
 	if item.Status != "open" || item.CompletedAt != nil {
 		t.Fatalf("new follow-up: %+v", item)
 	}
 	_, env = e.do("PATCH", "/follow-ups/"+item.ID, `{"status":"done"}`)
-	done := data[followUp](t, env)
+	done := data[commandcentre.FollowUp](t, env)
 	if done.Status != "done" || done.CompletedAt == nil {
 		t.Fatalf("done should stamp completed_at: %+v", done)
 	}
 	_, env = e.do("PATCH", "/follow-ups/"+item.ID, `{"notes":"booked"}`)
-	if still := data[followUp](t, env); still.CompletedAt == nil || still.Notes != "booked" {
+	if still := data[commandcentre.FollowUp](t, env); still.CompletedAt == nil || still.Notes != "booked" {
 		t.Fatalf("editing notes must keep the completion time: %+v", still)
 	}
 	_, env = e.do("PATCH", "/follow-ups/"+item.ID, `{"status":"open"}`)
-	if reopened := data[followUp](t, env); reopened.CompletedAt != nil {
+	if reopened := data[commandcentre.FollowUp](t, env); reopened.CompletedAt != nil {
 		t.Fatalf("reopening must clear completed_at: %+v", reopened)
 	}
 	if code, _ := e.do("GET", "/profiles/"+e.profile+"/follow-ups?status=bogus", ""); code != 400 {
@@ -249,12 +208,12 @@ func TestGoalValidationAndProgressUsesOnlyVerifiedValues(t *testing.T) {
 	if code != 201 {
 		t.Fatalf("create: %d %s", code, env["error"])
 	}
-	g := data[goalView](t, env)
+	g := data[commandcentre.GoalView](t, env)
 	if g.Title != "Hemoglobin A1c" || g.Progress.Status != "above_target" || g.Progress.Trend != "improving" || *g.Progress.LatestValue != 6.1 {
 		t.Fatalf("progress must ignore the unverified 4.0: %+v", g)
 	}
 	_, env = e.do("PATCH", "/goals/"+g.ID, `{"target_max":6.5}`)
-	if g = data[goalView](t, env); g.Progress.Status != "on_target" {
+	if g = data[commandcentre.GoalView](t, env); g.Progress.Status != "on_target" {
 		t.Fatalf("raising the target should make 6.1 on target: %+v", g)
 	}
 	if code, _ := e.do("PATCH", "/goals/"+g.ID, `{"biomarker_code":"GLUCOSE"}`); code != 400 {
@@ -265,7 +224,7 @@ func TestGoalValidationAndProgressUsesOnlyVerifiedValues(t *testing.T) {
 	}
 	_, env = e.do("PATCH", "/goals/"+g.ID, `{"status":"archived"}`)
 	_, env = e.do("GET", base+"?status=active", "")
-	if list := data[[]goalView](t, env); len(list) != 0 {
+	if list := data[[]commandcentre.GoalView](t, env); len(list) != 0 {
 		t.Fatalf("archived goals are not active: %+v", list)
 	}
 	if code, _ := e.doAs("intruder", "DELETE", "/goals/"+g.ID, ""); code != 404 {
@@ -284,7 +243,7 @@ func TestOverviewBringsTheWholePictureTogether(t *testing.T) {
 	e.observe(t, "GLUCOSE", "Glucose", 90, "mg/dL", ago(60), "VERIFIED")
 	e.observe(t, "GLUCOSE", "Glucose", 110, "mg/dL", ago(2), "PENDING_REVIEW")
 	for _, status := range []string{"review_required", "failed", "approved"} {
-		if _, err := e.a.db.Pool.Exec(ctx, `INSERT INTO medical_documents(profile_id,owner_id,object_key,file_name,content_type,byte_size,status) VALUES($1,$2,$3,'r.pdf','application/pdf',1,$4)`, e.profile, e.owner, "cc/"+status+e.profile, status); err != nil {
+		if _, err := e.a.DB.Pool.Exec(ctx, `INSERT INTO medical_documents(profile_id,owner_id,object_key,file_name,content_type,byte_size,status) VALUES($1,$2,$3,'r.pdf','application/pdf',1,$4)`, e.profile, e.owner, "cc/"+status+e.profile, status); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -299,7 +258,7 @@ func TestOverviewBringsTheWholePictureTogether(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("overview: %d %s", code, env["error"])
 	}
-	o := data[overview](t, env)
+	o := data[commandcentre.Overview](t, env)
 	if o.Profile.DisplayName != "Ada" || o.Summary.Documents != 3 || o.Summary.Observations != 7 || o.Summary.BiomarkersTraced != 2 || o.Summary.OpenFollowUps != 4 || o.Summary.ActiveGoals != 1 {
 		t.Fatalf("summary: %+v", o.Summary)
 	}
@@ -324,7 +283,7 @@ func TestOverviewBringsTheWholePictureTogether(t *testing.T) {
 	if o.NextFollowUp == nil || o.NextFollowUp.Title != "Soon test" {
 		t.Fatalf("next follow-up should skip overdue ones: %+v", o.NextFollowUp)
 	}
-	var glucose *changeSummary
+	var glucose *health.ChangeSummary
 	for i := range o.RecentChanges {
 		if o.RecentChanges[i].BiomarkerCode == "GLUCOSE" {
 			glucose = &o.RecentChanges[i]
@@ -347,7 +306,7 @@ func TestOverviewBringsTheWholePictureTogether(t *testing.T) {
 func TestOverviewForAnEmptyProfileAsksForPermissionsFirst(t *testing.T) {
 	e := commandCentre(t, "cc-empty")
 	_, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
-	o := data[overview](t, env)
+	o := data[commandcentre.Overview](t, env)
 	if len(o.Attention) != 1 || o.Attention[0].Kind != "consent" {
 		t.Fatalf("attention: %+v", o.Attention)
 	}
@@ -355,10 +314,10 @@ func TestOverviewForAnEmptyProfileAsksForPermissionsFirst(t *testing.T) {
 		t.Fatal("lists must be empty arrays, not null, so clients can decode them")
 	}
 	if o.Completeness.Score != 0 || o.NextFollowUp != nil {
-		t.Fatalf("empty overview: %+v", o)
+		t.Fatalf("empty commandcentre.Overview: %+v", o)
 	}
 	if code, _ := e.doAs("intruder", "GET", "/profiles/"+e.profile+"/overview", ""); code != 404 {
-		t.Fatalf("another owner must not read the overview, got %d", code)
+		t.Fatalf("another owner must not read the commandcentre.Overview, got %d", code)
 	}
 }
 
@@ -369,7 +328,7 @@ func TestTimelineMixesSourcesNewestFirstWithFiltersAndPaging(t *testing.T) {
 	e.do("POST", "/profiles/"+e.profile+"/follow-ups", fmt.Sprintf(`{"kind":"appointment","title":"Check-up","due_on":%q}`, ahead(5)))
 
 	_, env := e.do("GET", "/profiles/"+e.profile+"/timeline", "")
-	items := data[[]timelineItem](t, env)
+	items := data[[]commandcentre.TimelineItem](t, env)
 	if len(items) != 3 || items[0].Kind != "follow_up" || items[1].Kind != "observation" || items[2].Kind != "history" {
 		t.Fatalf("order: %+v", items)
 	}
@@ -377,11 +336,11 @@ func TestTimelineMixesSourcesNewestFirstWithFiltersAndPaging(t *testing.T) {
 		t.Fatalf("observation title: %q", items[1].Title)
 	}
 	_, env = e.do("GET", "/profiles/"+e.profile+"/timeline?kind=history,observation", "")
-	if filtered := data[[]timelineItem](t, env); len(filtered) != 2 {
+	if filtered := data[[]commandcentre.TimelineItem](t, env); len(filtered) != 2 {
 		t.Fatalf("filter: %+v", filtered)
 	}
 	_, env = e.do("GET", "/profiles/"+e.profile+"/timeline?limit=1&offset=1", "")
-	if paged := data[[]timelineItem](t, env); len(paged) != 1 || paged[0].Kind != "observation" {
+	if paged := data[[]commandcentre.TimelineItem](t, env); len(paged) != 1 || paged[0].Kind != "observation" {
 		t.Fatalf("paging: %+v", paged)
 	}
 	if code, _ := e.do("GET", "/profiles/"+e.profile+"/timeline?kind=secrets", ""); code != 400 {
@@ -437,19 +396,19 @@ func TestProfileHealthDetails(t *testing.T) {
 		t.Fatalf("valid details rejected: %d", code)
 	}
 	_, env := e.do("GET", path, "")
-	var got profileResponse
-	got = data[profileResponse](t, env)
+	var got identity.ProfileResponse
+	got = data[identity.ProfileResponse](t, env)
 	if got.BloodGroup == nil || *got.BloodGroup != "O+" || got.Sex == nil || *got.Sex != "female" || got.HeightCM == nil || *got.HeightCM != 168.5 || got.DateOfBirth == nil || *got.DateOfBirth != "1990-04-02" {
 		t.Fatalf("round trip: %+v", got)
 	}
 	// A partial update leaves the other details alone.
 	e.do("PATCH", path, `{"height_cm":170}`)
 	_, env = e.do("GET", path, "")
-	if got = data[profileResponse](t, env); got.Sex == nil || *got.Sex != "female" {
+	if got = data[identity.ProfileResponse](t, env); got.Sex == nil || *got.Sex != "female" {
 		t.Fatalf("partial update lost data: %+v", got)
 	}
 	_, env = e.do("GET", path+"/overview", "")
-	o := data[overview](t, env)
+	o := data[commandcentre.Overview](t, env)
 	if o.Profile.Age == nil || *o.Profile.Age < 30 {
 		t.Fatalf("overview age: %+v", o.Profile)
 	}
@@ -469,15 +428,15 @@ func TestTimelineDateRange(t *testing.T) {
 	e.do("POST", "/profiles/"+e.profile+"/history", fmt.Sprintf(`{"kind":"surgery","title":"Appendectomy","started_on":%q}`, ago(400)))
 	base := "/profiles/" + e.profile + "/timeline"
 	_, env := e.do("GET", fmt.Sprintf("%s?from=%s", base, ago(30)), "")
-	if items := data[[]timelineItem](t, env); len(items) != 1 || items[0].Kind != "observation" {
+	if items := data[[]commandcentre.TimelineItem](t, env); len(items) != 1 || items[0].Kind != "observation" {
 		t.Fatalf("from: %+v", items)
 	}
 	_, env = e.do("GET", fmt.Sprintf("%s?to=%s", base, ago(30)), "")
-	if items := data[[]timelineItem](t, env); len(items) != 1 || items[0].Kind != "history" {
+	if items := data[[]commandcentre.TimelineItem](t, env); len(items) != 1 || items[0].Kind != "history" {
 		t.Fatalf("to: %+v", items)
 	}
 	_, env = e.do("GET", fmt.Sprintf("%s?from=%s&to=%s", base, ago(10), ago(10)), "")
-	if items := data[[]timelineItem](t, env); len(items) != 1 {
+	if items := data[[]commandcentre.TimelineItem](t, env); len(items) != 1 {
 		t.Fatalf("a single day must include its own entries: %+v", items)
 	}
 	for _, q := range []string{"from=bad", fmt.Sprintf("from=%s&to=%s", ago(1), ago(5))} {
@@ -494,7 +453,7 @@ func TestSuggestedFollowUps(t *testing.T) {
 	}
 	e.do("POST", "/profiles/"+e.profile+"/goals", `{"biomarker_code":"HBA1C","unit":"%","target_max":5.7}`)
 	_, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
-	o := data[overview](t, env)
+	o := data[commandcentre.Overview](t, env)
 	titles := map[string]bool{}
 	for _, s := range o.Suggestions {
 		titles[s.Title] = true
@@ -506,7 +465,7 @@ func TestSuggestedFollowUps(t *testing.T) {
 		t.Fatalf("create follow-up: %d", code)
 	}
 	_, env = e.do("GET", "/profiles/"+e.profile+"/overview", "")
-	for _, s := range data[overview](t, env).Suggestions {
+	for _, s := range data[commandcentre.Overview](t, env).Suggestions {
 		if s.Title == "Repeat Hemoglobin A1c" {
 			t.Errorf("an open follow-up must suppress the suggestion: %+v", s)
 		}

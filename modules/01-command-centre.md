@@ -1,7 +1,7 @@
 # 01 Personal Health Command Centre — 🟢 feature-complete (3 items blocked on other modules or credentials)
 
 ## Code
-- backend/internal/api/command_centre.go, overview.go, profiles.go
+- backend/internal/modules/commandcentre/, backend/internal/domain/health/, backend/internal/modules/identity/profiles.go
 - ios/CortexApp/CommandCentre.swift
 
 ## Done
@@ -22,4 +22,4 @@
 - [ ] Devices in the timeline: depends on module 05
 
 ## Tests
-`go test ./internal/api/ -run 'Overview|Timeline|Goal|FollowUp|History|ProfileHealth|Export'` (DB tests need `TEST_DATABASE_URL`)
+`go test -p 1 ./internal/api/ ./internal/modules/commandcentre/ ./internal/domain/health/ -run 'Overview|Timeline|Goal|FollowUp|History|ProfileHealth|Export|Parse|Without'` (DB tests need `TEST_DATABASE_URL`)

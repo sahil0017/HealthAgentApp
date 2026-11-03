@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"cortex/backend/internal/domain/biomarker"
+	"cortex/backend/internal/modules/biomarkers"
+	"cortex/backend/internal/modules/commandcentre"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,35 +13,36 @@ import (
 // approve pushes a proposal through the same reviewed path the research agent uses.
 func (e *ccEnv) approve(t *testing.T, kind, key, payload string) {
 	t.Helper()
+	t.Setenv("CORTEX_AUTH_MODE", "development")
 	ctx := context.Background()
 	var id string
-	if err := e.a.db.Pool.QueryRow(ctx, `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES($1::text,$2::text,$3::text::jsonb) ON CONFLICT(kind,entry_key) DO UPDATE SET payload=EXCLUDED.payload,status='pending' RETURNING id::text`, kind, key, payload).Scan(&id); err != nil {
+	if err := e.a.DB.Pool.QueryRow(ctx, `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES($1::text,$2::text,$3::text::jsonb) ON CONFLICT(kind,entry_key) DO UPDATE SET payload=EXCLUDED.payload,status='pending' RETURNING id::text`, kind, key, payload).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.a.approveEntry(ctx, id, "reviewer-1", ""); err != nil {
-		t.Fatalf("approve %s: %v", kind, err)
+	if status, _ := e.doAs("reviewer-1", "POST", "/knowledge/entries/"+id+"/approve", "{}"); status != 200 {
+		t.Fatalf("approve %s: status %d", kind, status)
 	}
 	t.Cleanup(func() {
 		for _, q := range []string{`DELETE FROM reference_ranges WHERE knowledge_entry_id=$1::uuid`, `DELETE FROM unit_conversions WHERE knowledge_entry_id=$1::uuid`, `DELETE FROM knowledge_entries WHERE id=$1::uuid`} {
-			_, _ = e.a.db.Pool.Exec(context.Background(), q, id)
+			_, _ = e.a.DB.Pool.Exec(context.Background(), q, id)
 		}
 	})
 }
 
 func (e *ccEnv) observeFull(t *testing.T, code string, value float64, unit, on, status, sourceType, labRange string) {
 	t.Helper()
-	if _, err := e.a.db.Pool.Exec(context.Background(), `INSERT INTO observations(profile_id,owner_id,biomarker_code,name,value,unit,observed_at,verification_status,source_type,reference_range) VALUES($1,$2,$3,$3,$4,$5,$6::text::date,$7,$8,NULLIF($9::text,''))`, e.profile, e.owner, code, value, unit, on, status, sourceType, labRange); err != nil {
+	if _, err := e.a.DB.Pool.Exec(context.Background(), `INSERT INTO observations(profile_id,owner_id,biomarker_code,name,value,unit,observed_at,verification_status,source_type,reference_range) VALUES($1,$2,$3,$3,$4,$5,$6::text::date,$7,$8,NULLIF($9::text,''))`, e.profile, e.owner, code, value, unit, on, status, sourceType, labRange); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func (e *ccEnv) trend(t *testing.T, code, query string) biomarkerTrend {
+func (e *ccEnv) trend(t *testing.T, code, query string) biomarker.Trend {
 	t.Helper()
 	status, env := e.do("GET", "/profiles/"+e.profile+"/biomarkers/"+code+"/trend"+query, "")
 	if status != 200 {
 		t.Fatalf("trend status %d", status)
 	}
-	return data[biomarkerTrend](t, env)
+	return data[biomarker.Trend](t, env)
 }
 
 func TestTrendConvertsOnlyThroughApprovedConversions(t *testing.T) {
@@ -139,8 +143,8 @@ func TestBiomarkerSummary(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("status %d", status)
 	}
-	items := data[[]biomarkerSummary](t, env)
-	by := map[string]biomarkerSummary{}
+	items := data[[]biomarkers.BiomarkerSummary](t, env)
+	by := map[string]biomarkers.BiomarkerSummary{}
 	for _, s := range items {
 		by[s.BiomarkerCode] = s
 	}
@@ -174,38 +178,44 @@ func TestBiomarkerEndpointsAreOwnerScopedAndValidated(t *testing.T) {
 
 func TestMalformedRangesAndConversionsAreRejectedAtReview(t *testing.T) {
 	e := commandCentre(t, "bm-bad", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
 	ctx := context.Background()
+	rejected := func(kind, payload string) bool {
+		var id string
+		if err := e.a.DB.Pool.QueryRow(ctx, `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES($1::text,$2::text,$3::text::jsonb) RETURNING id::text`, kind, "bad-"+payload, payload).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = e.a.DB.Pool.Exec(ctx, `DELETE FROM knowledge_entries WHERE id=$1::uuid`, id) })
+		status, _ := e.doAs("reviewer-1", "POST", "/knowledge/entries/"+id+"/approve", "{}")
+		return status != 200
+	}
 	for kind, payload := range map[string]string{
 		"reference_range": `{"code":"GLUCOSE","unit":"mg/dL","low":99,"high":70,"source":"x"}`,
 		"unit_conversion": `{"code":"GLUCOSE","from_unit":"a","to_unit":"a","factor":1,"source":"x"}`,
 	} {
-		tx, _ := e.a.db.Pool.Begin(ctx)
-		if applyKnowledge(ctx, tx, kind, "00000000-0000-0000-0000-000000000000", []byte(payload), "r", "", nil) == nil {
+		if !rejected(kind, payload) {
 			t.Errorf("%s accepted: %s", kind, payload)
 		}
-		_ = tx.Rollback(ctx)
 	}
 	for _, payload := range []string{
 		`{"code":"GLUCOSE","unit":"mg/dL","source":"x"}`,
 		`{"code":"GLUCOSE","unit":"mg/dL","sex":"other","low":1,"source":"x"}`,
 		fmt.Sprintf(`{"code":"GLUCOSE","unit":"mg/dL","low":1,"source":%q}`, " "),
 	} {
-		tx, _ := e.a.db.Pool.Begin(ctx)
-		if applyKnowledge(ctx, tx, "reference_range", "00000000-0000-0000-0000-000000000000", []byte(payload), "r", "", nil) == nil {
+		if !rejected("reference_range", payload) {
 			t.Errorf("accepted: %s", payload)
 		}
-		_ = tx.Rollback(ctx)
 	}
 }
 
-func (e *ccEnv) attentionKinds(t *testing.T) map[string]attentionItem {
+func (e *ccEnv) attentionKinds(t *testing.T) map[string]commandcentre.AttentionItem {
 	t.Helper()
 	code, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
 	if code != 200 {
 		t.Fatalf("overview %d", code)
 	}
-	out := map[string]attentionItem{}
-	for _, item := range data[overview](t, env).Attention {
+	out := map[string]commandcentre.AttentionItem{}
+	for _, item := range data[commandcentre.Overview](t, env).Attention {
 		out[item.Kind] = item
 	}
 	return out
@@ -214,7 +224,7 @@ func (e *ccEnv) attentionKinds(t *testing.T) map[string]attentionItem {
 func TestOverviewFlagsOutOfRangeFromVerifiedReadingsOnly(t *testing.T) {
 	e := commandCentre(t, "bm-attention", storage()...)
 	for _, c := range []string{"GLUCOSE", "LDL", "FERRITIN"} {
-		_, _ = e.a.db.Pool.Exec(context.Background(), `INSERT INTO biomarker_catalog(code,display_name) VALUES($1,$1) ON CONFLICT(code) DO NOTHING`, c)
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `INSERT INTO biomarker_catalog(code,display_name) VALUES($1,$1) ON CONFLICT(code) DO NOTHING`, c)
 	}
 	e.observeFull(t, "GLUCOSE", 130, "mg/dL", ago(3), "VERIFIED", "LAB_DOCUMENT", "70-99")
 	e.observeFull(t, "LDL", 300, "mg/dL", ago(3), "PENDING_REVIEW", "LAB_DOCUMENT", "0-100")
@@ -227,7 +237,7 @@ func TestOverviewFlagsOutOfRangeFromVerifiedReadingsOnly(t *testing.T) {
 	}
 	_, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
 	n := 0
-	for _, a := range data[overview](t, env).Attention {
+	for _, a := range data[commandcentre.Overview](t, env).Attention {
 		if a.Kind == "out_of_range" {
 			n++
 		}

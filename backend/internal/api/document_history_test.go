@@ -9,10 +9,10 @@ import (
 
 func TestDocumentHistoryRecordsOwnerEditsWithPreviousValues(t *testing.T) {
 	const ownerID = "00000000-0000-0000-0000-0000000000a4"
-	a, h := governanceAPI(t, ownerID, nil)
+	a, h := newAPI(t, ownerID, nil)
 	profileID := seedProfile(t, a, ownerID, "k/hist-1")
 	var docID string
-	if err := a.db.Pool.QueryRow(context.Background(), `SELECT id::text FROM medical_documents WHERE profile_id=$1`, profileID).Scan(&docID); err != nil {
+	if err := a.DB.Pool.QueryRow(context.Background(), `SELECT id::text FROM medical_documents WHERE profile_id=$1`, profileID).Scan(&docID); err != nil {
 		t.Fatal(err)
 	}
 	if w := call(h, "PATCH", "/documents/"+docID, `{"document_type":"lab_report","filename":"cbc.pdf"}`); w.Code != http.StatusOK {
@@ -22,7 +22,7 @@ func TestDocumentHistoryRecordsOwnerEditsWithPreviousValues(t *testing.T) {
 		t.Fatalf("patch 2: %d %s", w.Code, w.Body)
 	}
 	// An access event must not appear in the document history.
-	if _, err := a.db.Pool.Exec(context.Background(), `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id) VALUES($1,$2,'document.file_accessed','medical_document',$3)`, ownerID, profileID, docID); err != nil {
+	if _, err := a.DB.Pool.Exec(context.Background(), `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id) VALUES($1,$2,'document.file_accessed','medical_document',$3)`, ownerID, profileID, docID); err != nil {
 		t.Fatal(err)
 	}
 	w := call(h, "GET", "/documents/"+docID+"/history", "")
@@ -50,7 +50,7 @@ func TestDocumentHistoryRecordsOwnerEditsWithPreviousValues(t *testing.T) {
 			t.Fatal("access events must not be in document history")
 		}
 	}
-	other, oh := governanceAPI(t, "00000000-0000-0000-0000-0000000000a5", nil)
+	other, oh := newAPI(t, "00000000-0000-0000-0000-0000000000a5", nil)
 	_ = other
 	if call(oh, "GET", "/documents/"+docID+"/history", "").Code != http.StatusNotFound {
 		t.Fatal("another owner must get 404")

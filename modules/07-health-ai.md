@@ -5,7 +5,7 @@
 
 ## Code
 - cortex-ai/app/ (rag, workflows, safety, agents)
-- backend/internal/api/records.go, mcp.go
+- backend/internal/modules/healthai/ (ask.go, records.go, mcp.go)
 
 ## Done
 - [x] Semantic retrieval (BGE), rerank, safety policy, evaluation set
