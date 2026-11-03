@@ -306,6 +306,25 @@ paths:
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers/summary:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Latest value, change, trend, range flag and measurement cadence for every biomarker
+      description: 'Verified values only. Readings in a unit with no approved conversion are counted as excluded, never guessed.'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers/{code}/trend:
+    parameters:
+      - { $ref: '#/components/parameters/profileID' }
+      - { name: code, in: path, required: true, schema: { type: string } }
+    get:
+      summary: Comparable series for one biomarker in a single unit
+      description: 'Each point carries its original value and unit, whether it was converted, lab or device origin, verification status, and the range used (printed on the report, or an approved reference chosen by the profile sex and age). Trends use verified points only.'
+      parameters:
+        - { name: include_unverified, in: query, schema: { type: boolean } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Profile or biomarker not found }
   /profiles/{profileID}/biomarkers/{code}/history:
     get:
       summary: Read a biomarker history

@@ -56,8 +56,11 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 ## M7. Records and lab intelligence
 
 - [x] Observations, history, trends, and corrections
-- [ ] Reference range comparison using learned ranges (M4)
-- [ ] Unit conversion between learned units
+- [x] Reference range comparison: range printed on the report first, then approved learned ranges by sex and age (reviewed before use)
+- [x] Unit conversion through approved conversions only; unconvertible readings are listed, not guessed
+- [x] Trend direction, measurement cadence and overdue detection; lab versus device kept distinct; unverified values never feed trends
+- [x] iOS Biomarkers list and detail chart (not yet compiled)
+- [ ] Research agent proposing `reference_range` and `unit_conversion` entries (review and apply path is built)
 - [ ] Source-document links from every answer fact
 
 ## M8. Verified research in answers

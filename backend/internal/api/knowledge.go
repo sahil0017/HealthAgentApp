@@ -300,6 +300,47 @@ func applyKnowledge(ctx context.Context, tx pgx.Tx, kind, id string, payload jso
 		}
 		_, err := tx.Exec(ctx, `UPDATE biomarker_catalog SET learned_units=(SELECT ARRAY(SELECT DISTINCT unnest(learned_units || ARRAY[$2::text]))) WHERE code=$1::text`, raw.Code, raw.Unit)
 		return err
+	case "reference_range":
+		var r struct {
+			Code   string   `json:"code"`
+			Unit   string   `json:"unit"`
+			Sex    *string  `json:"sex"`
+			AgeMin *int     `json:"age_min"`
+			AgeMax *int     `json:"age_max"`
+			Low    *float64 `json:"low"`
+			High   *float64 `json:"high"`
+			Source string   `json:"source"`
+		}
+		if err := json.Unmarshal(payload, &r); err != nil || r.Code == "" || r.Unit == "" || strings.TrimSpace(r.Source) == "" || (r.Low == nil && r.High == nil) || (r.Low != nil && r.High != nil && *r.Low > *r.High) || (r.Sex != nil && *r.Sex != "female" && *r.Sex != "male") {
+			return errors.New("invalid reference range entry")
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO reference_ranges(biomarker_code,unit,sex,age_min,age_max,low,high,source,knowledge_entry_id,approved_by)
+			VALUES($1::text,$2::text,$3::text,$4::int,$5::int,$6::float8,$7::float8,$8::text,$9::uuid,$10::text)
+			ON CONFLICT (biomarker_code, unit, COALESCE(sex,''), COALESCE(age_min,-1), COALESCE(age_max,-1))
+			DO UPDATE SET low=EXCLUDED.low, high=EXCLUDED.high, source=EXCLUDED.source, knowledge_entry_id=EXCLUDED.knowledge_entry_id, approved_by=EXCLUDED.approved_by, approved_at=now()`,
+			strings.ToUpper(r.Code), r.Unit, r.Sex, r.AgeMin, r.AgeMax, r.Low, r.High, r.Source, id, reviewer)
+		return err
+	case "unit_conversion":
+		var c struct {
+			Code     string   `json:"code"`
+			FromUnit string   `json:"from_unit"`
+			ToUnit   string   `json:"to_unit"`
+			Factor   float64  `json:"factor"`
+			Offset   *float64 `json:"offset"`
+			Source   string   `json:"source"`
+		}
+		if err := json.Unmarshal(payload, &c); err != nil || c.Code == "" || c.FromUnit == "" || c.ToUnit == "" || c.FromUnit == c.ToUnit || c.Factor <= 0 || strings.TrimSpace(c.Source) == "" {
+			return errors.New("invalid unit conversion entry")
+		}
+		offset := 0.0
+		if c.Offset != nil {
+			offset = *c.Offset
+		}
+		_, err := tx.Exec(ctx, `INSERT INTO unit_conversions(biomarker_code,from_unit,to_unit,factor,"offset",source,knowledge_entry_id,approved_by)
+			VALUES($1::text,$2::text,$3::text,$4::float8,$5::float8,$6::text,$7::uuid,$8::text)
+			ON CONFLICT (biomarker_code,from_unit,to_unit) DO UPDATE SET factor=EXCLUDED.factor,"offset"=EXCLUDED."offset",source=EXCLUDED.source,knowledge_entry_id=EXCLUDED.knowledge_entry_id,approved_by=EXCLUDED.approved_by,approved_at=now()`,
+			strings.ToUpper(c.Code), c.FromUnit, c.ToUnit, c.Factor, offset, c.Source, id, reviewer)
+		return err
 	case "research_source":
 		var s researchPayload
 		if err := json.Unmarshal(payload, &s); err != nil {

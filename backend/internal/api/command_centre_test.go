@@ -49,6 +49,8 @@ func commandCentre(t *testing.T, ownerID string, consents ...string) *ccEnv {
 		})
 	})
 	r.Get("/profiles/{profileID}", a.getProfile)
+	r.Get("/profiles/{profileID}/biomarkers/summary", a.biomarkerSummaries)
+	r.Get("/profiles/{profileID}/biomarkers/{code}/trend", a.biomarkerTrend)
 	r.Patch("/profiles/{profileID}", a.updateProfile)
 	r.Get("/profiles/{profileID}/overview", a.overview)
 	r.Get("/profiles/{profileID}/timeline", a.timeline)

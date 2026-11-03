@@ -248,6 +248,7 @@ struct TodayView: View {
                 changesSection(overview.recentChanges)
                 goalsSection(overview.goals)
                 Section("Explore") {
+                    NavigationLink("Biomarkers and trends") { BiomarkersView() }
                     NavigationLink("Health timeline") { TimelineView() }
                     NavigationLink("Medical history · \(overview.summary.historyEntries)") { HistoryView() }
                 }
