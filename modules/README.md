@@ -8,7 +8,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started
 | # | Module | Status | Spec |
 |---|--------|--------|------|
 | 01 | Personal Health Command Centre | 🟡 | [01-command-centre.md](01-command-centre.md) |
-| 02 | Medical Intelligence Vault | 🟡 | [02-medical-vault.md](02-medical-vault.md) |
+| 02 | Medical Intelligence Vault | 🟢 | [02-medical-vault.md](02-medical-vault.md) |
 | 03 | Biomarker & Longitudinal Intelligence | 🟡 | [03-biomarkers.md](03-biomarkers.md) |
 | 04 | Multimodal Body Observation | ⬜ | [04-body-observation.md](04-body-observation.md) |
 | 05 | Connected Diagnostics | ⬜ | [05-connected-diagnostics.md](05-connected-diagnostics.md) |

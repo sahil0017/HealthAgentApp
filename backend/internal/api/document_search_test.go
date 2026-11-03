@@ -87,6 +87,13 @@ func TestDocumentSearchFindsMeaningNotJustWords(t *testing.T) {
 	if n := count(t, a, `SELECT count(*) FROM document_page_chunks WHERE profile_id=$1 AND content LIKE 'Grocery%'`, profileID); n != 1 {
 		t.Fatal("page was not re-indexed")
 	}
+	// Derived embeddings must disappear with the document and the profile.
+	if _, err := a.db.Pool.Exec(ctx, `DELETE FROM medical_documents WHERE profile_id=$1`, profileID); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, a, `SELECT count(*) FROM document_page_chunks WHERE profile_id=$1`, profileID); n != 0 {
+		t.Fatalf("%d chunk(s) outlived their document", n)
+	}
 }
 
 func TestDocumentSearchWithoutAIConsentUsesKeywordOnly(t *testing.T) {
