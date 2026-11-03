@@ -4,6 +4,8 @@
 
 <div align="center">
 
+![CI](https://github.com/sahil0017/HealthAgentApp/actions/workflows/ci.yml/badge.svg?branch=main)
+![End-to-end tests](https://github.com/sahil0017/HealthAgentApp/actions/workflows/e2e.yml/badge.svg?branch=main)
 ![SwiftUI](https://img.shields.io/badge/iOS-SwiftUI-147EFB?logo=swift&logoColor=white)
 ![Go](https://img.shields.io/badge/API-Go-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/AI-FastAPI-009688?logo=fastapi&logoColor=white)
@@ -151,6 +153,10 @@ For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from
 - [`architecture/decisions.md`](./architecture/decisions.md) — implementation boundary and design decisions.
 
 Python tests: `cd cortex-ai && python -m pytest`
+
+## Contributing and support
+
+Contributions are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local checks and pull request guidance. Use GitHub Issues for reproducible bugs and feature proposals; do not include real health information, credentials, or private documents. See [`SECURITY.md`](./SECURITY.md) for reporting security concerns privately.
 
 ## Planned, not shipped
 

@@ -158,7 +158,16 @@ func (m *Module) biomarkerHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) verifyObservation(w http.ResponseWriter, r *http.Request) {
-	if !m.hasObservationConsent(r, chi.URLParam(r, "observationID")) {
+	exists, consent, err := m.observationConsent(r, chi.URLParam(r, "observationID"))
+	if err != nil {
+		httpx.WriteError(w, 500, "OBSERVATION_ACCESS_FAILED", "The observation could not be accessed.", nil)
+		return
+	}
+	if !exists {
+		httpx.WriteError(w, 404, "OBSERVATION_NOT_FOUND", "The observation was not found.", nil)
+		return
+	}
+	if !consent {
 		httpx.WriteError(w, 403, "CONSENT_REQUIRED", "Health data consent is required.", nil)
 		return
 	}
@@ -193,7 +202,16 @@ type correctionInput struct {
 }
 
 func (m *Module) correctObservation(w http.ResponseWriter, r *http.Request) {
-	if !m.hasObservationConsent(r, chi.URLParam(r, "observationID")) {
+	exists, consent, err := m.observationConsent(r, chi.URLParam(r, "observationID"))
+	if err != nil {
+		httpx.WriteError(w, 500, "OBSERVATION_ACCESS_FAILED", "The observation could not be accessed.", nil)
+		return
+	}
+	if !exists {
+		httpx.WriteError(w, 404, "OBSERVATION_NOT_FOUND", "The observation was not found.", nil)
+		return
+	}
+	if !consent {
 		httpx.WriteError(w, 403, "CONSENT_REQUIRED", "Health data consent is required.", nil)
 		return
 	}
@@ -215,7 +233,6 @@ func (m *Module) correctObservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var observedAt *time.Time
-	var err error
 	if in.ObservedAt != nil {
 		observedAt, err = parseObservationDate(*in.ObservedAt)
 		if err != nil {
@@ -254,10 +271,11 @@ func (m *Module) correctObservation(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, 200, map[string]any{"revision": revision + 1, "verification_status": "PENDING_REVIEW"})
 }
 
-func (m *Module) hasObservationConsent(r *http.Request, observationID string) bool {
-	var granted bool
-	err := m.DB.Pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM observations o JOIN consents c ON c.profile_id=o.profile_id WHERE o.id=$1 AND o.owner_id=$2 AND c.granted=true AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>now()) AND c.purpose IN ('medical_record_storage','health_data'))`, observationID, httpx.Owner(r)).Scan(&granted)
-	return err == nil && granted
+func (m *Module) observationConsent(r *http.Request, observationID string) (exists, granted bool, err error) {
+	err = m.DB.Pool.QueryRow(r.Context(), `SELECT
+		EXISTS(SELECT 1 FROM observations WHERE id=$1 AND owner_id=$2),
+		EXISTS(SELECT 1 FROM observations o JOIN consents c ON c.profile_id=o.profile_id WHERE o.id=$1 AND o.owner_id=$2 AND c.granted=true AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>now()) AND c.purpose IN ('medical_record_storage','health_data'))`, observationID, httpx.Owner(r)).Scan(&exists, &granted)
+	return exists, granted, err
 }
 
 func parseObservationDate(value string) (*time.Time, error) {

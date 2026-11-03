@@ -84,6 +84,7 @@ services:
       CORTEX_OLLAMA_URL: ${CORTEX_OLLAMA_URL:-http://host.docker.internal:11434}
       CORTEX_OLLAMA_MODEL: ${CORTEX_OLLAMA_MODEL:-}
       CORTEX_OLLAMA_TIMEOUT_SECONDS: ${CORTEX_OLLAMA_TIMEOUT_SECONDS:-90}
+    ports: ["127.0.0.1:8000:8000"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:

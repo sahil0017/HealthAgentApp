@@ -48,8 +48,9 @@ WITH scope AS (
 )
 SELECT s.source_id::text, rs.identifier, rs.title, rs.url, s.content,
        (COALESCE(1.0/($5+v.rnk),0)+COALESCE(1.0/($5+l.rnk),0))::float8 AS score
-FROM scope s JOIN research_sources rs ON rs.id=s.source_id
-LEFT JOIN v USING (id) LEFT JOIN l USING (id)
+FROM scope s
+LEFT JOIN v ON v.id=s.id LEFT JOIN l ON l.id=s.id
+JOIN research_sources rs ON rs.id=s.source_id
 WHERE l.rnk IS NOT NULL OR v.sim >= $6
 ORDER BY score DESC LIMIT $7`, embedding.VectorLiteral(vectors[0]), model, query, embedding.CandidatePoolSize, embedding.RRFK, minResearchSimilarity, limit)
 	if err != nil {

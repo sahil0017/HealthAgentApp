@@ -76,7 +76,7 @@ def test_overview_flags_out_of_range_and_measurement_gaps(api, profile):
     assert "measurement_gap" in kinds
     assert overview["summary"]["biomarkers_tracked"] >= 2
     assert overview["completeness"] is not None
-    assert "recent_changes" in overview and "goals" in overview and "suggestions" in overview
+    assert "recent_changes" in overview and "goals" in overview and "suggested_follow_ups" in overview
 
 
 def test_timeline_filters_and_paging(api, profile):

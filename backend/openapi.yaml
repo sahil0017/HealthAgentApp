@@ -385,6 +385,9 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200': { $ref: '#/components/responses/Success' }
+        '403': { description: Health data consent required }
+        '404': { description: Observation not found }
+        '500': { description: Observation access check failed }
   /observations/{observationID}/corrections:
     post:
       summary: Record a corrected observation revision
@@ -395,7 +398,11 @@ paths:
           schema: { type: string, format: uuid }
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
-        '201': { $ref: '#/components/responses/Success' }
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid correction }
+        '403': { description: Health data consent required }
+        '404': { description: Observation not found }
+        '500': { description: Observation access check or correction failed }
   /profiles/{profileID}/questions:
     post:
       summary: Ask a question; the answer is saved to the profile's history

@@ -32,6 +32,19 @@ def test_observation_validation_and_review_flow(api, profile, bare_profile):
     assert api.get(f"/profiles/{profile}/observations?limit=1&offset=0").status_code == 200
 
 
+def test_observation_review_requires_current_consent(api, profile):
+    obs = api.ok(api.post(f"/profiles/{profile}/observations", {
+        "biomarker_code": C["glucose"],
+        "value_numeric": 95,
+        "unit": "mg/dL",
+    }), 201)
+    for purpose in ("medical_record_storage", "health_data"):
+        api.ok(api.put(f"/profiles/{profile}/consents/{purpose}", {"granted": False}), 200)
+
+    assert api.post(f"/observations/{obs['id']}/verify").status_code == 403
+    assert api.post(f"/observations/{obs['id']}/corrections", {"value_numeric": 96}).status_code == 403
+
+
 def test_trend_summary_history_and_comparison(api, profile):
     for days, value in [(120, 6.1), (60, 5.8), (5, 5.4)]:
         add_verified(api, profile, C["a1c"], value, "%", ago(days), "4.0-5.6")

@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible problem using synthetic data only.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real health information, personal data, credentials, tokens, or private documents. Use synthetic data and redact logs and screenshots.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - iOS
+        - Web
+        - Go API or worker
+        - Python AI service
+        - Docker or local setup
+        - CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include only steps that use synthetic data.
+      placeholder: "1. Start the service...\n2. Use synthetic input...\n3. Observe the error..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include relevant OS, app, or tool versions. Do not include personal or sensitive data.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: Remove health information, personal data, credentials, and tokens before posting.
+      render: text
+    validations:
+      required: false
