@@ -191,7 +191,9 @@ jobs:
             worker.cache-from=type=gha,scope=worker-${{ env.CORTEX_INFERENCE }}
             cortex-ai.cache-from=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }}
       - name: Start the stack
-        run: docker compose up -d --no-build --wait --wait-timeout 300
+        run: |
+          if [ "$CORTEX_INFERENCE" != "1" ]; then export COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml; echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"; fi
+          docker compose up -d --no-build --wait --wait-timeout 300
       - name: Smoke test (sign in, profile, consent, upload, worker extraction, export, delete)
         run: |
           set -a; . ./.env; set +a

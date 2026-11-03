@@ -1,0 +1,7 @@
+# Fast-CI override: the cortex-ai image is built without the BGE model, so use the built-in hashing embedder.
+# Not applied in the full regression, which runs the real model.
+services:
+  cortex-ai:
+    environment:
+      CORTEX_EMBEDDING_MODEL: ""
+      CORTEX_EMBEDDING_REVISION: ""
