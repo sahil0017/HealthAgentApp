@@ -111,8 +111,11 @@ jobs:
     name: docker-build / ${{ matrix.service }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         service: [api, worker, cortex-ai]
     env:
@@ -141,6 +144,17 @@ jobs:
         run: |
           docker compose run --rm --no-deps --entrypoint tesseract worker --version
           docker compose run --rm --no-deps --entrypoint pdftoppm worker -v
+      - name: Cancel the whole run on the first image build failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+      - name: Free disk space
+        if: always()
+        run: |
+          docker image prune -af
+          docker builder prune -af
+          docker system df
 
   docker-integration:
     name: docker-integration / full stack end to end
@@ -201,9 +215,12 @@ jobs:
       - name: Show logs on failure
         if: failure()
         run: docker compose ps -a && docker compose logs --no-color --tail=200
-      - name: Tear down
+      - name: Tear down containers, volumes and images
         if: always()
-        run: docker compose down -v
+        run: |
+          docker compose down -v --rmi all --remove-orphans
+          docker system prune -af --volumes
+          docker system df
 
   ios-build:
     name: swift-build / iOS app
