@@ -101,6 +101,21 @@ func (c *Client) UnitValid(ctx context.Context, unit string) (bool, error) {
 	return out.Valid, err
 }
 
+// Conversion is a unit relation derived by the research service: to = from*Factor + Offset.
+type Conversion struct {
+	Factor   float64           `json:"factor"`
+	Offset   float64           `json:"offset"`
+	Evidence []json.RawMessage `json:"evidence"`
+}
+
+func (c *Client) Convert(ctx context.Context, from, to string) (*Conversion, error) {
+	var out struct {
+		Conversion *Conversion `json:"conversion"`
+	}
+	err := c.call(ctx, http.MethodGet, "/v1/research/convert?from_unit="+url.QueryEscape(from)+"&to_unit="+url.QueryEscape(to), nil, &out)
+	return out.Conversion, err
+}
+
 type Service struct {
 	DB     *store.Store
 	Client *Client
@@ -211,6 +226,18 @@ func (s *Service) run(ctx context.Context, kind, term string) error {
 			}
 		}
 		return nil
+	case "conversion":
+		parts := strings.Split(term, "|")
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid conversion task")
+		}
+		conv, err := s.Client.Convert(ctx, parts[1], parts[2])
+		if err != nil || conv == nil {
+			return err
+		}
+		payload, _ := json.Marshal(map[string]any{"code": parts[0], "from_unit": parts[1], "to_unit": parts[2], "factor": conv.Factor, "offset": conv.Offset, "source": "UCUM (NLM)"})
+		ev, _ := json.Marshal(conv.Evidence)
+		return s.Upsert(ctx, "unit_conversion", Proposal{Key: term, Payload: payload, Evidence: ev, Agreement: 1})
 	case "unit":
 		code, unit, ok := strings.Cut(term, "|")
 		if !ok {
@@ -234,7 +261,14 @@ func (s *Service) Run(ctx context.Context) {
 	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	var lastLearn time.Time
 	for {
+		if time.Since(lastLearn) >= learnInterval {
+			lastLearn = time.Now()
+			if err := s.LearnFromRecords(ctx); err != nil {
+				log.Printf("research learning: %v", err)
+			}
+		}
 		for {
 			worked, err := s.ProcessOne(ctx)
 			if err != nil {

@@ -454,6 +454,7 @@ func (a *API) fillOverview(ctx context.Context, out *overview, ownerID, profileI
 			}
 		}
 	}
+	attention = append(attention, a.outOfRangeAttention(ctx, ownerID, profileID, today)...)
 	sort.SliceStable(changes, func(i, j int) bool { return changes[i].ObservedOn > changes[j].ObservedOn })
 	if len(changes) > 8 {
 		changes = changes[:8]
@@ -466,6 +467,9 @@ func (a *API) fillOverview(ctx context.Context, out *overview, ownerID, profileI
 	}
 	out.Goals = goals
 	for _, g := range goals {
+		if g.Progress.LatestValue == nil {
+			attention = append(attention, attentionItem{Kind: "goal_without_data", Severity: "info", Title: g.Title + " has no verified readings yet", Detail: "Add or verify a reading to see progress toward this goal.", RefType: "goal", RefID: g.ID})
+		}
 		if g.Progress.Status == "below_target" || g.Progress.Status == "above_target" {
 			candidates = append(candidates, suggestion{Kind: "investigation", Title: "Recheck " + g.Title, Reason: "Your goal is " + strings.ReplaceAll(g.Progress.Status, "_", " ") + ".", RefType: "goal", RefID: g.ID})
 			attention = append(attention, attentionItem{Kind: "goal_off_target", Severity: "info", Title: g.Title + " is " + strings.ReplaceAll(g.Progress.Status, "_", " "), Detail: "Trend: " + g.Progress.Trend + ".", RefType: "goal", RefID: g.ID})
@@ -506,4 +510,40 @@ func optionalQuery(r *http.Request, key string) *string {
 		return &v
 	}
 	return nil
+}
+
+// outOfRangeAttention surfaces the latest verified reading of each biomarker that sits outside its
+// reference range. It is an observation to raise with a clinician, never a diagnosis.
+func (a *API) outOfRangeAttention(ctx context.Context, ownerID, profileID string, now time.Time) []attentionItem {
+	byCode, names, err := a.loadObservationRows(ctx, ownerID, profileID, nil)
+	if err != nil {
+		return nil
+	}
+	sex, age := a.profileDemographics(ctx, ownerID, profileID, now)
+	codes := make([]string, 0, len(byCode))
+	for c := range byCode {
+		codes = append(codes, c)
+	}
+	sort.Strings(codes)
+	items := []attentionItem{}
+	for _, code := range codes {
+		known, learned, err := a.loadBiomarkerKnowledge(ctx, code)
+		if err != nil {
+			continue
+		}
+		t := buildTrend(code, names[code], byCode[code], false, known, learned, sex, age, now)
+		if len(t.Points) == 0 {
+			continue
+		}
+		latest := t.Points[len(t.Points)-1]
+		if latest.Flag != "above_range" && latest.Flag != "below_range" {
+			continue
+		}
+		side := "above"
+		if latest.Flag == "below_range" {
+			side = "below"
+		}
+		items = append(items, attentionItem{Kind: "out_of_range", Severity: "info", Title: t.DisplayName + " is " + side + " its reference range", Detail: "Your latest verified reading was " + latest.ObservedAt[:min(10, len(latest.ObservedAt))] + ". Consider raising it with your clinician.", RefType: "biomarker", RefID: code})
+	}
+	return items
 }

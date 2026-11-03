@@ -10,6 +10,7 @@ from app.research.sources import (
     medlineplus_summary,
     search_loinc,
     search_pubmed,
+    ucum_transform,
 )
 
 _NON_WORD = re.compile(r"[^A-Za-z0-9]+")
@@ -106,3 +107,20 @@ def discover_biomarkers(fetcher: Fetcher, limit: int = 40, offset: int = 0) -> d
         if proposal:
             out.append(proposal)
     return {"proposals": out, "total": len(index)}
+
+
+def research_conversion(fetcher: Fetcher, from_unit: str, to_unit: str) -> dict | None:
+    """Derives factor and offset for a unit pair from UCUM. The relation must be linear, which is
+    checked with a third point, so nothing non-linear is ever proposed as a simple factor."""
+    if from_unit == to_unit:
+        return None
+    at_zero = ucum_transform(fetcher, 0, from_unit, to_unit)
+    at_one = ucum_transform(fetcher, 1, from_unit, to_unit)
+    at_ten = ucum_transform(fetcher, 10, from_unit, to_unit)
+    if at_zero is None or at_one is None or at_ten is None:
+        return None
+    factor = at_one - at_zero
+    if factor <= 0 or abs((at_zero + factor * 10) - at_ten) > 1e-9 * max(1.0, abs(at_ten)):
+        return None
+    evidence = Evidence("UCUM", "https://ucum.nlm.nih.gov/", f"NLM UCUM service converts {from_unit} to {to_unit}")
+    return {"from_unit": from_unit, "to_unit": to_unit, "factor": factor, "offset": at_zero, "evidence": [evidence.as_dict()]}

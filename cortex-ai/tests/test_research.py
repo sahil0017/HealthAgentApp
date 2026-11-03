@@ -1,3 +1,5 @@
+from urllib.parse import unquote
+
 import httpx
 import pytest
 
@@ -69,3 +71,31 @@ def test_guidance_and_panel_loinc_items_are_not_proposed():
         )
 
     assert agent.research_biomarker(make_fetcher(handler), "Myelography") is None
+
+
+def ucum_handler(table):
+    def handler(request: httpx.Request) -> httpx.Response:
+        parts = request.url.raw_path.decode().split("/")
+        value, src, dst = float(parts[-5]), unquote(parts[-3]), unquote(parts[-1])
+        fn = table.get((src, dst))
+        if fn is None:
+            return httpx.Response(200, text="<Response>ERROR: Did you wish to convert between mass and moles?</Response>")
+        return httpx.Response(200, text=f"<Response><ResultQuantity>{fn(value)}</ResultQuantity></Response>")
+
+    return handler
+
+
+def test_conversion_is_derived_from_ucum_with_factor_and_offset():
+    f = make_fetcher(ucum_handler({("mg/dL", "g/L"): lambda v: v * 0.01, ("Cel", "[degF]"): lambda v: v * 1.8 + 32}))
+    got = agent.research_conversion(f, "mg/dL", "g/L")
+    assert got and got["factor"] == pytest.approx(0.01) and got["offset"] == 0
+    assert got["evidence"][0]["source"] == "UCUM"
+    temp = agent.research_conversion(f, "Cel", "[degF]")
+    assert temp and temp["factor"] == pytest.approx(1.8) and temp["offset"] == pytest.approx(32)
+
+
+def test_conversion_is_not_proposed_when_units_are_incompatible_or_nonlinear():
+    f = make_fetcher(ucum_handler({("x", "y"): lambda v: v * v + 1}))
+    assert agent.research_conversion(f, "mg/dL", "mmol/L") is None
+    assert agent.research_conversion(f, "x", "y") is None
+    assert agent.research_conversion(f, "mg/dL", "mg/dL") is None

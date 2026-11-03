@@ -104,6 +104,24 @@ def is_valid_ucum(fetcher: Fetcher, unit: str) -> bool:
     return fetcher.get(f"https://ucum.nlm.nih.gov/ucum-service/v1/isValidUCUM/{quote(unit, safe='')}").text.strip().lower() == "true"
 
 
+_UCUM_RESULT = re.compile(r"<ResultQuantity>([^<]+)</ResultQuantity>")
+
+
+def ucum_transform(fetcher: Fetcher, value: float, from_unit: str, to_unit: str) -> float | None:
+    """Converts with the NLM UCUM service. Returns None when the units are not commensurable,
+    for example mass to moles, which needs a molecular weight the service cannot supply."""
+    if not from_unit or not to_unit or len(from_unit) > 40 or len(to_unit) > 40:
+        return None
+    url = f"https://ucum.nlm.nih.gov/ucum-service/v1/ucumtransform/{value:g}/from/{quote(from_unit, safe='')}/to/{quote(to_unit, safe='')}"
+    match = _UCUM_RESULT.search(fetcher.get(url).text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
 _LINK = re.compile(r'href="(https://medlineplus\.gov/lab-tests/([a-z0-9\-]+)/)"[^>]*>([^<]+)<')
 
 

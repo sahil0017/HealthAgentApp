@@ -109,6 +109,11 @@ def research_discover(request: DiscoverRequest) -> dict[str, object]:
     return _research_call(research_agent.discover_biomarkers, request.limit, request.offset)
 
 
+@app.get("/v1/research/convert")
+def research_convert(from_unit: str, to_unit: str) -> dict[str, object]:
+    return {"conversion": _research_call(research_agent.research_conversion, from_unit, to_unit)}
+
+
 @app.get("/v1/research/unit")
 def research_unit(unit: str) -> dict[str, object]:
     return {"unit": unit, "valid_ucum": _research_call(research_sources.is_valid_ucum, unit)}

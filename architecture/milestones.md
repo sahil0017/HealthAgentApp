@@ -32,7 +32,7 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [x] Pending, approve and reject flow, bulk approve, admin gating
 - [x] Queue with retry and back-off; discovery on first start
 - [~] Rebuilt stack verified with the latest code (research routing, date and range extraction)
-- [ ] Learn reference ranges from reviewed reports, with a minimum sample and a reviewer step
+- [x] Learn reference ranges from reviewed reports (min 3 distinct reports, 80% agreement, pending until a reviewer approves)
 - [ ] Learn abbreviations and synonyms from reviewed labels
 - [ ] Review queue UI in the iOS app (or a small admin web page)
 - [ ] Remove the remaining hard-coded routing terms (`LAB_TERMS`, `RESEARCH_TERMS`) and consent purpose list from code
@@ -60,7 +60,8 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [x] Unit conversion through approved conversions only; unconvertible readings are listed, not guessed
 - [x] Trend direction, measurement cadence and overdue detection; lab versus device kept distinct; unverified values never feed trends
 - [x] iOS Biomarkers list and detail chart (not yet compiled)
-- [ ] Research agent proposing `reference_range` and `unit_conversion` entries (review and apply path is built)
+- [x] Research agent proposing `reference_range` (from reviewed reports) and `unit_conversion` (UCUM, linear only) entries. Mass↔molar needs a molecular weight, so it is never proposed
+- [x] Out-of-range and goal-without-data items on the Today attention list (non-diagnostic wording)
 - [ ] Source-document links from every answer fact
 
 ## M8. Verified research in answers

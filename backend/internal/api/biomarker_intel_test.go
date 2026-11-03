@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -194,5 +195,56 @@ func TestMalformedRangesAndConversionsAreRejectedAtReview(t *testing.T) {
 			t.Errorf("accepted: %s", payload)
 		}
 		_ = tx.Rollback(ctx)
+	}
+}
+
+func (e *ccEnv) attentionKinds(t *testing.T) map[string]attentionItem {
+	t.Helper()
+	code, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
+	if code != 200 {
+		t.Fatalf("overview %d", code)
+	}
+	out := map[string]attentionItem{}
+	for _, item := range data[overview](t, env).Attention {
+		out[item.Kind] = item
+	}
+	return out
+}
+
+func TestOverviewFlagsOutOfRangeFromVerifiedReadingsOnly(t *testing.T) {
+	e := commandCentre(t, "bm-attention", storage()...)
+	for _, c := range []string{"GLUCOSE", "LDL", "FERRITIN"} {
+		_, _ = e.a.db.Pool.Exec(context.Background(), `INSERT INTO biomarker_catalog(code,display_name) VALUES($1,$1) ON CONFLICT(code) DO NOTHING`, c)
+	}
+	e.observeFull(t, "GLUCOSE", 130, "mg/dL", ago(3), "VERIFIED", "LAB_DOCUMENT", "70-99")
+	e.observeFull(t, "LDL", 300, "mg/dL", ago(3), "PENDING_REVIEW", "LAB_DOCUMENT", "0-100")
+	e.observeFull(t, "FERRITIN", 50, "ng/mL", ago(3), "VERIFIED", "LAB_DOCUMENT", "30-300")
+
+	kinds := e.attentionKinds(t)
+	item, ok := kinds["out_of_range"]
+	if !ok || item.RefID != "GLUCOSE" || item.Severity != "info" || !strings.Contains(item.Title, "above") {
+		t.Fatalf("glucose should be flagged once, softly: %+v", kinds)
+	}
+	_, env := e.do("GET", "/profiles/"+e.profile+"/overview", "")
+	n := 0
+	for _, a := range data[overview](t, env).Attention {
+		if a.Kind == "out_of_range" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("unverified and in-range values must not be flagged, got %d items", n)
+	}
+}
+
+func TestOverviewFlagsGoalsWithoutVerifiedData(t *testing.T) {
+	e := commandCentre(t, "bm-goal-nodata", storage()...)
+	e.do("POST", "/profiles/"+e.profile+"/goals", `{"biomarker_code":"HBA1C","unit":"%","target_max":5.7}`)
+	if _, ok := e.attentionKinds(t)["goal_without_data"]; !ok {
+		t.Fatal("a goal with no readings should be flagged")
+	}
+	e.observe(t, "HBA1C", "HbA1c", 5.2, "%", ago(2), "VERIFIED")
+	if _, ok := e.attentionKinds(t)["goal_without_data"]; ok {
+		t.Fatal("a goal with a verified reading should not be flagged")
 	}
 }

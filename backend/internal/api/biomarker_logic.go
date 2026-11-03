@@ -2,47 +2,18 @@ package api
 
 import (
 	"math"
-	"regexp"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
+
+	"cortex/backend/internal/labrange"
 )
 
 // stableBand is the share of the average value within which a change over the whole period is
 // described as "stable". It is a descriptive threshold, not a clinical one.
 const stableBand = 0.05
 
-var (
-	numberPattern  = `([0-9]+(?:\.[0-9]+)?)`
-	rangeBetween   = regexp.MustCompile(`^` + numberPattern + `\s*(?:-|–|—|to)\s*` + numberPattern)
-	rangeUpperOnly = regexp.MustCompile(`^(?:<=|≤|<|up to|below|under)\s*` + numberPattern)
-	rangeLowerOnly = regexp.MustCompile(`^(?:>=|≥|>|above|over|at least)\s*` + numberPattern)
-)
-
-// parseReferenceRange reads the range printed on a lab report, such as "70-99", "< 5.7" or
-// "3.5 to 5.0 mg/dL". Anything it cannot read confidently returns ok=false rather than a guess.
-func parseReferenceRange(text string) (low, high *float64, ok bool) {
-	t := strings.ToLower(strings.TrimSpace(text))
-	t = strings.NewReplacer(",", "", "(", "", ")", "").Replace(t)
-	if m := rangeBetween.FindStringSubmatch(t); m != nil {
-		l, _ := strconv.ParseFloat(m[1], 64)
-		h, _ := strconv.ParseFloat(m[2], 64)
-		if l <= h {
-			return &l, &h, true
-		}
-		return nil, nil, false
-	}
-	if m := rangeUpperOnly.FindStringSubmatch(t); m != nil {
-		h, _ := strconv.ParseFloat(m[1], 64)
-		return nil, &h, true
-	}
-	if m := rangeLowerOnly.FindStringSubmatch(t); m != nil {
-		l, _ := strconv.ParseFloat(m[1], 64)
-		return &l, nil, true
-	}
-	return nil, nil, false
-}
+// parseReferenceRange reads the range printed on a lab report; see labrange.Parse.
+func parseReferenceRange(text string) (low, high *float64, ok bool) { return labrange.Parse(text) }
 
 // flagValue compares a value with a range. It only ever says where the value sits relative to
 // the range; it never interprets what that means.
