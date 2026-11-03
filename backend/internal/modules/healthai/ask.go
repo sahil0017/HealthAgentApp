@@ -81,6 +81,13 @@ func (m *Module) askQuestion(w http.ResponseWriter, r *http.Request) {
 		log.Printf("research search unavailable: %v", err)
 		research = []researchHit{}
 	}
+	// The AI service rejects null lists, which a search with no hits would otherwise send.
+	if research == nil {
+		research = []researchHit{}
+	}
+	if chunks == nil {
+		chunks = []recordHit{}
+	}
 	body, _ := json.Marshal(map[string]any{"question": strings.TrimSpace(in.Question), "observations": contextItems, "record_chunks": chunks, "research_chunks": research})
 	service := embedding.ServiceURL()
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, service+"/v1/answer", bytes.NewReader(body))

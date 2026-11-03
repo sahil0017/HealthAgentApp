@@ -3,7 +3,7 @@ import uuid
 
 import requests
 
-from conftest import make_pdf, sha256, wait_until
+from conftest import CODES as C, make_pdf, sha256, wait_until
 
 
 def processed(api, document):
@@ -33,10 +33,10 @@ def test_upload_extract_review_approve(api, profile):
     assert api.ok(api.get(f"/documents/{document}/versions"), 200) is not None
 
     approved = api.post(f"/profiles/{profile}/documents/{document}/approve", {"biomarkers": [
-        {"biomarker_code": "HBA1C", "name": "Hemoglobin A1c", "value": 5.4, "unit": "%", "observed_at": "2026-01-10", "reference_range": "4.0-5.6"}]})
+        {"biomarker_code": C["a1c"], "name": "Hemoglobin A1c", "value": 5.4, "unit": "%", "observed_at": "2026-01-10", "reference_range": "4.0-5.6"}]})
     api.ok(approved, 200, 201)
     observations = api.ok(api.get(f"/profiles/{profile}/observations"), 200)
-    assert any(o.get("biomarker_code") == "HBA1C" and o["verification_status"] == "VERIFIED" for o in observations)
+    assert any(o.get("biomarker_code") == C["a1c"] and o["verification_status"] == "VERIFIED" for o in observations)
 
 
 def test_rename_retype_download_and_delete(api, profile):

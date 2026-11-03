@@ -19,7 +19,7 @@ def test_research_request_validation(api):
 
 
 def test_biomarker_research_becomes_a_reviewable_proposal(api):
-    term = "Ferritin"
+    term = "Magnesium"
     assert api.post("/knowledge/research", {"kind": "biomarker", "term": term}).status_code == 202
 
     def proposal():

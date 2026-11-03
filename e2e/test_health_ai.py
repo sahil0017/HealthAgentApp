@@ -1,7 +1,7 @@
 """CORTEX Personal Health AI: grounded questions, record search through MCP, and consent enforcement."""
 import uuid
 
-from conftest import add_verified, ago, wait_until
+from conftest import CODES as C, add_verified, ago, wait_until
 from test_vault import processed
 
 
@@ -9,8 +9,8 @@ def seed(api, profile):
     document = api.ok(api.upload_pdf(profile, "Hemoglobin A1c 5.4 % Reference 4.0-5.6 %")[0], 202)["id"]
     processed(api, document)
     api.ok(api.post(f"/profiles/{profile}/documents/{document}/approve", {"biomarkers": [
-        {"biomarker_code": "HBA1C", "name": "Hemoglobin A1c", "value": 5.4, "unit": "%", "observed_at": ago(7), "reference_range": "4.0-5.6"}]}), 200, 201)
-    add_verified(api, profile, "GLUCOSE", 92, "mg/dL", ago(3), "70-99")
+        {"biomarker_code": C["a1c"], "name": "Hemoglobin A1c", "value": 5.4, "unit": "%", "observed_at": ago(7), "reference_range": "4.0-5.6"}]}), 200, 201)
+    add_verified(api, profile, C["glucose"], 92, "mg/dL", ago(3), "70-99")
 
 
 def test_question_is_grounded_and_cited(api, profile):
@@ -60,7 +60,7 @@ def test_mcp_records_server(api, profile):
         return rpc(api, token, "tools/call", {"name": name, "arguments": arguments}).json()
 
     assert "result" in call("list_observations", limit=5)
-    assert "result" in call("biomarker_history", code="hba1c")
+    assert "result" in call("biomarker_history", code=C["a1c"].lower())
     assert "result" in call("biomarker_history", code="")
     assert "result" in call("search_records", query="hemoglobin", limit=3)
     assert "result" in call("search_records", query="")

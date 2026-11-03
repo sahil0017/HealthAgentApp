@@ -1,7 +1,7 @@
 """Personal Health Command Centre: overview, timeline, history, goals, follow-ups, completeness, reminders."""
 import uuid
 
-from conftest import add_verified, ago, ahead
+from conftest import CODES as C, add_verified, ago, ahead
 
 
 def test_history_entries(api, profile):
@@ -21,20 +21,20 @@ def test_history_entries(api, profile):
 
 def test_goals_and_progress(api, profile):
     base = f"/profiles/{profile}/goals"
-    assert api.post(base, {"biomarker_code": "HBA1C", "unit": "%"}).status_code == 400
+    assert api.post(base, {"biomarker_code": C["a1c"], "unit": "%"}).status_code == 400
     assert api.post(base, {"biomarker_code": "NOPE", "unit": "%", "target_max": 5}).status_code == 400
-    assert api.post(base, {"biomarker_code": "HBA1C", "unit": "%", "target_min": 9, "target_max": 5}).status_code == 400
-    goal = api.ok(api.post(base, {"biomarker_code": "HBA1C", "unit": "%", "target_max": 5.7, "title": "Keep A1c under 5.7"}), 201)
+    assert api.post(base, {"biomarker_code": C["a1c"], "unit": "%", "target_min": 9, "target_max": 5}).status_code == 400
+    goal = api.ok(api.post(base, {"biomarker_code": C["a1c"], "unit": "%", "target_max": 5.7, "title": "Keep A1c under 5.7"}), 201)
 
     no_data = api.ok(api.get(f"/profiles/{profile}/overview"), 200)
     assert any(a["kind"] == "goal_without_data" for a in no_data["attention"])
 
-    add_verified(api, profile, "HBA1C", 6.4, "%", ago(30))
-    add_verified(api, profile, "HBA1C", 6.0, "%", ago(3))
+    add_verified(api, profile, C["a1c"], 6.4, "%", ago(30))
+    add_verified(api, profile, C["a1c"], 6.0, "%", ago(3))
     goals = api.ok(api.get(base), 200)
     assert goals[0]["progress"]["status"]
     assert api.ok(api.patch(f"/goals/{goal['id']}", {"target_max": 6.5}), 200)
-    assert api.patch(f"/goals/{goal['id']}", {"biomarker_code": "GLUCOSE"}).status_code == 400
+    assert api.patch(f"/goals/{goal['id']}", {"biomarker_code": C["glucose"]}).status_code == 400
     assert api.patch(f"/goals/{goal['id']}", {"target_min": 99}).status_code == 400
     assert api.ok(api.patch(f"/goals/{goal['id']}", {"status": "archived"}), 200)
     assert api.ok(api.get(base + "?status=active"), 200) == []
@@ -68,8 +68,8 @@ def test_follow_ups_reminders_and_suggestions(api, profile):
 
 def test_overview_flags_out_of_range_and_measurement_gaps(api, profile):
     for days in (200, 170, 140):
-        add_verified(api, profile, "GLUCOSE", 90, "mg/dL", ago(days), "70-99")
-    add_verified(api, profile, "LDL_C", 160, "mg/dL", ago(2), "0-100")
+        add_verified(api, profile, C["glucose"], 90, "mg/dL", ago(days), "70-99")
+    add_verified(api, profile, C["ldl"], 160, "mg/dL", ago(2), "0-100")
     overview = api.ok(api.get(f"/profiles/{profile}/overview"), 200)
     kinds = {a["kind"] for a in overview["attention"]}
     assert "out_of_range" in kinds
@@ -81,7 +81,7 @@ def test_overview_flags_out_of_range_and_measurement_gaps(api, profile):
 
 def test_timeline_filters_and_paging(api, profile):
     api.ok(api.post(f"/profiles/{profile}/history", {"kind": "surgery", "title": "Appendectomy", "started_on": "2018-03-01"}), 201)
-    add_verified(api, profile, "GLUCOSE", 95, "mg/dL", ago(4))
+    add_verified(api, profile, C["glucose"], 95, "mg/dL", ago(4))
     base = f"/profiles/{profile}/timeline"
     assert len(api.ok(api.get(base), 200)) >= 2
     assert api.ok(api.get(base + "?kind=history"), 200) is not None

@@ -121,6 +121,50 @@ def api():
     return client
 
 
+# Logical biomarker -> (term sent to the research agent, panel). The catalog starts empty; every entry below is
+# researched from LOINC and approved by the reviewer, exactly as in production, and its generated code is recorded here.
+WANTED = {
+    "a1c": ("Hemoglobin A1c", "glucose"),
+    "glucose": ("Glucose", "glucose"),
+    "ldl": ("Cholesterol in LDL", "lipid"),
+    "creatinine": ("Creatinine", "kidney"),
+    "tsh": ("Thyrotropin", "hormone"),
+    "ferritin": ("Ferritin", "vitamin"),
+}
+CODES: dict = {}
+
+
+def _entries(api, status):
+    data = api.ok(api.get(f"/knowledge/entries?status={status}&kind=biomarker&limit=200"), 200)
+    return data["entries"] if isinstance(data, dict) else data
+
+
+@pytest.fixture(scope="session", autouse=True)
+def catalog(api):
+    probe = api.ok(api.post("/profiles", {"display_name": "catalog"}), 201)["id"]
+    try:
+        for name, (term, category) in WANTED.items():
+            def known():
+                catalog_rows = api.ok(api.get(f"/profiles/{probe}/biomarkers"), 200)
+                for row in catalog_rows:
+                    if row["display_name"].lower() == term.lower():
+                        return row["code"]
+                return None
+
+            if not known():
+                api.ok(api.post("/knowledge/research", {"kind": "biomarker", "term": term}), 202)
+
+                def proposal():
+                    return next((e for e in _entries(api, "pending") if str(e["payload"].get("display_name", "")).lower() == term.lower()), None)
+
+                entry = wait_until(f"research proposal for {term}", proposal, 180, every=5)
+                api.ok(api.post(f"/knowledge/entries/{entry['id']}/approve", {"category": category, "note": "e2e reviewer"}), 200)
+            CODES[name] = wait_until(f"catalog entry for {term}", known, 30, every=1)
+    finally:
+        api.delete(f"/profiles/{probe}", {"confirm": "DELETE"})
+    return CODES
+
+
 @pytest.fixture()
 def profile(api):
     """A fresh profile with every consent granted, deleted afterwards."""

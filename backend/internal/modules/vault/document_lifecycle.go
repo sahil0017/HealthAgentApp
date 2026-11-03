@@ -60,7 +60,7 @@ func (m *Module) createUploadIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	filename := filepath.Base(strings.TrimSpace(in.Filename))
 	contentType, _, contentTypeErr := mime.ParseMediaType(in.ContentType)
-	if contentTypeErr != nil || filename == "." || filename == "" || len(filename) > 255 || in.SizeBytes < 1 || in.SizeBytes > maxDocumentBytes || !validDocumentType(contentType) || !validMedicalDocumentType(in.DocumentType) {
+	if contentTypeErr != nil || filename == "." || filename == ".." || filename == "" || len(filename) > 255 || in.SizeBytes < 1 || in.SizeBytes > maxDocumentBytes || !validDocumentType(contentType) || !validMedicalDocumentType(in.DocumentType) {
 		httpx.WriteError(w, 400, "INVALID_UPLOAD_INTENT", "The filename, type, document category, or size is invalid.", nil)
 		return
 	}
@@ -338,7 +338,7 @@ func (m *Module) updateDocument(w http.ResponseWriter, r *http.Request) {
 	filename := d.FileName
 	if in.Filename != nil {
 		filename = filepath.Base(strings.TrimSpace(*in.Filename))
-		if filename == "." || filename == "" || len(filename) > 255 {
+		if filename == "." || filename == ".." || filename == "" || len(filename) > 255 {
 			httpx.WriteError(w, 400, "INVALID_FILENAME", "The filename is invalid.", nil)
 			return
 		}

@@ -1,7 +1,7 @@
 """Identity (auth, profiles) and Personal Data Governance (consent, access history, export, deletion)."""
 import uuid
 
-from conftest import API_URL, DEV_TOKEN, add_verified, ago
+from conftest import CODES as C, API_URL, DEV_TOKEN, add_verified, ago
 
 
 def test_health_and_auth_boundaries(api):
@@ -77,7 +77,7 @@ def test_consent_lifecycle(api, bare_profile):
 
 
 def test_access_history_and_export(api, profile):
-    add_verified(api, profile, "GLUCOSE", 95, "mg/dL", ago(5))
+    add_verified(api, profile, C["glucose"], 95, "mg/dL", ago(5))
     history = api.ok(api.get(f"/profiles/{profile}/access-history?limit=5&offset=0"), 200)
     assert len(history) >= 1
     assert api.get(f"/profiles/{profile}/access-history?limit=0").status_code == 400
