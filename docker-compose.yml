@@ -29,9 +29,9 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD:?run scripts/bootstrap-env}@postgres:5432/${POSTGRES_DB:-cortex}?sslmode=disable
-      CORTEX_DEV_TOKEN: ${CORTEX_DEV_TOKEN:?run scripts/bootstrap-env}
-      CORTEX_AUTH_MODE: ${CORTEX_AUTH_MODE:-development}
-      CORTEX_DEV_OWNER_ID: ${CORTEX_DEV_OWNER_ID:-local-development-user}
+      CORTEX_GOOGLE_CLIENT_IDS: ${CORTEX_GOOGLE_CLIENT_IDS:-}
+      CORTEX_APPLE_CLIENT_IDS: ${CORTEX_APPLE_CLIENT_IDS:-}
+      CORTEX_ADMIN_OWNER_IDS: ${CORTEX_ADMIN_OWNER_IDS:-}
       S3_ENDPOINT: objectstore:9000
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-localhost:9000}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?run scripts/bootstrap-env}
@@ -40,7 +40,6 @@ services:
       AI_SERVICE_URL: ${AI_SERVICE_URL:-http://cortex-ai:8000}
       HTTP_ADDR: :8080
       CORTEX_MCP_SIGNING_KEY: ${CORTEX_MCP_SIGNING_KEY:?run scripts/bootstrap-env}
-      CORTEX_ADMIN_OWNER_IDS: ${CORTEX_ADMIN_OWNER_IDS:-}
       CORTEX_RERANK_ENABLED: ${CORTEX_RERANK_ENABLED:-false}
     ports: ["8080:8080"]
     depends_on:

@@ -1,4 +1,4 @@
-import { ApiError, auth, request, signIn } from "./client";
+import { ApiError, auth, restoreSession, request, signIn, signOut } from "./client";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
@@ -13,21 +13,23 @@ function mockFetch(status: number, body: unknown) {
 
 afterEach(() => vi.unstubAllGlobals());
 
+afterEach(() => auth.set("unknown"));
+
 describe("api client", () => {
-  it("unwraps the data envelope and sends the bearer token", async () => {
-    auth.set("tok");
+  it("unwraps the data envelope and never sends a bearer token", async () => {
     const f = mockFetch(200, { data: { a: 1 }, meta: {} });
     expect(await request("/x")).toEqual({ a: 1 });
     expect(f.mock.calls[0][0]).toBe("/api/v1/x");
-    expect(f.mock.calls[0][1].headers.Authorization).toBe("Bearer tok");
+    const h = f.mock.calls[0][1].headers;
+    expect(h.Authorization).toBeUndefined();
+    expect(h["X-Cortex-Client"]).toBe("web");
   });
 
   it("sends JSON bodies with a content type", async () => {
-    mockFetch(200, { data: 1 });
-    const f = vi.mocked(fetch);
+    const f = mockFetch(200, { data: 1 });
     await request("/x", { method: "POST", body: { k: "v" } });
     expect(f.mock.calls[0][1]?.body).toBe('{"k":"v"}');
-    expect((f.mock.calls[0][1]?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(f.mock.calls[0][1]?.headers["Content-Type"]).toBe("application/json");
   });
 
   it("raises ApiError from the error envelope", async () => {
@@ -42,17 +44,40 @@ describe("api client", () => {
     expect(e.message).toBe("file required");
   });
 
-  it("clears the session on 401", async () => {
-    auth.set("tok");
-    mockFetch(401, { error: { code: "UNAUTHENTICATED", message: "x" } });
+  it("marks the session signed out on 401", async () => {
+    auth.set("in");
+    mockFetch(401, { error: { code: "UNAUTHORIZED", message: "x" } });
     await request("/x").catch(() => undefined);
-    expect(auth.token).toBeNull();
+    expect(auth.state).toBe("out");
   });
 
-  it("signIn exchanges the dev token for an access token", async () => {
-    const f = mockFetch(200, { data: { access_token: "acc" } });
-    await signIn("dev");
-    expect(f.mock.calls[0][1].headers.Authorization).toBe("Bearer dev");
-    expect(auth.token).toBe("acc");
+  it("signIn posts the provider token and nonce, then marks the session active", async () => {
+    const f = mockFetch(201, { data: { access_token: "ignored" } });
+    await signIn("google", "id.jwt", "nonce1");
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ provider: "google", id_token: "id.jwt", nonce: "nonce1" });
+    expect(auth.state).toBe("in");
+    expect(JSON.stringify(sessionStorage) + JSON.stringify(localStorage)).not.toContain("ignored");
+  });
+
+  it("a failed sign-in does not mark the session active", async () => {
+    mockFetch(401, { error: { code: "UNAUTHORIZED", message: "no" } });
+    await expect(signIn("google", "bad", "n")).rejects.toBeInstanceOf(ApiError);
+    expect(auth.state).not.toBe("in");
+  });
+
+  it("restoreSession reflects whether the cookie is valid", async () => {
+    mockFetch(200, { data: { id: "u" } });
+    await restoreSession();
+    expect(auth.state).toBe("in");
+    mockFetch(401, { error: { code: "UNAUTHORIZED", message: "x" } });
+    await restoreSession();
+    expect(auth.state).toBe("out");
+  });
+
+  it("signOut ends the session even if the request fails", async () => {
+    auth.set("in");
+    mockFetch(500, { error: { code: "X", message: "x" } });
+    await signOut().catch(() => undefined);
+    expect(auth.state).toBe("out");
   });
 });

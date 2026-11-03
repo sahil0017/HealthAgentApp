@@ -3,14 +3,13 @@ package identity
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
+	"cortex/backend/internal/platform/core"
 	"cortex/backend/internal/platform/httpx"
 )
 
@@ -22,20 +21,33 @@ type sessionResponse struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 
+type sessionRequest struct {
+	Provider string `json:"provider"`
+	IDToken  string `json:"id_token"`
+	Nonce    string `json:"nonce"`
+}
+
+// createSession exchanges a verified Google or Apple ID token for a CORTEX session.
 func (m *Module) createSession(w http.ResponseWriter, r *http.Request) {
-	if strings.TrimSpace(os.Getenv("CORTEX_AUTH_MODE")) != "development" || m.DevToken == "" {
-		httpx.WriteError(w, http.StatusServiceUnavailable, "AUTH_PROVIDER_NOT_CONFIGURED", "An OIDC identity provider is not configured.", nil)
+	if len(m.OIDC.Providers()) == 0 {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "AUTH_PROVIDER_NOT_CONFIGURED", "No identity provider is configured.", nil)
 		return
 	}
-	parts := strings.Fields(r.Header.Get("Authorization"))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || subtle.ConstantTimeCompare([]byte(parts[1]), []byte(m.DevToken)) != 1 {
-		httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "The development credential is invalid.", nil)
+	var in sessionRequest
+	if httpx.DecodeJSON(r, 16<<10, &in) != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "provider, id_token and nonce are required.", nil)
 		return
 	}
-	userID := strings.TrimSpace(os.Getenv("CORTEX_DEV_OWNER_ID"))
-	if userID == "" {
-		userID = "local-development-user"
+	claims, err := m.OIDC.Verify(r.Context(), in.Provider, in.IDToken, in.Nonce)
+	if err != nil {
+		if errors.Is(err, ErrInvalidToken) {
+			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "The sign-in could not be verified.", nil)
+		} else {
+			httpx.WriteError(w, http.StatusBadGateway, "IDENTITY_PROVIDER_UNAVAILABLE", "The identity provider could not be reached. Try again.", nil)
+		}
+		return
 	}
+	userID := claims.UserID()
 	tx, err := m.DB.Pool.Begin(r.Context())
 	if err != nil {
 		httpx.WriteError(w, 500, "SESSION_CREATE_FAILED", "The session could not be created.", nil)
@@ -69,7 +81,22 @@ func (m *Module) createSession(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "SESSION_CREATE_FAILED", "The session could not be created.", nil)
 		return
 	}
+	http.SetCookie(w, sessionCookie(r, token, expires))
 	httpx.WriteJSON(w, http.StatusCreated, sessionResponse{AccessToken: token, TokenType: "Bearer", ExpiresAt: expires})
+}
+
+// sessionCookie carries the session for browsers. Secure is set whenever the request arrived over HTTPS,
+// directly or through a TLS-terminating proxy.
+func sessionCookie(r *http.Request, value string, expires time.Time) *http.Cookie {
+	c := &http.Cookie{
+		Name: core.SessionCookie, Value: value, Path: "/", Expires: expires,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		Secure: r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+	}
+	if value == "" {
+		c.MaxAge = -1
+	}
+	return c
 }
 
 func (m *Module) logout(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +118,7 @@ func (m *Module) logout(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "LOGOUT_FAILED", "The session could not be revoked.", nil)
 		return
 	}
+	http.SetCookie(w, sessionCookie(r, "", time.Unix(0, 0)))
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"revoked": true})
 }
 
@@ -106,4 +134,20 @@ func (m *Module) currentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, user)
+}
+
+type providerInfo struct {
+	Name     string `json:"name"`
+	ClientID string `json:"client_id"`
+}
+
+// authConfig tells a client which sign-in providers are available and the client ID to start each with.
+func (m *Module) authConfig(w http.ResponseWriter, r *http.Request) {
+	out := []providerInfo{}
+	for _, p := range m.OIDC.Providers() {
+		if p.Name == "google" || p.Name == "apple" {
+			out = append(out, providerInfo{Name: p.Name, ClientID: p.Audiences[0]})
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"providers": out})
 }

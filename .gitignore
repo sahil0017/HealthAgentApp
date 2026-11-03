@@ -22,3 +22,4 @@ ios/*.zip
 .coverage
 node_modules/
 web/dist/
+.idp/

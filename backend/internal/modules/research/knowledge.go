@@ -20,7 +20,7 @@ import (
 
 var errNotPending = errors.New("entry is not pending")
 
-// isAdmin gates knowledge review. Production uses an explicit allowlist; development sessions are the local operator.
+// isAdmin gates knowledge review. Admins are an explicit allowlist of owner IDs.
 func (m *Module) isAdmin(r *http.Request) bool {
 	id := httpx.Owner(r)
 	for _, v := range strings.Split(os.Getenv("CORTEX_ADMIN_OWNER_IDS"), ",") {
@@ -28,7 +28,7 @@ func (m *Module) isAdmin(r *http.Request) bool {
 			return true
 		}
 	}
-	return strings.TrimSpace(os.Getenv("CORTEX_AUTH_MODE")) == "development"
+	return false
 }
 
 func (m *Module) requireAdmin(w http.ResponseWriter, r *http.Request) bool {

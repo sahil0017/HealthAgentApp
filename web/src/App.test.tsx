@@ -3,14 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "./App";
 import { auth } from "./api/client";
+import "./api/identity";
 import { TrendChart } from "./components/TrendChart";
 import { TABS } from "./components/Shell";
 
 type Routes = Record<string, unknown | ((init?: RequestInit) => unknown)>;
 
-function api(routes: Routes) {
+const signedIn = { "GET /users/me": { id: "u1" } };
+
+// A route value of {status: n} makes that route fail with the given status.
+function api(routes: Routes, { session = true } = {}) {
+  routes = { ...(session ? signedIn : {}), ...routes };
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const key = `${init?.method ?? "GET"} ${url.replace("/api/v1", "").split("?")[0]}`;
+    if (!(key in routes) && key === "GET /users/me") return { status: 401, ok: false, statusText: "no", json: async () => ({ error: { code: "UNAUTHORIZED", message: "no session" } }) };
     if (!(key in routes)) return { status: 404, ok: false, statusText: "nf", json: async () => ({ error: { code: "NF", message: `no mock ${key}` } }) };
     const r = routes[key];
     const data = typeof r === "function" ? (r as (i?: RequestInit) => unknown)(init) : r;
@@ -28,32 +34,88 @@ const overview = {
   completeness: { score: 60, items: [{ key: "consent", label: "Grant consent", done: false, detail: "Needed for AI" }] },
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  auth.set("unknown");
+  delete window.AppleID;
+});
 
 function renderApp(path = "/") {
   return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
 }
 
 describe("App", () => {
-  it("shows sign-in and stores the session token", async () => {
-    api({ "POST /auth/session": { access_token: "acc" }, "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/overview": overview });
+  it("shows provider buttons, never an access token field", async () => {
+    api({ "GET /auth/config": { providers: [{ name: "apple", client_id: "svc.id" }] } }, { session: false });
     renderApp();
-    await userEvent.type(screen.getByLabelText("Access token"), "dev");
-    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    expect(await screen.findByText("Review a report")).toBeInTheDocument();
-    expect(auth.token).toBe("acc");
+    expect(await screen.findByRole("button", { name: "Continue with Apple" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/token/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/token/i)).not.toBeInTheDocument();
   });
 
-  it("surfaces sign-in errors", async () => {
-    api({});
+  it("signs in with Apple and sends the provider, ID token and nonce", async () => {
+    let signedInNow = false;
+    const f = api(
+      {
+        "GET /auth/config": { providers: [{ name: "apple", client_id: "svc.id" }] },
+        "POST /auth/session": () => { signedInNow = true; return {}; },
+        "GET /profiles": [{ id: "p1", display_name: "Asha" }],
+        "GET /profiles/p1/overview": overview,
+      },
+      { session: false },
+    );
+    const inner = f.getMockImplementation()!;
+    f.mockImplementation(async (url, init) => (signedInNow && url.endsWith("/users/me") ? { status: 200, ok: true, statusText: "ok", json: async () => ({ data: {} }) } as Response : inner(url, init)));
+    const init = vi.fn();
+    window.AppleID = { auth: { init, signIn: async () => ({ authorization: { id_token: "apple.jwt" } }) } };
     renderApp();
-    await userEvent.type(screen.getByLabelText("Access token"), "bad");
-    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Continue with Apple" }));
+    expect(await screen.findByText("Review a report")).toBeInTheDocument();
+    const call = f.mock.calls.find(([u]) => u.endsWith("/auth/session"))!;
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body).toMatchObject({ provider: "apple", id_token: "apple.jwt" });
+    expect(body.nonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(init.mock.calls[0][0]).toMatchObject({ clientId: "svc.id", nonce: body.nonce, usePopup: true });
+    expect(JSON.stringify(f.mock.calls)).not.toMatch(/Bearer/);
+  });
+
+  it("surfaces a rejected sign-in", async () => {
+    api({
+      "GET /auth/config": { providers: [{ name: "apple", client_id: "svc.id" }] },
+    }, { session: false });
+    window.AppleID = { auth: { init: vi.fn(), signIn: async () => ({ authorization: { id_token: "bad" } }) } };
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "Continue with Apple" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("no mock");
   });
 
+  it("ignores a closed Apple popup", async () => {
+    api({ "GET /auth/config": { providers: [{ name: "apple", client_id: "svc.id" }] } }, { session: false });
+    window.AppleID = { auth: { init: vi.fn(), signIn: () => Promise.reject({ error: "popup_closed_by_user" }) } };
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "Continue with Apple" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders the Google button with a fresh nonce", async () => {
+    api({ "GET /auth/config": { providers: [{ name: "google", client_id: "g.apps" }] } }, { session: false });
+    const initialize = vi.fn();
+    const renderButton = vi.fn();
+    window.google = { accounts: { id: { initialize, renderButton } } };
+    renderApp();
+    await waitFor(() => expect(renderButton).toHaveBeenCalled());
+    expect(initialize.mock.calls[0][0]).toMatchObject({ client_id: "g.apps" });
+    expect(initialize.mock.calls[0][0].nonce).toMatch(/^[0-9a-f]{32}$/);
+    delete window.google;
+  });
+
+  it("explains when no provider is configured", async () => {
+    api({ "GET /auth/config": { providers: [] } }, { session: false });
+    renderApp();
+    expect(await screen.findByRole("status")).toHaveTextContent(/not set up/);
+  });
+
   it("asks a new user to create a profile", async () => {
-    auth.set("t");
     const f = api({ "GET /profiles": [], "POST /profiles": { id: "p2", display_name: "Ravi" } });
     renderApp();
     await userEvent.type(await screen.findByLabelText("Name"), "Ravi");
@@ -62,7 +124,6 @@ describe("App", () => {
   });
 
   it("renders Today with attention, completeness and stats", async () => {
-    auth.set("t");
     api({ "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/overview": overview });
     renderApp();
     expect(await screen.findByText("Needs your attention")).toBeInTheDocument();
@@ -71,7 +132,6 @@ describe("App", () => {
   });
 
   it("offers every destination in the single navigation used on desktop and mobile", async () => {
-    auth.set("t");
     api({ "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/overview": overview });
     renderApp();
     const nav = await screen.findByRole("navigation", { name: "Primary" });
@@ -79,7 +139,6 @@ describe("App", () => {
   });
 
   it("shows an empty vault and the biomarker empty state", async () => {
-    auth.set("t");
     api({
       "GET /profiles": [{ id: "p1", display_name: "Asha" }],
       "GET /profiles/p1/documents": [],
@@ -94,7 +153,6 @@ describe("App", () => {
   });
 
   it("sends the confirmed values when approving a document", async () => {
-    auth.set("t");
     const doc = {
       id: "d1", file_name: "lab.pdf", status: "review_required", document_type: "LAB_REPORT", document_version: 1,
       extraction: { biomarkers: [{ name: "HbA1c", value: 5.4, unit: "%", observed_at: "2026-01-02", reference_range: "" }], text_preview: "", warnings: [] },
@@ -108,7 +166,6 @@ describe("App", () => {
   });
 
   it("shows an urgent banner and sources for an answer", async () => {
-    auth.set("t");
     api({
       "GET /profiles": [{ id: "p1", display_name: "Asha" }],
       "GET /profiles/p1/questions": [],
@@ -125,7 +182,6 @@ describe("App", () => {
   });
 
   it("requires typing DELETE before erasing a profile", async () => {
-    auth.set("t");
     api({ "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/consents": [], "GET /profiles/p1/access-history": [] });
     renderApp("/privacy");
     const btn = await screen.findByRole("button", { name: "Delete profile" });
@@ -135,7 +191,6 @@ describe("App", () => {
   });
 
   it("toggles a consent", async () => {
-    auth.set("t");
     const f = api({
       "GET /profiles": [{ id: "p1", display_name: "Asha" }],
       "GET /profiles/p1/consents": [{ purpose: "ai_processing", granted: false }],

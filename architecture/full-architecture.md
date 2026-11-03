@@ -110,7 +110,7 @@ The repository currently supports this path:
 8. On explicit approval, Go writes observations and the approval state in a transaction and records an audit event.
 9. For questions, Go supplies the profile's approved observations to Python. Python returns a deterministic summary, sources, limitations, and workflow labels. It does not call an LLM or external research source.
 
-The API currently has profile, consent, document, observation, and question routes under `/v1`, plus health and readiness endpoints. The development token maps to one local identity. It is not suitable for production or multi-user deployment.
+The API currently has profile, consent, document, observation, and question routes under `/v1`, plus health and readiness endpoints. Users sign in with Google or Apple; the API verifies the OIDC ID token and issues a session.
 
 ## Target request and workflow architecture
 
@@ -267,7 +267,7 @@ The user’s personal health data must not be sent to an external model or resea
 
 ## Security, privacy, and safety
 
-1. **Authentication:** replace the local development token with verified identity tokens before multi-user, shared, or production deployment. Fail closed if identity validation is unavailable.
+1. **Authentication:** verified Google/Apple ID tokens; fails closed (503) if no provider is configured.
 2. **Authorization:** enforce owner/profile scope in Go on every operation. Use backend-verified identity and never rely on client or model claims.
 3. **Consent:** check relevant consent at the server boundary before upload, AI processing, research use, and future integrations. Consent is purpose-specific and revocable; revocation must stop subsequent work and define handling for in-flight jobs.
 4. **Least privilege:** Python and MCP tools receive only operation-scoped context; neither gets unrestricted database or object-store credentials.

@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthenticationServices
 import UniformTypeIdentifiers
 import Security
 import QuickLook
@@ -56,12 +57,13 @@ final class CortexModel: ObservableObject {
         await loadProfiles()
     }
 
-    func connect(usingDevelopmentToken credential: String) async {
+    func connect(provider: String, idToken: String, nonce: String) async {
         do {
             let url = URL(string: apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/api/v1/auth/session")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
-            request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["provider": provider, "id_token": idToken, "nonce": nonce])
             let (data, response) = try await URLSession.shared.data(for: request)
             try check(response)
             let payload = try unwrap(data)
@@ -251,7 +253,7 @@ final class CortexModel: ObservableObject {
 struct ContentView: View {
     @EnvironmentObject private var model: CortexModel
     @State private var profileName = ""
-    @State private var tokenInput = ""
+    @State private var appleNonce = ""
     @State private var showingImporter = false
     @State private var selectedDocument: MedicalDocument?
     @State private var question = ""
@@ -316,14 +318,26 @@ struct ContentView: View {
 
     private var connectView: some View {
         Form {
-            Section("Connect to your local CORTEX API") {
-                TextField("API URL", text: $model.apiURL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("Development bootstrap token", text: $tokenInput).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("Connect") {
-                    let credential = tokenInput
-                    Task { await model.connect(usingDevelopmentToken: credential); tokenInput = "" }
+            if model.token.isEmpty {
+                Section("Sign in") {
+                    SignInWithAppleButton(.continue) { request in
+                        appleNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                        request.requestedScopes = [.email]
+                        request.nonce = SHA256.hash(data: Data(appleNonce.utf8)).map { String(format: "%02x", $0) }.joined()
+                    } onCompletion: { result in
+                        switch result {
+                        case .success(let auth):
+                            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+                                  let tokenData = credential.identityToken,
+                                  let idToken = String(data: tokenData, encoding: .utf8) else { model.message = "Apple did not return an identity token."; return }
+                            let nonce = appleNonce
+                            Task { await model.connect(provider: "apple", idToken: idToken, nonce: nonce) }
+                        case .failure(let error):
+                            if (error as? ASAuthorizationError)?.code != .canceled { model.message = error.localizedDescription }
+                        }
+                    }
+                    .frame(height: 44)
                 }
-                    .disabled(tokenInput.isEmpty)
             }
             if !model.token.isEmpty && model.profile == nil {
                 Section("Create your profile") {
@@ -333,7 +347,7 @@ struct ContentView: View {
                 }
             }
             Section {
-                Text("The API bearer token is stored in the iOS Keychain. A local development token is not suitable for production accounts.")
+                Text("You sign in with your Apple account. The session credential is kept in the iOS Keychain and never shown.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }

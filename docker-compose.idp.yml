@@ -1,0 +1,15 @@
+# CI and e2e only: a static JWKS server plus the generic OIDC provider on the API, so tests can sign in without
+# Google or Apple. Generate the key first with `python3 scripts/testidp.py init`.
+services:
+  idp:
+    image: nginx:1.27-alpine
+    volumes: ["./.idp/public:/usr/share/nginx/html:ro"]
+
+  api:
+    depends_on:
+      - idp
+    environment:
+      CORTEX_OIDC_ISSUER: http://idp
+      CORTEX_OIDC_JWKS_URL: http://idp/jwks.json
+      CORTEX_OIDC_AUDIENCE: cortex-ci
+      CORTEX_ADMIN_OWNER_IDS: oidc:e2e-admin

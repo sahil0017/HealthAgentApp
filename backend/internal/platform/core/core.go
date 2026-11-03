@@ -28,32 +28,47 @@ type Core struct {
 	Objects   *objects.Store
 	Knowledge *knowledge.Service
 	Remover   ObjectRemover
-	DevToken  string
 }
 
 // New wires the shared runtime. objectStore may be nil in tests that never touch files.
-func New(db *store.Store, objectStore *objects.Store, devToken string) *Core {
-	c := &Core{DB: db, Objects: objectStore, DevToken: devToken, Knowledge: knowledge.NewService(db)}
+func New(db *store.Store, objectStore *objects.Store) *Core {
+	c := &Core{DB: db, Objects: objectStore, Knowledge: knowledge.NewService(db)}
 	if objectStore != nil {
 		c.Remover = objectStore
 	}
 	return c
 }
 
-// Authenticate resolves the bearer session to an owner and rejects everything else.
+// SessionCookie holds the web session. It is HttpOnly, so page scripts never see the token.
+const SessionCookie = "cortex_session"
+
+// CSRFHeader must accompany every state-changing request that authenticates with the cookie.
+// Browsers cannot attach a custom header cross-site without a CORS preflight, which this API never grants.
+const CSRFHeader = "X-Cortex-Client"
+
+// Authenticate resolves the session (a bearer token for native apps, the session cookie for the web) to an owner.
 func (c *Core) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Fields(r.Header.Get("Authorization"))
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "A valid bearer session is required.", nil)
+		var token string
+		if parts := strings.Fields(r.Header.Get("Authorization")); len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token = parts[1]
+		} else if ck, err := r.Cookie(SessionCookie); err == nil && ck.Value != "" {
+			token = ck.Value
+			if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Header.Get(CSRFHeader) == "" {
+				httpx.WriteError(w, http.StatusForbidden, "CSRF_CHECK_FAILED", "The request is missing the client header.", nil)
+				return
+			}
+		}
+		if token == "" {
+			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "A valid session is required.", nil)
 			return
 		}
-		digest := sha256.Sum256([]byte(parts[1]))
+		digest := sha256.Sum256([]byte(token))
 		hash := hex.EncodeToString(digest[:])
 		var userID string
 		err := c.DB.Pool.QueryRow(r.Context(), `SELECT s.user_id FROM api_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>now() AND u.status='active'`, hash).Scan(&userID)
 		if err != nil {
-			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "The bearer session is expired or invalid.", nil)
+			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "The session is expired or invalid.", nil)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(httpx.WithSession(r.Context(), userID, hash)))

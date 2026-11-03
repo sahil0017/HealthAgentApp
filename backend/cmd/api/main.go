@@ -32,7 +32,7 @@ func main() {
 		addr = ":8080"
 	}
 	server := &http.Server{
-		Addr: addr, Handler: api.New(db, objectStore, os.Getenv("CORTEX_DEV_TOKEN")),
+		Addr: addr, Handler: api.New(db, objectStore),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 2 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20,
 	}

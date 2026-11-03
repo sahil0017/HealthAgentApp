@@ -10,12 +10,16 @@ import time
 import uuid
 from datetime import date, timedelta
 
+import sys
+
 import pytest
 import requests
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import testidp  # noqa: E402
+
 API_URL = os.environ.get("API_URL", "http://localhost:8080").rstrip("/")
 AI_URL = os.environ.get("AI_URL", "http://localhost:8000").rstrip("/")
-DEV_TOKEN = os.environ.get("CORTEX_DEV_TOKEN", "")
 PURPOSES = ["medical_record_storage", "document_processing", "ai_processing", "health_data", "research"]
 
 
@@ -114,11 +118,16 @@ def wait_until(label, check, seconds=120, every=2):
 def api():
     client = Api()
     wait_until("api ready", lambda: requests.get(API_URL + "/readyz", timeout=5).status_code == 200, 180)
-    assert DEV_TOKEN, "CORTEX_DEV_TOKEN must be set"
-    response = client.call("POST", "/api/v1/auth/session", token=DEV_TOKEN)
-    assert response.status_code == 201, response.text
-    client.token = response.json()["data"]["access_token"]
+    client.token = sign_in("e2e-admin")
     return client
+
+
+def sign_in(sub):
+    """Exchange a test-IdP ID token for an API session, exactly as a native client would."""
+    nonce = uuid.uuid4().hex
+    response = Api().call("POST", "/api/v1/auth/session", {"provider": "oidc", "id_token": testidp.id_token(sub, nonce), "nonce": nonce}, token="")
+    assert response.status_code == 201, response.text
+    return response.json()["data"]["access_token"]
 
 
 # Logical biomarker -> (term sent to the research agent, panel). The catalog starts empty; every entry below is

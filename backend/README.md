@@ -2,9 +2,14 @@
 
 The API owns profiles, purpose-based consent, private document storage, manual review, observations, and audit events. Swift uses `/api/v1`; `/v1` remains as a compatibility alias. The OpenAPI contract is in [`openapi.yaml`](openapi.yaml).
 
-## Local authentication
+## Authentication
 
-Set `CORTEX_AUTH_MODE=development` and `CORTEX_DEV_TOKEN` in `.env`. The iOS app exchanges this bootstrap credential once at `POST /api/v1/auth/session`; the API returns a random 8-hour bearer session and stores only its SHA-256 hash. `CORTEX_DEV_OWNER_ID` selects the local account. This bootstrap verifier is for local development only; production requires an identity provider.
+Users sign in with Google or Apple. The client obtains an OpenID Connect ID token (with a fresh nonce) and posts `{provider, id_token, nonce}` to `POST /api/v1/auth/session`. The API verifies the RS256 signature against the provider's JWKS, plus issuer, audience, expiry and nonce, then maps the account to the owner `google:<sub>` / `apple:<sub>`. It creates an 8-hour session and stores only its SHA-256 hash.
+
+- **Web** receives an HttpOnly, SameSite=Strict `cortex_session` cookie, so no token reaches JavaScript or the UI. Cookie-authenticated writes must send `X-Cortex-Client` (CSRF guard).
+- **iOS** uses the bearer token from the response body, kept in the Keychain.
+- **Configure** with `CORTEX_GOOGLE_CLIENT_IDS` and `CORTEX_APPLE_CLIENT_IDS` (comma-separated). `GET /api/v1/auth/config` tells clients which providers are enabled. Without any, `/auth/session` returns 503.
+- **CI/e2e** trust a throwaway IdP through `docker-compose.idp.yml` (`scripts/testidp.py`).
 
 Protected requests send `Authorization: Bearer <session-token>`. Responses use `{ "data": ..., "meta": { "request_id": "..." } }`; errors use `{ "error": { "code": ..., "message": ..., "request_id": ..., "fields": {} } }`. JSON writes require `Content-Type: application/json`. List routes accept `limit` (1–100, default 25) and `offset` (0–1,000,000, default 0).
 
@@ -35,7 +40,7 @@ The repository ships no biomarker catalog, reference ranges, extraction patterns
 - **Units** are learned after a reviewed approval: only `CODE|unit` is queued, validated against UCUM, and approved by an administrator.
 - **Literature:** `POST /knowledge/research {kind: "literature", term}` fetches PubMed abstracts. Approving one embeds it so `/questions` can cite it as `[R#]`.
 - **Privacy:** only public terms leave the system, through a host-allowlisted client (`clinicaltables.nlm.nih.gov`, `ucum.nlm.nih.gov`, `eutils.ncbi.nlm.nih.gov`, `medlineplus.gov`).
-- **Admin access:** set `CORTEX_ADMIN_OWNER_IDS` (comma-separated owner IDs). In `CORTEX_AUTH_MODE=development` every session is an administrator; never use that mode in production.
+- **Admin access:** set `CORTEX_ADMIN_OWNER_IDS` (comma-separated owner IDs). Owner IDs look like `google:<sub>`.
 
 ## Secrets
 

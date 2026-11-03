@@ -1,5 +1,4 @@
 const BASE = "/api/v1";
-const TOKEN_KEY = "cortex.token";
 
 export class ApiError extends Error {
   constructor(
@@ -15,13 +14,17 @@ export class ApiError extends Error {
 type Listener = () => void;
 const listeners = new Set<Listener>();
 
+export type SessionState = "unknown" | "in" | "out";
+let state: SessionState = "unknown";
+
+// The session lives in an HttpOnly cookie set by the API, so the app never holds or shows a token.
+// This only tracks whether the browser currently has a valid session.
 export const auth = {
-  get token(): string | null {
-    return sessionStorage.getItem(TOKEN_KEY);
+  get state(): SessionState {
+    return state;
   },
-  set(token: string | null) {
-    if (token) sessionStorage.setItem(TOKEN_KEY, token);
-    else sessionStorage.removeItem(TOKEN_KEY);
+  set(next: SessionState) {
+    state = next;
     listeners.forEach((l) => l());
   },
   subscribe(l: Listener) {
@@ -33,15 +36,14 @@ export const auth = {
 export interface RequestOptions {
   method?: string;
   body?: unknown;
-  token?: string;
   raw?: boolean;
+  expectSession?: boolean;
 }
 
 // Every successful response is wrapped as {data, meta}; errors as {error:{code,message,fields}}.
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {};
-  const token = opts.token ?? auth.token;
-  if (token) headers.Authorization = `Bearer ${token}`;
+  // The client header is what lets the API accept cookie-authenticated writes (CSRF guard).
+  const headers: Record<string, string> = { "X-Cortex-Client": "web" };
   let body: BodyInit | undefined;
   if (opts.body instanceof FormData) body = opts.body;
   else if (opts.body !== undefined) {
@@ -57,7 +59,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     /* non-JSON body */
   }
   if (!res.ok) {
-    if (res.status === 401 && !opts.token) auth.set(null);
+    if (res.status === 401 && opts.expectSession !== false) auth.set("out");
     const e = payload?.error;
     // A few handlers still return {error: "snake_case_code"} instead of the full envelope.
     if (typeof e === "string") throw new ApiError(res.status, e, e.replace(/_/g, " "));
@@ -72,15 +74,30 @@ export const put = <T>(path: string, body: unknown) => request<T>(path, { method
 export const patch = <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body });
 export const del = <T>(path: string, body?: unknown) => request<T>(path, { method: "DELETE", body });
 
-export async function signIn(devToken: string): Promise<void> {
-  const s = await request<{ access_token: string }>("/auth/session", { method: "POST", token: devToken });
-  auth.set(s.access_token);
+export type Provider = "google" | "apple";
+
+export async function signIn(provider: Provider, idToken: string, nonce: string): Promise<void> {
+  await request("/auth/session", { method: "POST", body: { provider, id_token: idToken, nonce }, expectSession: false });
+  auth.set("in");
+}
+
+// Finds out whether the browser already has a session (the cookie is invisible to scripts).
+export async function restoreSession(): Promise<void> {
+  try {
+    await request("/users/me", { expectSession: false });
+    auth.set("in");
+  } catch {
+    auth.set("out");
+  }
 }
 
 export async function signOut(): Promise<void> {
   try {
     await post("/auth/logout");
   } finally {
-    auth.set(null);
+    auth.set("out");
   }
 }
+
+export interface AuthConfig { providers: { name: Provider; client_id: string }[] }
+export const authConfig = () => request<AuthConfig>("/auth/config", { expectSession: false });

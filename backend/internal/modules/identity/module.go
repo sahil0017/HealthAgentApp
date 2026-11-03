@@ -4,6 +4,8 @@
 package identity
 
 import (
+	"os"
+
 	"cortex/backend/internal/platform/core"
 	"cortex/backend/internal/platform/module"
 
@@ -14,13 +16,18 @@ import (
 type Module struct {
 	module.Base
 	*core.Core
+	OIDC *Verifier
 }
 
-func New(c *core.Core) *Module { return &Module{Core: c} }
+// New builds the module with identity providers taken from the environment.
+func New(c *core.Core) *Module {
+	return &Module{Core: c, OIDC: NewVerifier(LoadProviders(os.Getenv))}
+}
 
 func (m *Module) Name() string { return "identity" }
 
 func (m *Module) Public(r chi.Router) {
+	r.Get("/auth/config", m.authConfig)
 	r.Post("/auth/session", m.createSession)
 }
 

@@ -13,7 +13,7 @@ import (
 // approve pushes a proposal through the same reviewed path the research agent uses.
 func (e *ccEnv) approve(t *testing.T, kind, key, payload string) {
 	t.Helper()
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	ctx := context.Background()
 	var id string
 	if err := e.a.DB.Pool.QueryRow(ctx, `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES($1::text,$2::text,$3::text::jsonb) ON CONFLICT(kind,entry_key) DO UPDATE SET payload=EXCLUDED.payload,status='pending' RETURNING id::text`, kind, key, payload).Scan(&id); err != nil {
@@ -178,7 +178,7 @@ func TestBiomarkerEndpointsAreOwnerScopedAndValidated(t *testing.T) {
 
 func TestMalformedRangesAndConversionsAreRejectedAtReview(t *testing.T) {
 	e := commandCentre(t, "bm-bad", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	ctx := context.Background()
 	rejected := func(kind, payload string) bool {
 		var id string
@@ -261,7 +261,7 @@ func TestOverviewFlagsGoalsWithoutVerifiedData(t *testing.T) {
 
 func TestCategoriesComeFromReviewedCatalogEntriesAndGroupTheSummary(t *testing.T) {
 	e := commandCentre(t, "bm-cat", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	e.approve(t, "biomarker", "GLUCOSE", `{"code":"GLUCOSE","display_name":"Glucose","category":"glucose","supported_units":["mg/dL"]}`)
 	t.Cleanup(func() {
 		_, _ = e.a.DB.Pool.Exec(context.Background(), `UPDATE biomarker_catalog SET category=NULL WHERE code='GLUCOSE'`)
@@ -284,7 +284,7 @@ func TestCategoriesComeFromReviewedCatalogEntriesAndGroupTheSummary(t *testing.T
 
 func TestInvalidCategoryIsRejectedAtReview(t *testing.T) {
 	e := commandCentre(t, "bm-badcat", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	var id string
 	if err := e.a.DB.Pool.QueryRow(context.Background(), `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES('biomarker','BADCAT','{"code":"BADCAT","display_name":"Bad","category":"astrology"}') RETURNING id::text`).Scan(&id); err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestInvalidCategoryIsRejectedAtReview(t *testing.T) {
 
 func TestCompareShowsChangeAcrossDatesInOneUnitAndIgnoresUnverified(t *testing.T) {
 	e := commandCentre(t, "bm-compare", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	e.approve(t, "unit_conversion", "GLUCOSE-mmol", `{"code":"GLUCOSE","from_unit":"mmol/L","to_unit":"mg/dL","factor":18.016,"source":"test"}`)
 	e.approve(t, "reference_range", "GLUCOSE-r", `{"code":"GLUCOSE","unit":"mg/dL","low":70,"high":99,"source":"test"}`)
 	e.observe(t, "GLUCOSE", "Glucose", 130, "mg/dL", ago(400), "VERIFIED")
@@ -330,7 +330,7 @@ func TestCompareShowsChangeAcrossDatesInOneUnitAndIgnoresUnverified(t *testing.T
 
 func TestCoverageReportsMissingAndStalePanels(t *testing.T) {
 	e := commandCentre(t, "bm-coverage", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	e.approve(t, "biomarker", "GLUCOSE", `{"code":"GLUCOSE","display_name":"Glucose","category":"glucose","supported_units":["mg/dL"]}`)
 	t.Cleanup(func() {
 		_, _ = e.a.DB.Pool.Exec(context.Background(), `UPDATE biomarker_catalog SET category=NULL WHERE code='GLUCOSE'`)
@@ -355,7 +355,7 @@ func TestCoverageReportsMissingAndStalePanels(t *testing.T) {
 
 func TestReviewerCanAssignTheCategoryWhenApproving(t *testing.T) {
 	e := commandCentre(t, "bm-revcat", storage()...)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	var id string
 	if err := e.a.DB.Pool.QueryRow(context.Background(), `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES('biomarker','LDLX','{"code":"LDLX","display_name":"LDL test"}') RETURNING id::text`).Scan(&id); err != nil {
 		t.Fatal(err)

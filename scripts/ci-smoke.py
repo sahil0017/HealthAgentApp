@@ -4,7 +4,7 @@
 Exercises the real path a user takes: sign in, create a profile, grant consent, upload a PDF, let the
 worker extract it, then read the result back. Exits non-zero with a clear message on the first failure.
 
-Usage: CORTEX_DEV_TOKEN=... scripts/ci-smoke.py [base_url]
+Usage: python3 scripts/testidp.py init && scripts/ci-smoke.py [base_url]  (the API must trust the test IdP)
 """
 import json
 import os
@@ -14,8 +14,10 @@ import urllib.error
 import urllib.request
 import uuid
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testidp  # noqa: E402
+
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080").rstrip("/")
-DEV_TOKEN = os.environ.get("CORTEX_DEV_TOKEN", "")
 TOKEN = ""
 
 
@@ -107,14 +109,14 @@ def multipart(filename: str, content: bytes, content_type: str):
 
 def main():
     global TOKEN
-    if not DEV_TOKEN:
-        fail("CORTEX_DEV_TOKEN is not set")
-
     wait_for("api is ready (database and object storage)", lambda: call("GET", "/readyz")[0] == 200, 120)
     expect("unauthenticated profile list is rejected", call("GET", "/api/v1/profiles")[0], 401)
 
-    status, body = call("POST", "/api/v1/auth/session", token=DEV_TOKEN)
-    expect("session is created with the development credential", status, 201)
+    status, _ = call("POST", "/api/v1/auth/session", {"provider": "oidc", "id_token": "not.a.jwt", "nonce": "n"})
+    expect("a bad ID token is rejected", status, 401)
+    nonce = uuid.uuid4().hex
+    status, body = call("POST", "/api/v1/auth/session", {"provider": "oidc", "id_token": testidp.id_token("ci-smoke", nonce), "nonce": nonce})
+    expect("session is created from a verified ID token", status, 201)
     TOKEN = data(body)["access_token"]
 
     status, body = call("POST", "/api/v1/profiles", {"display_name": "CI Smoke"})

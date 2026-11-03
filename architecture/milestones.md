@@ -44,9 +44,9 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [ ] AI service as an MCP client: workflow tools call MCP instead of receiving pushed context
 - [ ] Tool allowlist, per-call limits and audit coverage tests
 
-## M6. Identity and security: not started
+## M6. Identity and security: in progress
 
-- [ ] OIDC provider integration (Sign in with Apple), replacing dev-token sessions
+- [x] OIDC sign-in with Google and Apple (verified ID tokens, nonce, JWKS); dev token removed; web uses an HttpOnly cookie with a CSRF header, iOS uses the bearer session (iOS code uncompiled)
 - [ ] Token refresh, revocation and device sessions
 - [ ] Admin role from the identity provider instead of `CORTEX_ADMIN_OWNER_IDS`
 - [ ] Encryption at rest for objects and backups; key management

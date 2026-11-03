@@ -129,7 +129,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 2. Start the services: `docker compose up --build`
 3. Check `http://localhost:8080/healthz` and `http://localhost:8080/readyz`.
 4. Open [`ios/CortexApp.xcodeproj`](./ios/CortexApp.xcodeproj) in Xcode and run the `CortexApp` scheme in a simulator.
-5. Connect to `http://localhost:8080` using the development token from `.env`.
+5. Set `CORTEX_GOOGLE_CLIENT_IDS` / `CORTEX_APPLE_CLIENT_IDS` in `.env`, then sign in with Google or Apple (see `backend/README.md`, Authentication).
 6. Create a profile, grant report-storage and processing consent, upload a text-based PDF, review its candidates, and ask a question.
 
 For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from the device. Do not expose the development stack as a production service.

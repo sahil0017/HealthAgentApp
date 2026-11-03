@@ -73,3 +73,4 @@ label { font-size: .85rem; color: var(--muted); display: block; margin-bottom: .
 .tabs { display: flex; gap: .4rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .tabs button { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: .35rem .9rem; cursor: pointer; }
 .tabs button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.btn.apple { background: #000; width: 280px; border-radius: 999px; }

@@ -222,11 +222,14 @@ jobs:
             cortex-ai.cache-from=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }}
       - name: Start the stack
         run: |
-          if [ "$CORTEX_INFERENCE" != "1" ]; then export COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml; echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"; fi
+          pip install cryptography==43.0.3
+          python3 scripts/testidp.py init
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.idp.yml
+          if [ "$CORTEX_INFERENCE" != "1" ]; then export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.ci.yml; fi
+          echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
           docker compose up -d --no-build --wait --wait-timeout 300
       - name: Smoke test (sign in, profile, consent, upload, worker extraction, export, delete)
         run: |
-          set -a; . ./.env; set +a
           python3 scripts/ci-smoke.py http://localhost:8080
       - name: Show logs on failure
         if: failure()

@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // The API sends no CORS headers, so dev and preview proxy /api to the Go service.
-const proxy = { "/api": { target: process.env.CORTEX_API_URL ?? "http://localhost:8080", changeOrigin: true } };
+const proxy = { "/api": { target: process.env.CORTEX_API_URL ?? "http://127.0.0.1:8080", changeOrigin: true } };
 
 export default defineConfig({
   plugins: [react()],

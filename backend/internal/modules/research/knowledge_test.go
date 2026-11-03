@@ -16,26 +16,20 @@ func TestIsAdmin(t *testing.T) {
 		r := httptest.NewRequest("GET", "/", nil)
 		return &httpRequest{r.WithContext(httpx.WithOwner(r.Context(), id))}
 	}
-	t.Setenv("CORTEX_AUTH_MODE", "production")
 	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "admin-1, admin-2")
 	if !a.isAdmin(mk("admin-2").Request) {
 		t.Error("allowlisted owner should be admin")
 	}
 	if a.isAdmin(mk("someone").Request) {
-		t.Error("unlisted owner must not be admin outside development")
+		t.Error("unlisted owner must not be admin")
 	}
 	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "")
 	if a.isAdmin(mk("").Request) {
 		t.Error("empty owner must not match an empty allowlist")
 	}
-	t.Setenv("CORTEX_AUTH_MODE", "development")
-	if !a.isAdmin(mk("someone").Request) {
-		t.Error("development sessions are the local operator")
-	}
 }
 
 func TestRequireAdminRejectsWithForbidden(t *testing.T) {
-	t.Setenv("CORTEX_AUTH_MODE", "production")
 	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "")
 	w := httptest.NewRecorder()
 	if New(nil).requireAdmin(w, httptest.NewRequest("GET", "/", nil)) || w.Code != 403 {

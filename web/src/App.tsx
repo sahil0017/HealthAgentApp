@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Route, Routes } from "react-router-dom";
-import { auth } from "./api/client";
+import { useEffect } from "react";
+import { auth, restoreSession } from "./api/client";
 import { ProfileProvider, useProfile } from "./api/profile";
 import { messageOf } from "./api/useAsync";
 import { Shell } from "./components/Shell";
@@ -57,10 +58,14 @@ function Authed() {
 }
 
 export function App() {
-  const token = useSyncExternalStore(auth.subscribe, () => auth.token);
-  if (!token) return <SignIn />;
+  const session = useSyncExternalStore(auth.subscribe, () => auth.state);
+  useEffect(() => {
+    void restoreSession();
+  }, []);
+  if (session === "unknown") return <p className="muted" style={{ padding: "2rem" }}>Loading…</p>;
+  if (session === "out") return <SignIn />;
   return (
-    <ProfileProvider key={token}>
+    <ProfileProvider>
       <Authed />
     </ProfileProvider>
   );

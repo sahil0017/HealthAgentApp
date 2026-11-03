@@ -20,6 +20,7 @@ var expectedRoutes = []string{
 	"DELETE /history/{entryID}",
 	"DELETE /profiles/{profileID}",
 	"DELETE /profiles/{profileID}/questions/{questionID}",
+	"GET /auth/config",
 	"GET /consents/{consentID}",
 	"GET /documents/{documentID}",
 	"GET /documents/{documentID}/download",
@@ -83,7 +84,7 @@ var expectedRoutes = []string{
 }
 
 func TestRouteTableMatchesTheAPIContract(t *testing.T) {
-	router := Router(core.New(nil, nil, "")).(chi.Router)
+	router := Router(core.New(nil, nil)).(chi.Router)
 	var got []string
 	_ = chi.Walk(router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		if len(route) > 3 && route[:3] == "/v1" {

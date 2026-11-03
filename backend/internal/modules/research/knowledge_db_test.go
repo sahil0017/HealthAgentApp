@@ -16,7 +16,7 @@ import (
 func knowledgeAPI(t *testing.T) (*Module, http.Handler) {
 	t.Helper()
 	c := testkit.Open(t)
-	t.Setenv("CORTEX_AUTH_MODE", "development")
+	t.Setenv("CORTEX_ADMIN_OWNER_IDS", "reviewer-1")
 	if _, err := c.DB.Pool.Exec(context.Background(), `TRUNCATE knowledge_entries CASCADE; DELETE FROM biomarker_catalog WHERE source='research-agent'`); err != nil {
 		t.Fatal(err)
 	}

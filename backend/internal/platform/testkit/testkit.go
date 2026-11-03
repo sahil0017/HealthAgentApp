@@ -52,7 +52,7 @@ func Open(t *testing.T) *core.Core {
 		t.Fatal(err)
 	}
 	t.Cleanup(db.Close)
-	c := core.New(db, nil, "")
+	c := core.New(db, nil)
 	c.Remover = &FakeRemover{}
 	return c
 }

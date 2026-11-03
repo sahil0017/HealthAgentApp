@@ -11,7 +11,21 @@ paths:
   /auth/session:
     post:
       security: []
-      summary: Exchange local development credential for a session
+      summary: Exchange a verified Google or Apple ID token for a session
+      description: >
+        The ID token's signature, issuer, audience, expiry and nonce are verified. Native clients use the returned
+        bearer token; browsers also receive an HttpOnly `cortex_session` cookie and must send `X-Cortex-Client` on writes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, id_token, nonce]
+              properties:
+                provider: { type: string, enum: [google, apple, oidc] }
+                id_token: { type: string }
+                nonce: { type: string }
       responses:
         '201':
           description: Session created
@@ -19,6 +33,13 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SessionEnvelope' }
         '401': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /auth/config:
+    get:
+      security: []
+      summary: Sign-in providers and their public client IDs
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /auth/logout:
     post:
       summary: Revoke current session

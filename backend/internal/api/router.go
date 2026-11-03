@@ -17,8 +17,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func New(db *store.Store, objectStore *objects.Store, devToken string) http.Handler {
-	return Router(core.New(db, objectStore, devToken))
+func New(db *store.Store, objectStore *objects.Store) http.Handler {
+	return Router(core.New(db, objectStore))
 }
 
 // Router mounts all modules under both /api/v1 and /v1.

@@ -1,7 +1,8 @@
 """Identity (auth, profiles) and Personal Data Governance (consent, access history, export, deletion)."""
 import uuid
 
-from conftest import CODES as C, API_URL, DEV_TOKEN, add_verified, ago
+import testidp
+from conftest import CODES as C, API_URL, add_verified, ago, sign_in
 
 
 def test_health_and_auth_boundaries(api):
@@ -10,13 +11,18 @@ def test_health_and_auth_boundaries(api):
     assert requests.get(API_URL + "/readyz", timeout=10).status_code == 200
     assert api.get("/profiles", token="not-a-session").status_code == 401
     assert api.call("GET", "/api/v1/profiles", token="").status_code == 401
-    assert api.call("POST", "/api/v1/auth/session", token="wrong").status_code == 401
+    bad = {"provider": "oidc", "id_token": "not.a.jwt", "nonce": "n"}
+    assert api.call("POST", "/api/v1/auth/session", bad, token="").status_code == 401
+    forged = {"provider": "oidc", "id_token": testidp.id_token("x", "n", aud="someone-else"), "nonce": "n"}
+    assert api.call("POST", "/api/v1/auth/session", forged, token="").status_code == 401
+    no_nonce = {"provider": "oidc", "id_token": testidp.id_token("x", "n"), "nonce": "other"}
+    assert api.call("POST", "/api/v1/auth/session", no_nonce, token="").status_code == 401
     me = api.ok(api.get("/users/me"), 200)
     assert me
 
 
 def test_logout_revokes_only_that_session(api):
-    second = api.call("POST", "/api/v1/auth/session", token=DEV_TOKEN).json()["data"]["access_token"]
+    second = sign_in("e2e-admin")
     assert api.get("/profiles", token=second).status_code == 200
     assert api.post("/auth/logout", token=second).status_code == 200
     assert api.get("/profiles", token=second).status_code == 401
