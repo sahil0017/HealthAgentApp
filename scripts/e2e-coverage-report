@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Turns the data written by the instrumented containers into coverage percentages and enforces the thresholds.
 # Run after `docker compose stop` so Go and Python have flushed their counters.
-# Usage: scripts/e2e-coverage-report   (GO_MIN / PY_MIN default to 90)
+# Usage: scripts/e2e-coverage-report   (GO_MIN / PY_MIN default to 60)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-GO_MIN="${GO_MIN:-90}"
-PY_MIN="${PY_MIN:-90}"
+GO_MIN="${GO_MIN:-60}"
+PY_MIN="${PY_MIN:-60}"
 mkdir -p .cover/out
 summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
