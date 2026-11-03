@@ -1,0 +1,93 @@
+# Full-stack end-to-end suite: builds instrumented images, runs real HTTP traffic through the Go API, worker and
+# Python AI service against Postgres and object storage, then enforces coverage measured from that traffic alone.
+# The iOS app cannot run in Docker; it is built by ci.yml and published by ios-simulator.yml.
+name: e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      go_min:
+        description: Minimum Go coverage (percent)
+        default: "90"
+      py_min:
+        description: Minimum Python coverage (percent)
+        default: "90"
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e / docker stack with coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.coverage.yml
+      CORTEX_INFERENCE: "0"
+      CORTEX_EMBEDDING_REQUIRED: "false"
+      GO_MIN: ${{ inputs.go_min || '90' }}
+      PY_MIN: ${{ inputs.py_min || '90' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Generate local secrets
+        run: |
+          scripts/bootstrap-env
+          mkdir -p .cover/go .cover/py
+          chmod -R 777 .cover
+
+      - name: Build instrumented images
+        run: $COMPOSE build
+
+      - name: Start the stack
+        run: |
+          $COMPOSE up -d
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/readyz >/dev/null 2>&1 && curl -fsS http://localhost:8000/healthz >/dev/null 2>&1 && exit 0
+            sleep 3
+          done
+          echo "stack did not become ready" >&2
+          $COMPOSE ps -a
+          exit 1
+
+      - name: Run the end-to-end suite
+        run: |
+          pip install -r e2e/requirements.txt
+          set -a; . ./.env; set +a
+          cd e2e && python -m pytest -v --junitxml=../.cover/e2e-junit.xml
+
+      - name: Stop containers so coverage is flushed
+        if: always()
+        run: $COMPOSE stop -t 40 api worker cortex-ai
+
+      - name: Coverage report and thresholds
+        run: scripts/e2e-coverage-report
+
+      - name: Show logs on failure
+        if: failure()
+        run: $COMPOSE ps -a && $COMPOSE logs --no-color --tail=150
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            .cover/out
+            .cover/e2e-junit.xml
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v --rmi local

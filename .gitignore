@@ -17,3 +17,6 @@ ios/build/
 ios/*.zip
 .env.*
 !.env.example
+
+.cover/
+.coverage

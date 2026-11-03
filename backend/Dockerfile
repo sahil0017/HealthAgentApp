@@ -3,7 +3,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /out/cortex-api ./cmd/api && CGO_ENABLED=0 go build -o /out/cortex-worker ./cmd/worker
+# BUILD_FLAGS="-cover -covermode=atomic -coverpkg=cortex/backend/..." builds the instrumented binaries used by the coverage run.
+ARG BUILD_FLAGS=""
+RUN CGO_ENABLED=0 go build $BUILD_FLAGS -o /out/cortex-api ./cmd/api && CGO_ENABLED=0 go build $BUILD_FLAGS -o /out/cortex-worker ./cmd/worker
 
 # The worker needs Tesseract (image OCR) and poppler (scanned PDF pages), so it runs on Alpine instead of distroless.
 FROM alpine:3.22 AS worker

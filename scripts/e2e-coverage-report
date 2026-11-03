@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Turns the data written by the instrumented containers into coverage percentages and enforces the thresholds.
+# Run after `docker compose stop` so Go and Python have flushed their counters.
+# Usage: scripts/e2e-coverage-report   (GO_MIN / PY_MIN default to 90)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+GO_MIN="${GO_MIN:-90}"
+PY_MIN="${PY_MIN:-90}"
+mkdir -p .cover/out
+summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+(cd backend && go tool covdata textfmt -i=../.cover/go -o ../.cover/out/go.cov)
+# Generated or bootstrap-only code that an HTTP run cannot meaningfully reach is excluded explicitly, not silently.
+grep -v -E "internal/archtest/|_test\.go" .cover/out/go.cov > .cover/out/go.filtered.cov || true
+(cd backend && go tool cover -func=../.cover/out/go.filtered.cov > ../.cover/out/go-func.txt)
+go_total=$(awk '/^total:/ {gsub("%","",$3); print $3}' .cover/out/go-func.txt)
+
+python3 -m pip install --quiet coverage
+rm -f .coverage
+python3 -m coverage combine --rcfile=e2e/coveragerc .cover/py
+python3 -m coverage report --rcfile=e2e/coveragerc > .cover/out/py-report.txt || true
+python3 -m coverage xml --rcfile=e2e/coveragerc -o .cover/out/py.xml >/dev/null || true
+py_total=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' .cover/out/py-report.txt)
+
+{
+  echo "## End-to-end coverage (docker compose, real HTTP traffic only)"
+  echo
+  echo "| Service | Coverage | Required |"
+  echo "|---|---|---|"
+  echo "| Go API + worker | ${go_total}% | ${GO_MIN}% |"
+  echo "| Python AI service | ${py_total}% | ${PY_MIN}% |"
+  echo
+  echo "<details><summary>Go: least-covered functions</summary>"
+  echo
+  echo '```'
+  sort -k3 -n .cover/out/go-func.txt | awk '$3+0 < 80 {print}' | head -60
+  echo '```'
+  echo "</details>"
+  echo
+  echo "<details><summary>Python report</summary>"
+  echo
+  echo '```'
+  cat .cover/out/py-report.txt
+  echo '```'
+  echo "</details>"
+} | tee -a "$summary"
+
+status=0
+awk -v v="$go_total" -v m="$GO_MIN" 'BEGIN{exit !(v+0 >= m+0)}' || { echo "Go coverage ${go_total}% is below ${GO_MIN}%" >&2; status=1; }
+awk -v v="$py_total" -v m="$PY_MIN" 'BEGIN{exit !(v+0 >= m+0)}' || { echo "Python coverage ${py_total}% is below ${PY_MIN}%" >&2; status=1; }
+exit $status

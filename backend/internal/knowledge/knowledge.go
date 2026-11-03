@@ -263,7 +263,7 @@ func (s *Service) Run(ctx context.Context) {
 	defer ticker.Stop()
 	var lastLearn time.Time
 	for {
-		if time.Since(lastLearn) >= learnInterval {
+		if time.Since(lastLearn) >= learnEvery() {
 			lastLearn = time.Now()
 			if err := s.LearnFromRecords(ctx); err != nil {
 				log.Printf("research learning: %v", err)

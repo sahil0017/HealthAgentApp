@@ -1,0 +1,31 @@
+# Coverage run: instrumented Go binaries and a coverage-wrapped uvicorn write their data to ./.cover on a clean shutdown.
+# Used together with docker-compose.ci.yml by the e2e workflow; never for normal development.
+services:
+  api:
+    build:
+      args:
+        BUILD_FLAGS: -cover -covermode=atomic -coverpkg=cortex/backend/...
+    environment:
+      GOCOVERDIR: /cover
+      CORTEX_ADMIN_OWNER_IDS: local-development-user
+    volumes: ["./.cover/go:/cover"]
+    stop_grace_period: 30s
+  worker:
+    build:
+      args:
+        BUILD_FLAGS: -cover -covermode=atomic -coverpkg=cortex/backend/...
+    environment:
+      GOCOVERDIR: /cover
+      CORTEX_LEARN_INTERVAL_SECONDS: "5"
+    volumes: ["./.cover/go:/cover"]
+    stop_grace_period: 30s
+  cortex-ai:
+    build:
+      args:
+        COVERAGE: "1"
+    ports: ["8000:8000"]
+    environment:
+      COVERAGE_FILE: /cover/.coverage
+    volumes: ["./.cover/py:/cover"]
+    command: ["coverage", "run", "--branch", "--source=/app/app", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    stop_grace_period: 30s

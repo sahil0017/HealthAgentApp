@@ -30,6 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
       uv pip install --system --no-compile-bytecode torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu \
       && uv pip install --system --no-compile-bytecode -r requirements-inference.txt; \
     fi
+ARG COVERAGE=0
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    if [ "$COVERAGE" = "1" ]; then uv pip install --system --no-compile-bytecode coverage; fi
 COPY app ./app
 COPY --from=model --chown=10001:10001 /models /models
 RUN useradd --create-home --uid 10001 cortex

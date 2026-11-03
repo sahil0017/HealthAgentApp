@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"time"
@@ -11,8 +12,15 @@ import (
 	"cortex/backend/internal/labrange"
 )
 
+// learnEvery is how often records are scanned for proposals; CORTEX_LEARN_INTERVAL_SECONDS shortens it for end-to-end runs.
+func learnEvery() time.Duration {
+	if n, err := strconv.Atoi(os.Getenv("CORTEX_LEARN_INTERVAL_SECONDS")); err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return 10 * time.Minute
+}
+
 const (
-	learnInterval = 10 * time.Minute
 	// A range is only proposed when enough different reports print it and almost all agree.
 	minRangeDocuments = 3
 	minRangeAgreement = 0.8

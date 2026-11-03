@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = app
+relative_files = False
+
+[paths]
+source =
+    cortex-ai/app
+    /app/app
+
+[report]
+show_missing = True
+skip_empty = True
