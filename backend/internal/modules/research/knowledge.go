@@ -10,6 +10,7 @@ import (
 	"strings"
 	"uuid"
 
+	"cortex/backend/internal/domain/biomarker"
 	"cortex/backend/internal/platform/embedding"
 	"cortex/backend/internal/platform/httpx"
 
@@ -128,10 +129,22 @@ func (m *Module) reviewKnowledge(w http.ResponseWriter, r *http.Request, approve
 		return
 	}
 	var in struct {
-		Note string `json:"note"`
+		Note     string `json:"note"`
+		Category string `json:"category"`
 	}
 	_ = httpx.DecodeJSON(r, 4<<10, &in)
 	var err error
+	if approve && in.Category != "" {
+		// The reviewer decides the panel a learned biomarker belongs to; LOINC cannot say reliably.
+		if !biomarker.ValidCategory(in.Category) {
+			httpx.Invalid(w, "INVALID_CATEGORY", "Category is not a supported panel.", "category")
+			return
+		}
+		if _, err := m.DB.Pool.Exec(r.Context(), `UPDATE knowledge_entries SET payload=payload||jsonb_build_object('category',$2::text) WHERE id=$1::uuid AND kind='biomarker' AND status='pending'`, id, in.Category); err != nil {
+			httpx.WriteError(w, 500, "REVIEW_FAILED", "The entry could not be reviewed.", nil)
+			return
+		}
+	}
 	if approve {
 		err = m.approveEntry(r.Context(), id, httpx.Owner(r), in.Note)
 	} else {
@@ -282,16 +295,17 @@ func applyKnowledge(ctx context.Context, tx pgx.Tx, kind, id string, payload jso
 			SupportedUnit []string `json:"supported_units"`
 			LoincNums     []string `json:"loinc_nums"`
 			ReferenceNote *string  `json:"reference_note"`
+			Category      *string  `json:"category"`
 		}
-		if err := json.Unmarshal(payload, &b); err != nil || b.Code == "" || b.DisplayName == "" {
+		if err := json.Unmarshal(payload, &b); err != nil || b.Code == "" || b.DisplayName == "" || (b.Category != nil && !biomarker.ValidCategory(*b.Category)) {
 			return errors.New("invalid biomarker entry")
 		}
-		_, err := tx.Exec(ctx, `INSERT INTO biomarker_catalog(code,display_name,synonyms,supported_units,loinc_nums,reference_note,status,source,approved_by,approved_at)
-			VALUES($1::text,$2::text,$3::text[],$4::text[],$5::text[],to_jsonb($6::text),'approved','research-agent',$7::text,now())
+		_, err := tx.Exec(ctx, `INSERT INTO biomarker_catalog(code,display_name,synonyms,supported_units,loinc_nums,reference_note,status,source,approved_by,approved_at,category)
+			VALUES($1::text,$2::text,$3::text[],$4::text[],$5::text[],to_jsonb($6::text),'approved','research-agent',$7::text,now(),$8::text)
 			ON CONFLICT(code) DO UPDATE SET display_name=EXCLUDED.display_name,
 				synonyms=(SELECT ARRAY(SELECT DISTINCT unnest(biomarker_catalog.synonyms || EXCLUDED.synonyms))),
-				loinc_nums=EXCLUDED.loinc_nums, reference_note=EXCLUDED.reference_note, status='approved', source='research-agent', approved_by=EXCLUDED.approved_by, approved_at=now()`,
-			strings.ToUpper(b.Code), b.DisplayName, nonNil(b.Synonyms), nonNil(b.SupportedUnit), nonNil(b.LoincNums), b.ReferenceNote, reviewer)
+				loinc_nums=EXCLUDED.loinc_nums, reference_note=EXCLUDED.reference_note, status='approved', source='research-agent', approved_by=EXCLUDED.approved_by, approved_at=now(), category=COALESCE(EXCLUDED.category, biomarker_catalog.category)`,
+			strings.ToUpper(b.Code), b.DisplayName, nonNil(b.Synonyms), nonNil(b.SupportedUnit), nonNil(b.LoincNums), b.ReferenceNote, reviewer, b.Category)
 		return err
 	case "unit":
 		var raw struct {

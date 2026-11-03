@@ -25,6 +25,8 @@ func (m *Module) Authed(r chi.Router) {
 	r.Post("/profiles/{profileID}/observations", m.createObservation)
 	r.Get("/profiles/{profileID}/biomarkers", m.listBiomarkers)
 	r.Get("/profiles/{profileID}/biomarkers/summary", m.biomarkerSummaries)
+	r.Get("/profiles/{profileID}/biomarkers/compare", m.biomarkerCompare)
+	r.Get("/profiles/{profileID}/biomarkers/coverage", m.biomarkerCoverage)
 	r.Get("/profiles/{profileID}/biomarkers/{code}/history", m.biomarkerHistory)
 	r.Get("/profiles/{profileID}/biomarkers/{code}/trend", m.biomarkerTrend)
 	r.Post("/observations/{observationID}/verify", m.verifyObservation)

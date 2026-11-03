@@ -313,6 +313,24 @@ paths:
       description: 'Verified values only. Readings in a unit with no approved conversion are counted as excluded, never guessed.'
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers/compare:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Every biomarker at two dates, in one unit, with the change between them
+      description: 'Query from (required) and to (default today), both YYYY-MM-DD. Uses the latest verified reading on or before each date. Status is one of changed, unchanged, returned_to_range, left_range, new, no_recent_data, same_reading.'
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { $ref: '#/components/responses/Error' }
+  /profiles/{profileID}/biomarkers/coverage:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Which panels (CBC, glucose, lipid, liver, kidney, vitamins, hormones) are current, stale or never measured
+      description: 'Verified readings only. Each biomarker belongs to the category assigned when it was reviewed into the catalog.'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/biomarkers/{code}/trend:
     parameters:
       - { $ref: '#/components/parameters/profileID' }

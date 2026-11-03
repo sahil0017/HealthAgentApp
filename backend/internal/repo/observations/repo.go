@@ -50,7 +50,7 @@ func (r *Repo) LoadKnowledge(ctx context.Context, code string) (map[biomarker.Co
 }
 
 func (r *Repo) LoadObservationRows(ctx context.Context, ownerID, profileID string, code *string) (map[string][]biomarker.ObsRow, map[string]string, error) {
-	rows, err := r.DB.Pool.Query(ctx, `SELECT o.id::text,o.biomarker_code,COALESCE(c.display_name,o.name),o.value::float8,o.unit,COALESCE(o.reference_range,''),COALESCE(o.observed_at,o.created_at::date),o.source_type,o.verification_status,o.revision
+	rows, err := r.DB.Pool.Query(ctx, `SELECT o.id::text,o.biomarker_code,COALESCE(c.display_name,o.name),o.value::float8,o.unit,COALESCE(o.reference_range,''),COALESCE(o.observed_at,o.created_at::date),o.source_type,o.verification_status,o.revision,COALESCE(o.document_id::text,'')
 		FROM observations o LEFT JOIN biomarker_catalog c ON c.code=o.biomarker_code
 		WHERE o.profile_id=$1 AND o.owner_id=$2 AND o.biomarker_code IS NOT NULL AND ($3::text IS NULL OR o.biomarker_code=$3::text)`, profileID, ownerID, code)
 	if err != nil {
@@ -61,7 +61,7 @@ func (r *Repo) LoadObservationRows(ctx context.Context, ownerID, profileID strin
 	for rows.Next() {
 		var r biomarker.ObsRow
 		var c, name string
-		if err := rows.Scan(&r.ID, &c, &name, &r.Value, &r.Unit, &r.LabRange, &r.On, &r.SourceType, &r.Status, &r.Revision); err != nil {
+		if err := rows.Scan(&r.ID, &c, &name, &r.Value, &r.Unit, &r.LabRange, &r.On, &r.SourceType, &r.Status, &r.Revision, &r.DocumentID); err != nil {
 			return nil, nil, err
 		}
 		byCode[c] = append(byCode[c], r)
@@ -84,4 +84,22 @@ func (r *Repo) ProfileDemographics(ctx context.Context, ownerID, profileID strin
 	}
 	age := biomarker.AgeYears(*birth, now)
 	return sex, &age
+}
+
+// Categories maps biomarker codes to their panel category; codes without one are omitted.
+func (r *Repo) Categories(ctx context.Context) (map[string]string, error) {
+	rows, err := r.DB.Pool.Query(ctx, `SELECT code,category FROM biomarker_catalog WHERE category IS NOT NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var code, category string
+		if err := rows.Scan(&code, &category); err != nil {
+			return nil, err
+		}
+		out[code] = category
+	}
+	return out, rows.Err()
 }

@@ -258,3 +258,120 @@ func TestOverviewFlagsGoalsWithoutVerifiedData(t *testing.T) {
 		t.Fatal("a goal with a verified reading should not be flagged")
 	}
 }
+
+func TestCategoriesComeFromReviewedCatalogEntriesAndGroupTheSummary(t *testing.T) {
+	e := commandCentre(t, "bm-cat", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
+	e.approve(t, "biomarker", "GLUCOSE", `{"code":"GLUCOSE","display_name":"Glucose","category":"glucose","supported_units":["mg/dL"]}`)
+	t.Cleanup(func() {
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `UPDATE biomarker_catalog SET category=NULL WHERE code='GLUCOSE'`)
+	})
+	e.observe(t, "GLUCOSE", "Glucose", 95, "mg/dL", ago(10), "VERIFIED")
+	e.observe(t, "HBA1C", "HbA1c", 5.4, "%", ago(10), "VERIFIED")
+
+	code, env := e.do("GET", "/profiles/"+e.profile+"/biomarkers/summary", "")
+	if code != 200 {
+		t.Fatalf("summary %d", code)
+	}
+	cats := map[string]string{}
+	for _, s := range data[[]biomarkers.BiomarkerSummary](t, env) {
+		cats[s.BiomarkerCode] = s.Category
+	}
+	if cats["GLUCOSE"] != "glucose" || cats["HBA1C"] != "other" {
+		t.Fatalf("categories %v", cats)
+	}
+}
+
+func TestInvalidCategoryIsRejectedAtReview(t *testing.T) {
+	e := commandCentre(t, "bm-badcat", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
+	var id string
+	if err := e.a.DB.Pool.QueryRow(context.Background(), `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES('biomarker','BADCAT','{"code":"BADCAT","display_name":"Bad","category":"astrology"}') RETURNING id::text`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `DELETE FROM knowledge_entries WHERE id=$1::uuid`, id)
+	})
+	if status, _ := e.doAs("reviewer-1", "POST", "/knowledge/entries/"+id+"/approve", "{}"); status == 200 {
+		t.Fatal("unknown category accepted")
+	}
+}
+
+func TestCompareShowsChangeAcrossDatesInOneUnitAndIgnoresUnverified(t *testing.T) {
+	e := commandCentre(t, "bm-compare", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
+	e.approve(t, "unit_conversion", "GLUCOSE-mmol", `{"code":"GLUCOSE","from_unit":"mmol/L","to_unit":"mg/dL","factor":18.016,"source":"test"}`)
+	e.approve(t, "reference_range", "GLUCOSE-r", `{"code":"GLUCOSE","unit":"mg/dL","low":70,"high":99,"source":"test"}`)
+	e.observe(t, "GLUCOSE", "Glucose", 130, "mg/dL", ago(400), "VERIFIED")
+	e.observe(t, "GLUCOSE", "Glucose", 5.0, "mmol/L", ago(20), "VERIFIED")
+	e.observe(t, "GLUCOSE", "Glucose", 400, "mg/dL", ago(5), "PENDING_REVIEW")
+
+	code, env := e.do("GET", "/profiles/"+e.profile+"/biomarkers/compare?from="+ago(300)+"&to="+ahead(0), "")
+	if code != 200 {
+		t.Fatalf("compare %d", code)
+	}
+	changes := data[[]biomarker.Change](t, env)
+	if len(changes) != 1 {
+		t.Fatalf("%+v", changes)
+	}
+	c := changes[0]
+	if c.Status != "returned_to_range" || c.Unit != "mmol/L" || c.To == nil || c.To.Value != 5 || c.Change == nil || *c.Change > -2 || *c.Change < -2.5 {
+		t.Fatalf("unexpected change %+v to=%+v", c, c.To)
+	}
+	for _, q := range []string{"", "?from=nope", "?from=" + ago(1) + "&to=" + ago(9)} {
+		if code, _ := e.do("GET", "/profiles/"+e.profile+"/biomarkers/compare"+q, ""); code != 400 {
+			t.Errorf("%q: want 400, got %d", q, code)
+		}
+	}
+	if code, _ := e.doAs("someone-else", "GET", "/profiles/"+e.profile+"/biomarkers/compare?from="+ago(300), ""); code != 404 {
+		t.Errorf("another owner must not compare: %d", code)
+	}
+}
+
+func TestCoverageReportsMissingAndStalePanels(t *testing.T) {
+	e := commandCentre(t, "bm-coverage", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
+	e.approve(t, "biomarker", "GLUCOSE", `{"code":"GLUCOSE","display_name":"Glucose","category":"glucose","supported_units":["mg/dL"]}`)
+	t.Cleanup(func() {
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `UPDATE biomarker_catalog SET category=NULL WHERE code='GLUCOSE'`)
+	})
+	e.observe(t, "GLUCOSE", "Glucose", 95, "mg/dL", ago(400), "VERIFIED")
+
+	code, env := e.do("GET", "/profiles/"+e.profile+"/biomarkers/coverage", "")
+	if code != 200 {
+		t.Fatalf("coverage %d", code)
+	}
+	got := map[string]biomarker.PanelCoverage{}
+	for _, p := range data[[]biomarker.PanelCoverage](t, env) {
+		got[p.Category] = p
+	}
+	if got["glucose"].Status != "stale" || got["lipid"].Status != "never_measured" || got["cbc"].Status != "never_measured" {
+		t.Fatalf("%+v", got)
+	}
+	if code, _ := e.doAs("someone-else", "GET", "/profiles/"+e.profile+"/biomarkers/coverage", ""); code != 404 {
+		t.Errorf("another owner must not read coverage: %d", code)
+	}
+}
+
+func TestReviewerCanAssignTheCategoryWhenApproving(t *testing.T) {
+	e := commandCentre(t, "bm-revcat", storage()...)
+	t.Setenv("CORTEX_AUTH_MODE", "development")
+	var id string
+	if err := e.a.DB.Pool.QueryRow(context.Background(), `INSERT INTO knowledge_entries(kind,entry_key,payload) VALUES('biomarker','LDLX','{"code":"LDLX","display_name":"LDL test"}') RETURNING id::text`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `DELETE FROM biomarker_catalog WHERE code='LDLX'`)
+		_, _ = e.a.DB.Pool.Exec(context.Background(), `DELETE FROM knowledge_entries WHERE id=$1::uuid`, id)
+	})
+	if status, _ := e.doAs("reviewer-1", "POST", "/knowledge/entries/"+id+"/approve", `{"category":"astrology"}`); status != 400 {
+		t.Fatalf("bad category: %d", status)
+	}
+	if status, _ := e.doAs("reviewer-1", "POST", "/knowledge/entries/"+id+"/approve", `{"category":"lipid"}`); status != 200 {
+		t.Fatalf("approve: %d", status)
+	}
+	var category string
+	if err := e.a.DB.Pool.QueryRow(context.Background(), `SELECT category FROM biomarker_catalog WHERE code='LDLX'`).Scan(&category); err != nil || category != "lipid" {
+		t.Fatalf("category %q err %v", category, err)
+	}
+}

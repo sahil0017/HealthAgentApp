@@ -30,6 +30,8 @@ var expectedRoutes = []string{
 	"GET /profiles/{profileID}",
 	"GET /profiles/{profileID}/access-history",
 	"GET /profiles/{profileID}/biomarkers",
+	"GET /profiles/{profileID}/biomarkers/compare",
+	"GET /profiles/{profileID}/biomarkers/coverage",
 	"GET /profiles/{profileID}/biomarkers/summary",
 	"GET /profiles/{profileID}/biomarkers/{code}/history",
 	"GET /profiles/{profileID}/biomarkers/{code}/trend",

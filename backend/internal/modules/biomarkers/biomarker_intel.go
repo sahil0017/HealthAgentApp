@@ -49,6 +49,7 @@ func (m *Module) biomarkerTrend(w http.ResponseWriter, r *http.Request) {
 type BiomarkerSummary struct {
 	BiomarkerCode string                `json:"biomarker_code"`
 	DisplayName   string                `json:"display_name"`
+	Category      string                `json:"category"`
 	Latest        *biomarker.TrendPoint `json:"latest"`
 	Previous      *float64              `json:"previous_value"`
 	Change        *float64              `json:"change"`
@@ -72,6 +73,11 @@ func (m *Module) biomarkerSummaries(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "SUMMARY_UNAVAILABLE", "The biomarker summary is unavailable.", nil)
 		return
 	}
+	categories, err := observations.New(m.DB).Categories(r.Context())
+	if err != nil {
+		httpx.WriteError(w, 500, "SUMMARY_UNAVAILABLE", "The biomarker summary is unavailable.", nil)
+		return
+	}
 	now := time.Now().UTC()
 	sex, age := observations.New(m.DB).ProfileDemographics(r.Context(), httpx.Owner(r), profileID, now)
 	codes := make([]string, 0, len(byCode))
@@ -87,7 +93,7 @@ func (m *Module) biomarkerSummaries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		t := biomarker.BuildTrend(code, names[code], byCode[code], false, known, learned, sex, age, now)
-		s := BiomarkerSummary{BiomarkerCode: code, DisplayName: t.DisplayName, Unit: t.CanonicalUnit, Trend: t.Trend, Cadence: t.Cadence, Readings: len(t.Points), Unverified: t.Unverified, Excluded: len(t.Excluded), Kinds: t.Kinds}
+		s := BiomarkerSummary{BiomarkerCode: code, DisplayName: t.DisplayName, Category: biomarker.CategoryOf(code, categories), Unit: t.CanonicalUnit, Trend: t.Trend, Cadence: t.Cadence, Readings: len(t.Points), Unverified: t.Unverified, Excluded: len(t.Excluded), Kinds: t.Kinds}
 		if n := len(t.Points); n > 0 {
 			latest := t.Points[n-1]
 			s.Latest = &latest
