@@ -24,6 +24,14 @@
 | **Understand** | Ask questions using approved records and retrieved research sources. |
 | **Stay in control** | Manage data permissions; keep original reports in private object storage. |
 
+### Complete architecture, modules 01–12
+
+<p align="center">
+  <img src="./docs/assets/cortex-architecture-12-modules.svg" alt="Animated CORTEX architecture: iOS app, Go API with modules 01 to 12 and shared platform, PostgreSQL with pgvector, object storage, Go worker, Python AI service, external sources and CI" width="100%">
+</p>
+
+Solid green modules are shipped (01, 02, 03, 07), amber are partial (08, 12) and dashed are planned (04, 05, 06, 09, 10, 11). Status lives in [`modules/README.md`](./modules/README.md).
+
 ### The report-to-record flow
 
 <p align="center">
@@ -131,6 +139,7 @@ For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from
 - [`backend/`](./backend/) — Go API, worker, OpenAPI contract, and migrations.
 - [`cortex-ai/`](./cortex-ai/) — FastAPI service, workflows, retrieval, safety checks, and tests.
 - [`ios/`](./ios/) — SwiftUI iOS client.
+- [`docs/assets/cortex-architecture-12-modules.svg`](./docs/assets/cortex-architecture-12-modules.svg) — animated architecture for all 12 modules.
 - [`e2e/`](./e2e/) — end-to-end tests against the Docker stack.
 - [`docs/assets/cortex-workflow.svg`](./docs/assets/cortex-workflow.svg) — animated technical workflow.
 - [`.github/workflows/`](./.github/workflows/) — parallel CI (Go matrix, Python, Docker builds, integration, iOS build) and nightly regression.
