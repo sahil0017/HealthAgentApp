@@ -13,6 +13,7 @@ import (
 // expectedRoutes is the public API surface under /v1. Changing it is a deliberate API change:
 // update backend/openapi.yaml in the same commit.
 var expectedRoutes = []string{
+	"DELETE /auth/sessions/{sessionID}",
 	"DELETE /consents/{consentID}",
 	"DELETE /documents/{documentID}",
 	"DELETE /follow-ups/{followUpID}",
@@ -22,6 +23,7 @@ var expectedRoutes = []string{
 	"DELETE /profiles/{profileID}/devices/{deviceID}",
 	"DELETE /profiles/{profileID}/questions/{questionID}",
 	"GET /auth/config",
+	"GET /auth/sessions",
 	"GET /consents/{consentID}",
 	"GET /device-metrics",
 	"GET /documents/{documentID}",
@@ -67,6 +69,8 @@ var expectedRoutes = []string{
 	"PATCH /profiles/{profileID}",
 	"PATCH /profiles/{profileID}/devices/{deviceID}",
 	"POST /auth/logout",
+	"POST /auth/logout-all",
+	"POST /auth/refresh",
 	"POST /auth/session",
 	"POST /documents/{documentID}/complete",
 	"POST /knowledge/entries/bulk-approve",

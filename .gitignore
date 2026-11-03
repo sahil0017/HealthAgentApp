@@ -23,3 +23,5 @@ ios/*.zip
 node_modules/
 web/dist/
 .idp/
+web/test-results/
+web/playwright-report/

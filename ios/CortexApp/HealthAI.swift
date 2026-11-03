@@ -98,7 +98,7 @@ struct QuestionHistoryView: View {
             List {
                 if loaded && model.questions.isEmpty {
                     ContentUnavailableView("No questions yet", systemImage: "bubble.left.and.text.bubble.right",
-                                           description: Text("Questions you ask CORTEX are saved here, and you can delete them at any time."))
+                                           description: Text("Questions you ask Sehat are saved here, and you can delete them at any time."))
                 }
                 ForEach(model.questions) { item in
                     Button { model.answer = item.asAnswer; dismiss() } label: {

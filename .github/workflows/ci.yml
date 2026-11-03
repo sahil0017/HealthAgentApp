@@ -1,6 +1,12 @@
-# Pull-request gate: every check that must pass before code reaches main.
-# Every job always runs (no path filtering) and runs in parallel; the final `gate` job is green only if all of them pass.
-# regression.yml calls this workflow with full=true to run everything unconditionally.
+# The single pipeline. Static, unit, package, e2e and iOS jobs all start at once and run in parallel;
+# only real dependencies are chained (docker-integration reuses the image cache from docker-build, deploy waits for the gate).
+# A new push cancels the superseded run, and the `gate` job is the one required check.
+# Every pull request must pass the `gate` job before merging:
+#   static checks, Go tests per module, Python tests, web unit tests, Docker image builds, a full-stack smoke test,
+#   the end-to-end suite with enforced 90% coverage plus the browser UI suite (desktop and phone sizes), and the iOS build.
+# Every job always runs (no path filtering) and runs in parallel.
+# Nightly (and on demand with full=true) it also runs the race detector, the real embedding model and a flaky-test check.
+# On main it publishes the iOS simulator build to Appetize.
 name: ci
 
 on:
@@ -8,27 +14,34 @@ on:
   merge_group:
   push:
     branches: [main]
+  schedule:
+    - cron: "30 20 * * *" # 02:00 IST
   workflow_dispatch:
-  workflow_call:
     inputs:
       full:
         type: boolean
         default: false
-        description: Ignore path filters, add the race detector and the real embedding model
+        description: Add the race detector and the real embedding model
+      go_min:
+        description: Minimum Go e2e coverage (percent)
+        default: "90"
+      py_min:
+        description: Minimum Python e2e coverage (percent)
+        default: "90"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.full || false }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' }}-${{ inputs.full || false }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  FULL: ${{ inputs.full || false }}
+  FULL: ${{ (inputs.full || github.event_name == 'schedule') }}
 
 jobs:
   backend-static:
-    name: go-static / fmt, tidy, vet, build, architecture
+    name: static · go-static / fmt, tidy, vet, build, architecture
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
     steps:
@@ -48,7 +61,7 @@ jobs:
         run: go test -count=1 ./internal/archtest/...
 
   backend-test:
-    name: go-test / ${{ matrix.name }}
+    name: unit · go-test / ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,7 +104,7 @@ jobs:
           go test $flags ${{ matrix.pkgs }}
 
   ai-test:
-    name: python-test / cortex-ai
+    name: unit · python-test / cortex-ai
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: cortex-ai } }
     steps:
@@ -103,12 +116,12 @@ jobs:
           cache-dependency-path: cortex-ai/requirements*.txt
       - run: pip install -r requirements-dev.txt
       - name: Install CPU torch so inference tests run in full regression
-        if: inputs.full
+        if: ${{ (inputs.full || github.event_name == 'schedule') }}
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pytest -q
 
   web-test:
-    name: web (typecheck, test, build)
+    name: unit · web (typecheck, test, build)
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: web } }
     steps:
@@ -124,7 +137,7 @@ jobs:
       - run: npm run build
 
   docker-build:
-    name: docker-build / ${{ matrix.service }}
+    name: package · docker-build / ${{ matrix.service }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -135,8 +148,8 @@ jobs:
       matrix:
         service: [api, worker, cortex-ai]
     env:
-      CORTEX_INFERENCE: ${{ inputs.full && '1' || '0' }}
-      CORTEX_EMBEDDING_REQUIRED: ${{ inputs.full && 'true' || 'false' }}
+      CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
+      CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -173,14 +186,14 @@ jobs:
           docker system df
 
   docker-integration:
-    name: docker-integration / full stack end to end
+    name: integrate · docker-integration / full stack end to end
     needs: [docker-build]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       # Fast path: no model download in pull requests. The full regression runs the real BGE embedding image.
-      CORTEX_INFERENCE: ${{ inputs.full && '1' || '0' }}
-      CORTEX_EMBEDDING_REQUIRED: ${{ inputs.full && 'true' || 'false' }}
+      CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
+      CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -242,7 +255,7 @@ jobs:
           docker system df
 
   ios-build:
-    name: swift-build / iOS app
+    name: integrate · swift-build / iOS app
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -254,10 +267,119 @@ jobs:
             -sdk iphonesimulator -configuration Debug \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build" build
 
+  e2e:
+    name: integrate · e2e / full stack, browser UI and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.idp.yml -f docker-compose.coverage.yml
+      CORTEX_INFERENCE: "0"
+      CORTEX_EMBEDDING_REQUIRED: "false"
+      GO_MIN: ${{ inputs.go_min || '90' }}
+      PY_MIN: ${{ inputs.py_min || '90' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Generate local secrets
+        run: |
+          scripts/bootstrap-env
+          pip install cryptography==43.0.3
+          python3 scripts/testidp.py init
+          mkdir -p .cover/go .cover/py
+          chmod -R 777 .cover
+
+      - name: Build instrumented images
+        run: $COMPOSE build
+
+      - name: Start the stack
+        run: |
+          $COMPOSE up -d
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8080/readyz >/dev/null 2>&1 && curl -fsS http://localhost:8000/healthz >/dev/null 2>&1 && exit 0
+            sleep 3
+          done
+          echo "stack did not become ready" >&2
+          $COMPOSE ps -a
+          exit 1
+
+      - name: Run the end-to-end suite
+        run: |
+          pip install -r e2e/requirements.txt
+          set -a; . ./.env; set +a
+          cd e2e && python -m pytest -v --junitxml=../.cover/e2e-junit.xml
+
+      - name: Run the web UI suite in a browser (desktop and phone sizes)
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run build
+          npx playwright test
+
+      - name: Stop containers so coverage is flushed
+        if: always()
+        run: $COMPOSE stop -t 40 api worker cortex-ai
+
+      - name: Coverage report and thresholds
+        run: scripts/e2e-coverage-report
+
+      - name: Show logs on failure
+        if: failure()
+        run: $COMPOSE ps -a && $COMPOSE logs --no-color --tail=150
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            .cover/out
+            .cover/e2e-junit.xml
+            web/test-results
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v --rmi local
+
+  flaky-check:
+    name: unit · repeat suite to expose flaky tests
+    if: ${{ (inputs.full || github.event_name == 'schedule') }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cortex
+          POSTGRES_PASSWORD: cortex-ci
+          POSTGRES_DB: cortex_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cortex -d cortex_test" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://cortex:cortex-ci@localhost:5432/cortex_test?sslmode=disable
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Repeat the suite to expose order-dependent and flaky tests
+        run: go test -count=5 -p 1 -shuffle=on ./...
+
   # Single required check. Green only if every job above succeeded (skipped or cancelled counts as a failure).
   gate:
+    name: gate · required check
     if: always()
-    needs: [backend-static, backend-test, ai-test, web-test, docker-build, docker-integration, ios-build]
+    needs: [backend-static, backend-test, ai-test, web-test, docker-build, docker-integration, e2e, ios-build]
     runs-on: ubuntu-latest
     steps:
       - name: Summarize and require every job to succeed
@@ -268,7 +390,8 @@ jobs:
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
           labels = {"backend-static": "Go static checks", "backend-test": "Go tests (all modules)", "ai-test": "Python tests", "web-test": "React web app",
-                    "docker-build": "Docker images (api, worker, cortex-ai)", "docker-integration": "Full-stack integration",
+                    "docker-build": "Docker images (api, worker, cortex-ai)", "docker-integration": "Full-stack smoke test",
+                    "e2e": "End-to-end suite, browser UI and 90% coverage",
                     "ios-build": "Swift iOS build"}
           rows = ["| Check | Result |", "|---|---|"]
           bad = False
@@ -281,3 +404,37 @@ jobs:
           open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(out + "\n")
           sys.exit(1 if bad else 0)
           PY
+
+  ios-publish:
+    name: deploy · publish iOS simulator build to Appetize
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [gate]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unsigned simulator app
+        working-directory: ios
+        run: |
+          xcodebuild -project CortexApp.xcodeproj -target CortexApp \
+            -sdk iphonesimulator -configuration Debug \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build" build
+          cd build/Debug-iphonesimulator && zip -qr ../../CortexApp-simulator.zip CortexApp.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CortexApp-simulator
+          path: ios/CortexApp-simulator.zip
+
+      - name: Upload to Appetize
+        env:
+          APPETIZE_TOKEN: ${{ secrets.APPETIZE_TOKEN }}
+          APPETIZE_PUBLIC_KEY: ${{ vars.APPETIZE_PUBLIC_KEY }}
+        run: |
+          if [ -z "$APPETIZE_TOKEN" ]; then echo "APPETIZE_TOKEN not set; skipping"; exit 0; fi
+          url="https://api.appetize.io/v1/apps"
+          [ -n "$APPETIZE_PUBLIC_KEY" ] && url="$url/$APPETIZE_PUBLIC_KEY"
+          curl -sS --fail -u "$APPETIZE_TOKEN:" -F "file=@ios/CortexApp-simulator.zip" \
+            -F "platform=ios" "$url" | tee appetize.json
+          echo
+          echo "Set repo variable APPETIZE_PUBLIC_KEY to the publicKey above to reuse the same link."

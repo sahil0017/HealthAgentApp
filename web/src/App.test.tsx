@@ -118,8 +118,8 @@ describe("App", () => {
   it("asks a new user to create a profile", async () => {
     const f = api({ "GET /profiles": [], "POST /profiles": { id: "p2", display_name: "Ravi" } });
     renderApp();
-    await userEvent.type(await screen.findByLabelText("Name"), "Ravi");
-    await userEvent.click(screen.getByRole("button", { name: "Create profile" }));
+    await userEvent.type(await screen.findByLabelText(/Whose records/), "Ravi");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(f.mock.calls.some(([u, i]) => u.endsWith("/profiles") && i?.method === "POST")).toBe(true));
   });
 
@@ -146,10 +146,10 @@ describe("App", () => {
       "GET /profiles/p1/biomarkers/coverage": [],
     });
     const { unmount } = renderApp("/documents");
-    expect(await screen.findByText("No documents yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No documents yet")).toBeInTheDocument();
     unmount();
     renderApp("/biomarkers");
-    expect(await screen.findByText(/Upload and confirm a report/)).toBeInTheDocument();
+    expect(await screen.findByText(/Upload a lab report in the Vault/)).toBeInTheDocument();
   });
 
   it("sends the confirmed values when approving a document", async () => {
@@ -181,8 +181,17 @@ describe("App", () => {
     expect(screen.getByText("HbA1c 5.4")).toBeInTheDocument();
   });
 
+  it("lists saved questions from the API's wrapped response", async () => {
+    api({
+      "GET /profiles": [{ id: "p1", display_name: "Asha" }],
+      "GET /profiles/p1/questions": { questions: [{ id: "q1", question: "Earlier thing?", answer: "Because.", sources: [], limitations: [] }] },
+    });
+    renderApp("/ask");
+    expect(await screen.findByText("Earlier thing?")).toBeInTheDocument();
+  });
+
   it("requires typing DELETE before erasing a profile", async () => {
-    api({ "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/consents": [], "GET /profiles/p1/access-history": [] });
+    api({ "GET /profiles": [{ id: "p1", display_name: "Asha" }], "GET /profiles/p1/consents": [], "GET /profiles/p1/access-history": [], "GET /auth/sessions": [] });
     renderApp("/privacy");
     const btn = await screen.findByRole("button", { name: "Delete profile" });
     expect(btn).toBeDisabled();
@@ -195,6 +204,7 @@ describe("App", () => {
       "GET /profiles": [{ id: "p1", display_name: "Asha" }],
       "GET /profiles/p1/consents": [{ purpose: "ai_processing", granted: false }],
       "GET /profiles/p1/access-history": [],
+      "GET /auth/sessions": [],
       "PUT /profiles/p1/consents/ai_processing": {},
     });
     renderApp("/privacy");

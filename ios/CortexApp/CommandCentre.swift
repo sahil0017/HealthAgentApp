@@ -207,7 +207,7 @@ enum ReminderScheduler {
             parts.hour = 9
             guard let fire = calendar.date(from: parts), fire > Date() else { continue }
             let content = UNMutableNotificationContent()
-            content.title = "CORTEX"
+            content.title = "Sehat"
             content.body = "You have a follow-up due today."
             content.userInfo = ["followUpId": item.id]
             let request = UNNotificationRequest(identifier: prefix + item.id, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false))
@@ -252,7 +252,7 @@ struct TodayView: View {
                     NavigationLink("Health timeline") { TimelineView() }
                     NavigationLink("Medical history · \(overview.summary.historyEntries)") { HistoryView() }
                 }
-                Section { Text("CORTEX organises and explains your records. It does not diagnose. Talk to a clinician about anything that worries you.").font(.footnote).foregroundStyle(.secondary) }
+                Section { Text("Sehat organises and explains your records. It does not diagnose. Talk to a clinician about anything that worries you.").font(.footnote).foregroundStyle(.secondary) }
             } else {
                 HStack { ProgressView(); Text("Loading your overview…").foregroundStyle(.secondary) }
             }
@@ -484,7 +484,7 @@ struct AddGoalView: View {
                         TextField("At least (optional)", text: $minimum)
                         TextField("At most (optional)", text: $maximum)
                     }
-                    Text("This is your own target. CORTEX does not judge whether it is right for you.").font(.footnote).foregroundStyle(.secondary)
+                    Text("This is your own target. Sehat does not judge whether it is right for you.").font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Set a goal")

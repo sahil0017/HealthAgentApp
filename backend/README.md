@@ -1,4 +1,4 @@
-# CORTEX Go API
+# Sehat Go API
 
 The API owns profiles, purpose-based consent, private document storage, manual review, observations, and audit events. Swift uses `/api/v1`; `/v1` remains as a compatibility alias. The OpenAPI contract is in [`openapi.yaml`](openapi.yaml).
 

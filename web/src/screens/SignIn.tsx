@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { authConfig, signIn, type AuthConfig, type Provider } from "../api/client";
 import { appleIdToken, loadSdk, newNonce, renderGoogleButton } from "../api/identity";
 import { messageOf } from "../api/useAsync";
+import { Icon } from "../components/Icon";
 import { Banner } from "../components/ui";
 
 export function SignIn() {
@@ -54,16 +55,21 @@ export function SignIn() {
   return (
     <div className="center">
       <div className="card stack" style={{ textAlign: "center" }}>
-        <h1>CORTEX</h1>
-        <p className="muted">Your personal health records, organised and explained.</p>
+        <div className="brand"><span className="mark"><Icon name="heart" strokeWidth={2.4} /></span>Sehat</div>
+        <h1>Your health records, in one place</h1>
+        <p className="muted">Keep your lab reports together, understand your results and see how they change over time.</p>
+        <ul className="checks" style={{ textAlign: "left", margin: ".25rem auto" }}>
+          <li className="done"><span className="dot"><Icon name="check" width={12} height={12} strokeWidth={3} /></span>Private to you, with controls you set</li>
+          <li className="done"><span className="dot"><Icon name="check" width={12} height={12} strokeWidth={3} /></span>Answers that cite their sources</li>
+        </ul>
         {error && <Banner tone="danger">{error}</Banner>}
         {cfg && cfg.providers.length === 0 && <Banner tone="warn">Sign-in is not set up on this server yet.</Banner>}
-        {!cfg && !error && <p className="muted">Loading…</p>}
+        {!cfg && !error && <div className="skeleton" style={{ height: 44, borderRadius: 999 }} aria-label="Loading" />}
         <div style={{ display: "grid", justifyContent: "center", gap: ".75rem", opacity: busy ? 0.5 : 1, pointerEvents: busy ? "none" : "auto" }}>
           {google && <div ref={googleEl} />}
           {apple && <button className="btn apple" onClick={() => void withApple()}>Continue with Apple</button>}
         </div>
-        <p className="muted" style={{ fontSize: ".78rem" }}>We never see your password. Your records are saved to your account.</p>
+        <p className="hint">We never see your password. Your records are saved to your account.</p>
       </div>
     </div>
   );

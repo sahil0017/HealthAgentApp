@@ -1,11 +1,10 @@
 <p align="center">
-  <img src="./docs/assets/cortex-app-preview.svg" width="100%" alt="CORTEX dark product showcase with a preview of the iOS app for consent, report review, approved health values, and questions." />
+  <img src="./docs/assets/cortex-app-preview.svg" width="100%" alt="Sehat dark product showcase with a preview of the iOS app for consent, report review, approved health values, and questions." />
 </p>
 
 <div align="center">
 
 ![CI](https://github.com/sahil0017/HealthAgentApp/actions/workflows/ci.yml/badge.svg?branch=main)
-![End-to-end tests](https://github.com/sahil0017/HealthAgentApp/actions/workflows/e2e.yml/badge.svg?branch=main)
 ![SwiftUI](https://img.shields.io/badge/iOS-SwiftUI-147EFB?logo=swift&logoColor=white)
 ![Go](https://img.shields.io/badge/API-Go-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/AI-FastAPI-009688?logo=fastapi&logoColor=white)
@@ -15,7 +14,7 @@
 
 <p align="center"><sub>Illustrative interface preview · not a screenshot of a released app</sub></p>
 
-> **Prototype:** CORTEX is a local-development project, not a production medical product. It does not diagnose or prescribe, and its development authentication is not suitable for shared or production deployments.
+> **Prototype:** Sehat is a local-development project, not a production medical product. It does not diagnose or prescribe, and its development authentication is not suitable for shared or production deployments.
 
 ## Designed around your records
 
@@ -29,7 +28,7 @@
 ### Complete architecture, modules 01–12
 
 <p align="center">
-  <img src="./docs/assets/cortex-architecture-12-modules.svg" alt="Animated CORTEX architecture: iOS app, Go API with modules 01 to 12 and shared platform, PostgreSQL with pgvector, object storage, Go worker, Python AI service, external sources and CI" width="100%">
+  <img src="./docs/assets/cortex-architecture-12-modules.svg" alt="Animated Sehat architecture: iOS app, Go API with modules 01 to 12 and shared platform, PostgreSQL with pgvector, object storage, Go worker, Python AI service, external sources and CI" width="100%">
 </p>
 
 Solid green modules are shipped (01, 02, 03, 05, 07), amber are partial (08, 12) and dashed are planned (04, 06, 09, 10, 11). Status lives in [`modules/README.md`](./modules/README.md).
@@ -37,7 +36,7 @@ Solid green modules are shipped (01, 02, 03, 05, 07), amber are partial (08, 12)
 ### The report-to-record flow
 
 <p align="center">
-  <img src="./docs/assets/cortex-workflow.svg" alt="Animated CORTEX technical workflow: report upload to reviewed record, and question to cited answer with emergency triage" width="100%">
+  <img src="./docs/assets/cortex-workflow.svg" alt="Animated Sehat technical workflow: report upload to reviewed record, and question to cited answer with emergency triage" width="100%">
 </p>
 
 Text version of the same flow:
@@ -121,7 +120,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 - Extracted values require human approval before they become health observations.
 - Local development authentication must be replaced with a verified identity provider before any shared deployment.
 - HealthKit/device sync, camera analysis, medical imaging, and scanned-document OCR are not implemented.
-- CORTEX is an educational prototype and does not provide diagnosis or treatment advice.
+- Sehat is an educational prototype and does not provide diagnosis or treatment advice.
 
 ## Run locally
 

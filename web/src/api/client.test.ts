@@ -1,4 +1,4 @@
-import { ApiError, auth, restoreSession, request, signIn, signOut } from "./client";
+import { ApiError, auth, listSessions, refreshSession, restoreSession, request, revokeSession, signIn, signOut, signOutEverywhere } from "./client";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue({
@@ -78,6 +78,31 @@ describe("api client", () => {
     auth.set("in");
     mockFetch(500, { error: { code: "X", message: "x" } });
     await signOut().catch(() => undefined);
+    expect(auth.state).toBe("out");
+  });
+
+  it("refreshSession posts to the rotate endpoint with the client header", async () => {
+    const f = mockFetch(200, { data: { access_token: "ignored" } });
+    await refreshSession();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/auth/refresh");
+    expect(f.mock.calls[0][1].method).toBe("POST");
+    expect(f.mock.calls[0][1].headers["X-Cortex-Client"]).toBe("web");
+  });
+
+  it("lists and revokes device sessions", async () => {
+    const f = mockFetch(200, { data: [{ id: "s1", device: "ios", current: false }] });
+    expect(await listSessions()).toHaveLength(1);
+    expect(f.mock.calls[0][0]).toBe("/api/v1/auth/sessions");
+    await revokeSession("s1");
+    expect(f.mock.calls[1][0]).toBe("/api/v1/auth/sessions/s1");
+    expect(f.mock.calls[1][1].method).toBe("DELETE");
+  });
+
+  it("signOutEverywhere ends the session locally too", async () => {
+    auth.set("in");
+    const f = mockFetch(200, { data: { revoked: 2 } });
+    await signOutEverywhere();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/auth/logout-all");
     expect(auth.state).toBe("out");
   });
 });

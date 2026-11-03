@@ -99,5 +99,48 @@ export async function signOut(): Promise<void> {
   }
 }
 
+export async function signOutEverywhere(): Promise<void> {
+  try {
+    await post("/auth/logout-all");
+  } finally {
+    auth.set("out");
+  }
+}
+
+export interface DeviceSession {
+  id: string;
+  device: string;
+  user_agent: string;
+  started_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  current: boolean;
+}
+export const listSessions = () => get<DeviceSession[]>("/auth/sessions");
+export const revokeSession = (id: string) => del(`/auth/sessions/${id}`);
+
+// The API rotates the cookie on refresh, so the session stays alive while the app is in use and ends after
+// a long idle period or the 30-day sign-in cap.
+const REFRESH_EVERY_MS = 3 * 60 * 60 * 1000;
+let lastRefresh = Date.now();
+
+export async function refreshSession(): Promise<void> {
+  await post("/auth/refresh");
+  lastRefresh = Date.now();
+}
+
+export function keepSessionFresh(): () => void {
+  lastRefresh = Date.now();
+  const tick = () => {
+    if (auth.state === "in" && Date.now() - lastRefresh >= REFRESH_EVERY_MS) refreshSession().catch(() => undefined);
+  };
+  const timer = setInterval(tick, 10 * 60 * 1000);
+  document.addEventListener("visibilitychange", tick);
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener("visibilitychange", tick);
+  };
+}
+
 export interface AuthConfig { providers: { name: Provider; client_id: string }[] }
 export const authConfig = () => request<AuthConfig>("/auth/config", { expectSession: false });

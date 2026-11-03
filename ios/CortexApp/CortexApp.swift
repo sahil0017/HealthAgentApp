@@ -295,7 +295,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("CORTEX")
+            .navigationTitle("Sehat")
             .toolbar {
                 if model.profile != nil {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -322,7 +322,7 @@ struct ContentView: View {
             .sheet(item: $model.answer) { answer in AnswerView(answer: answer).environmentObject(model) }
             .sheet(isPresented: $showingQuestionHistory) { QuestionHistoryView().environmentObject(model) }
             .sheet(isPresented: $showingDevices) { ConnectedDevicesView().environmentObject(model) }
-            .alert("CORTEX", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+            .alert("Sehat", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK") { model.message = nil }
             } message: { Text(model.message ?? "") }
             .confirmationDialog("Delete this report? Its approved values will also be removed.", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
@@ -403,7 +403,7 @@ struct ContentView: View {
             }
             Section("Ask about your records") {
                 TextField("For example: summarize my recent lab values", text: $question, axis: .vertical)
-                Button("Ask CORTEX") { let prompt = question; question = ""; Task { await model.ask(prompt) } }
+                Button("Ask Sehat") { let prompt = question; question = ""; Task { await model.ask(prompt) } }
                     .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || model.consents["ai_processing"] != true)
                 Button("Past questions", systemImage: "clock.arrow.circlepath") { showingQuestionHistory = true }
             }
@@ -553,7 +553,7 @@ struct AnswerView: View {
             List {
                 if answer.urgent { Section { UrgentBanner(triage: answer.triage) }.listRowInsets(EdgeInsets()) }
                 if let question = answer.question { Section("You asked") { Text(question) } }
-                Section("CORTEX") {
+                Section("Sehat") {
                     Text(answer.answer).textSelection(.enabled)
                     if !answer.urgent {
                         ConfidenceBadge(confidence: answer.confidence)
@@ -677,11 +677,11 @@ enum CortexError: LocalizedError {
     case httpStatus(Int)
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "The CORTEX API returned an invalid response."
-        case .invalidURL: return "Enter a valid CORTEX API URL."
+        case .invalidResponse: return "The Sehat API returned an invalid response."
+        case .invalidURL: return "Enter a valid Sehat API URL."
         case .httpStatus(401): return "Your session has ended. Please sign in again."
         case .httpStatus(403): return "This action needs the consent shown in the app."
-        case .httpStatus(let code): return "The CORTEX API returned HTTP \(code)."
+        case .httpStatus(let code): return "The Sehat API returned HTTP \(code)."
         }
     }
 }

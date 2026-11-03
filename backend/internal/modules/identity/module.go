@@ -33,6 +33,10 @@ func (m *Module) Public(r chi.Router) {
 
 func (m *Module) Authed(r chi.Router) {
 	r.Post("/auth/logout", m.logout)
+	r.Post("/auth/refresh", m.refresh)
+	r.Post("/auth/logout-all", m.logoutEverywhere)
+	r.Get("/auth/sessions", m.listSessions)
+	r.Delete("/auth/sessions/{sessionID}", m.revokeSession)
 	r.Get("/users/me", m.currentUser)
 	r.Get("/profiles", m.listProfiles)
 	r.Post("/profiles", m.createProfile)

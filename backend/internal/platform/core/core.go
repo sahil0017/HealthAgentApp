@@ -71,6 +71,8 @@ func (c *Core) Authenticate(next http.Handler) http.Handler {
 			httpx.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "The session is expired or invalid.", nil)
 			return
 		}
+		// Best effort and at most once a minute per session, so device lists show recent activity cheaply.
+		_, _ = c.DB.Pool.Exec(r.Context(), `UPDATE api_sessions SET last_seen_at=now() WHERE token_hash=$1 AND last_seen_at < now()-interval '1 minute'`, hash)
 		next.ServeHTTP(w, r.WithContext(httpx.WithSession(r.Context(), userID, hash)))
 	})
 }
