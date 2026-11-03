@@ -221,15 +221,22 @@ func (w *DocumentWorker) persist(ctx context.Context, eventID string, d document
 	if len(textPreview) > maxTextPreview {
 		textPreview = textPreview[:maxTextPreview]
 	}
-	extraction, err := json.Marshal(map[string]any{"biomarkers": result.Candidates, "text_preview": textPreview, "warnings": result.Warnings, "pipeline_version": processing.PipelineVersion, "page_count": result.PageCount})
+	classification := processing.Classify(result.Text)
+	extraction, err := json.Marshal(map[string]any{"classification": classification, "biomarkers": result.Candidates, "text_preview": textPreview, "warnings": result.Warnings, "pipeline_version": processing.PipelineVersion, "page_count": result.PageCount})
 	if err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO document_extraction_runs(document_id,profile_id,pipeline_version,status,page_count,warning) VALUES($1,$2,$3,$4,$5,$6)`, d.ID, d.ProfileID, processing.PipelineVersion, runStatus, result.PageCount, strings.Join(result.Warnings, " ")); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE medical_documents SET status=$2,extraction=$3::jsonb,error_code=NULL,retry_after=NULL,updated_at=now() WHERE id=$1 AND status IN ('queued','processing')`, d.ID, status, string(extraction)); err != nil {
+	// A suggested type only fills in an unset type; an owner's choice is never overwritten.
+	if _, err = tx.Exec(ctx, `UPDATE medical_documents SET status=$2,extraction=$3::jsonb,document_type=CASE WHEN document_type='OTHER' THEN $4 ELSE document_type END,error_code=NULL,retry_after=NULL,updated_at=now() WHERE id=$1 AND status IN ('queued','processing')`, d.ID, status, string(extraction), classification.Type); err != nil {
 		return err
+	}
+	if classification.Type != "OTHER" {
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id,details) SELECT $1,$2,'document.type_suggested','medical_document',$3::text,jsonb_build_object('document_type',$4::text,'confidence',$5::float8) WHERE EXISTS(SELECT 1 FROM medical_documents WHERE id=$3::text::uuid AND document_type=$4::text)`, d.OwnerID, d.ProfileID, d.ID, classification.Type, classification.Confidence); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id,details) VALUES($1,$2,'document.processed','medical_document',$3,jsonb_build_object('pipeline_version',$4::text,'page_count',$5::int,'candidate_count',$6::int,'manual_review',$7::boolean))`, d.OwnerID, d.ProfileID, d.ID, processing.PipelineVersion, result.PageCount, len(result.Candidates), result.ManualReview); err != nil {
 		return err

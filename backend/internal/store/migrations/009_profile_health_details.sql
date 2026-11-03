@@ -1,0 +1,10 @@
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS sex TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS blood_group TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS height_cm NUMERIC(5,1);
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_sex_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_sex_check CHECK (sex IS NULL OR sex IN ('female','male','intersex','prefer_not_to_say'));
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_blood_group_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_blood_group_check CHECK (blood_group IS NULL OR blood_group IN ('A+','A-','B+','B-','AB+','AB-','O+','O-'));
+ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_height_check;
+ALTER TABLE profiles ADD CONSTRAINT profiles_height_check CHECK (height_cm IS NULL OR (height_cm >= 30 AND height_cm <= 272));

@@ -52,6 +52,9 @@ func governanceAPI(t *testing.T, ownerID string, remover objectRemover) (*API, h
 	r.Delete("/profiles/{profileID}", a.deleteProfile)
 	r.Get("/profiles/{profileID}/access-history", a.accessHistory)
 	r.Get("/profiles/{profileID}/export", a.exportProfile)
+	r.Get("/profiles/{profileID}/documents/search", a.searchDocuments)
+	r.Patch("/documents/{documentID}", a.updateDocument)
+	r.Get("/documents/{documentID}/history", a.documentHistory)
 	return a, r
 }
 

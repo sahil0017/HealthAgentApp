@@ -63,6 +63,9 @@ func TestPDFTextProcessorExtractsTextAndMarksCandidatesUnverified(t *testing.T) 
 }
 
 func TestPDFTextProcessorMarksImagesForManualReview(t *testing.T) {
+	old := ocrBinary
+	ocrBinary = "definitely-not-installed-ocr"
+	t.Cleanup(func() { ocrBinary = old })
 	got, err := (PDFTextProcessor{}).Process(context.Background(), "image/png", []byte("image bytes"))
 	if err != nil {
 		t.Fatal(err)

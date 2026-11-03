@@ -65,6 +65,9 @@ func (a *API) exportProfile(w http.ResponseWriter, r *http.Request) {
 		{"documents", `SELECT COALESCE(jsonb_agg(to_jsonb(d)-'object_key' ORDER BY d.created_at),'[]') FROM medical_documents d WHERE profile_id=$1 AND owner_id=$2`},
 		{"observations", `SELECT COALESCE(jsonb_agg(to_jsonb(o) ORDER BY o.created_at),'[]') FROM observations o WHERE profile_id=$1 AND owner_id=$2`},
 		{"observation_revisions", `SELECT COALESCE(jsonb_agg(to_jsonb(v) ORDER BY v.changed_at),'[]') FROM observation_revisions v WHERE profile_id=$1 AND owner_id=$2`},
+		{"history_entries", `SELECT COALESCE(jsonb_agg(to_jsonb(h) ORDER BY h.created_at),'[]') FROM history_entries h WHERE profile_id=$1 AND owner_id=$2`},
+		{"goals", `SELECT COALESCE(jsonb_agg(to_jsonb(g) ORDER BY g.created_at),'[]') FROM goals g WHERE profile_id=$1 AND owner_id=$2`},
+		{"follow_ups", `SELECT COALESCE(jsonb_agg(to_jsonb(f) ORDER BY f.created_at),'[]') FROM follow_ups f WHERE profile_id=$1 AND owner_id=$2`},
 		{"audit_events", `SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]') FROM audit_events e WHERE profile_id=$1 AND owner_id=$2`},
 	}
 	out := map[string]json.RawMessage{}

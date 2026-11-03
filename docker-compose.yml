@@ -49,8 +49,7 @@ services:
       cortex-ai: { condition: service_healthy }
 
   worker:
-    build: ./backend
-    entrypoint: ["/cortex-worker"]
+    build: { context: ./backend, target: worker }
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-cortex}:${POSTGRES_PASSWORD:?run scripts/bootstrap-env}@postgres:5432/${POSTGRES_DB:-cortex}?sslmode=disable
       S3_ENDPOINT: objectstore:9000

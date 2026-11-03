@@ -349,12 +349,14 @@ func (a *API) updateDocument(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	previousName, previousType := d.FileName, d.DocumentType
 	err := a.db.Pool.QueryRow(r.Context(), `UPDATE medical_documents SET file_name=$3,document_type=$4,updated_at=now() WHERE id=$1 AND owner_id=$2 RETURNING file_name,document_type,updated_at`, d.ID, owner(r), filename, docType).Scan(&d.FileName, &d.DocumentType, &d.UpdatedAt)
 	if err != nil {
 		writeError(w, 500, "DOCUMENT_UPDATE_FAILED", "The document could not be updated.", nil)
 		return
 	}
-	_, _ = a.db.Pool.Exec(r.Context(), `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id) VALUES($1,$2,'document.metadata_updated','medical_document',$3)`, owner(r), d.ProfileID, d.ID)
+	// Previous values are kept so the change can be reviewed and reversed from the document history.
+	_, _ = a.db.Pool.Exec(r.Context(), `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id,details) VALUES($1,$2,'document.metadata_updated','medical_document',$3,jsonb_build_object('previous_file_name',$4::text,'file_name',$5::text,'previous_document_type',$6::text,'document_type',$7::text))`, owner(r), d.ProfileID, d.ID, previousName, d.FileName, previousType, d.DocumentType)
 	writeJSON(w, 200, d)
 }
 
@@ -413,7 +415,7 @@ func (a *API) deleteDocument(w http.ResponseWriter, r *http.Request) {
 func (a *API) documentForOwner(r *http.Request, id string) (document, bool) {
 	var d document
 	var extraction []byte
-	err := a.db.Pool.QueryRow(r.Context(), `SELECT id,profile_id,object_key,file_name,content_type,byte_size,status,document_type,sha256,document_version,supersedes_document_id,attempt_count,error_code,extraction,created_at,updated_at FROM medical_documents WHERE id=$1 AND owner_id=$2`, id, owner(r)).Scan(&d.ID, &d.ProfileID, &d.ObjectKey, &d.FileName, &d.ContentType, &d.ByteSize, &d.Status, &d.DocumentType, &d.SHA256, &d.DocumentVersion, &d.SupersedesDocumentID, &d.AttemptCount, &d.ErrorCode, &extraction, &d.CreatedAt, &d.UpdatedAt)
+	err := a.db.Pool.QueryRow(r.Context(), `SELECT id,profile_id,object_key,file_name,content_type,byte_size,status,document_type,COALESCE(sha256,''),document_version,supersedes_document_id,attempt_count,error_code,extraction,created_at,updated_at FROM medical_documents WHERE id=$1 AND owner_id=$2`, id, owner(r)).Scan(&d.ID, &d.ProfileID, &d.ObjectKey, &d.FileName, &d.ContentType, &d.ByteSize, &d.Status, &d.DocumentType, &d.SHA256, &d.DocumentVersion, &d.SupersedesDocumentID, &d.AttemptCount, &d.ErrorCode, &extraction, &d.CreatedAt, &d.UpdatedAt)
 	d.Extraction = extraction
 	return d, err == nil
 }

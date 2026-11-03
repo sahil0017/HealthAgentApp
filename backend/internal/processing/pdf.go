@@ -13,7 +13,7 @@ import (
 	pdf "github.com/giraffesyo/pdf"
 )
 
-const PipelineVersion = "pdf-text-v2"
+const PipelineVersion = "pdf-text-ocr-v3"
 
 type Candidate struct {
 	ID             string  `json:"id,omitempty"`
@@ -50,7 +50,7 @@ type PDFTextProcessor struct {
 
 func (p PDFTextProcessor) Process(ctx context.Context, contentType string, data []byte) (Result, error) {
 	if contentType != "application/pdf" {
-		return Result{Warnings: []string{"Image OCR is not configured. Review this document manually."}, ManualReview: true}, nil
+		return p.processImage(ctx, data)
 	}
 	doc, err := pdf.Extract(ctx, bytes.NewReader(data), int64(len(data)))
 	if err != nil {
@@ -81,6 +81,17 @@ func (p PDFTextProcessor) Process(ctx context.Context, contentType string, data 
 		result.Warnings = append(result.Warnings, fmt.Sprintf("PDF parser reported %d recoverable issue(s); review the original report.", len(doc.Warnings)))
 	}
 	if result.Text == "" {
+		if OCRAvailable() && rasterAvailable() {
+			pages, err := ocrScannedPDF(ctx, data, doc.PageCount)
+			if err != nil {
+				return Result{}, err
+			}
+			ocr := p.fromOCR(ctx, pages)
+			if doc.PageCount > maxScannedPages {
+				ocr.Warnings = append(ocr.Warnings, fmt.Sprintf("Only the first %d of %d pages were read. Review the remaining pages in the original.", maxScannedPages, doc.PageCount))
+			}
+			return ocr, nil
+		}
 		result.ManualReview = true
 		result.Warnings = append(result.Warnings, "No selectable text was found. This may be a scanned or unreadable PDF; review the original manually.")
 	} else {

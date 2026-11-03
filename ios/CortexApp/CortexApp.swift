@@ -3,14 +3,20 @@ import UniformTypeIdentifiers
 import Security
 import QuickLook
 import CryptoKit
+import UserNotifications
 
 @main
 struct CortexApp: App {
     @StateObject private var model = CortexModel()
+    private let router = NotificationRouter()
 
     var body: some Scene {
         WindowGroup {
             ContentView().environmentObject(model)
+                .task {
+                    router.onOpen = { [weak model] in model?.selectedTab = 0 }
+                    UNUserNotificationCenter.current().delegate = router
+                }
         }
     }
 }
@@ -18,23 +24,28 @@ struct CortexApp: App {
 @MainActor
 final class CortexModel: ObservableObject {
     @Published var profile: Profile?
+    @Published var selectedTab = 0
     @Published var documents: [MedicalDocument] = []
     @Published var observations: [Observation] = []
     @Published var consents: [String: Bool] = [:]
     @Published var busy = false
     @Published var message: String?
     @Published var answer: CortexAnswer?
+    @Published var overview: Overview?
+    @Published var timeline: [TimelineItem] = []
+    @Published var history: [HistoryEntry] = []
+    @Published var followUps: [FollowUp] = []
 
     @Published var apiURL = UserDefaults.standard.string(forKey: "cortex.apiURL") ?? "http://localhost:8080" {
         didSet { UserDefaults.standard.set(apiURL, forKey: "cortex.apiURL") }
     }
     @Published var token = KeychainToken.load()
-    private let decoder: JSONDecoder = {
+    let decoder: JSONDecoder = {
         let value = JSONDecoder()
         value.keyDecodingStrategy = .convertFromSnakeCase
         return value
     }()
-    private let encoder: JSONEncoder = {
+    let encoder: JSONEncoder = {
         let value = JSONEncoder()
         value.keyEncodingStrategy = .convertToSnakeCase
         return value
@@ -68,6 +79,11 @@ final class CortexModel: ObservableObject {
         documents = []
         observations = []
         consents = [:]
+        overview = nil
+        timeline = []
+        history = []
+        followUps = []
+        ReminderScheduler.clear()
     }
 
     func loadProfiles() async {
@@ -104,6 +120,7 @@ final class CortexModel: ObservableObject {
             observations = try decoder.decode([Observation].self, from: obs)
             let list = try decoder.decode([Consent].self, from: consent)
             consents = Dictionary(uniqueKeysWithValues: list.map { ($0.purpose, $0.granted) })
+            await loadToday()
         } catch { message = error.localizedDescription }
     }
 
@@ -198,12 +215,13 @@ final class CortexModel: ObservableObject {
         } catch { message = error.localizedDescription }
     }
 
-    private func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
+    func request(path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
         var request = try makeRequest(path: path, method: method)
         request.httpBody = body
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (data, response) = try await URLSession.shared.data(for: request)
         try check(response)
+        if data.isEmpty { return data }
         return try unwrap(data)
     }
 
@@ -239,6 +257,7 @@ struct ContentView: View {
     @State private var supersedesDocumentID: String?
     @State private var documentToDelete: MedicalDocument?
     @State private var showingDeleteConfirmation = false
+    @State private var detailDocument: MedicalDocument?
 
     var body: some View {
         NavigationStack {
@@ -246,7 +265,14 @@ struct ContentView: View {
                 if model.token.isEmpty || model.profile == nil {
                     connectView
                 } else {
-                    dashboard
+                    TabView(selection: $model.selectedTab) {
+                        TodayView()
+                            .tabItem { Label("Today", systemImage: "heart.text.square") }
+                            .tag(0)
+                        dashboard
+                            .tabItem { Label("Records", systemImage: "doc.text") }
+                            .tag(1)
+                    }
                 }
             }
             .navigationTitle("CORTEX")
@@ -269,6 +295,9 @@ struct ContentView: View {
                 if case .failure(let error) = result { model.message = error.localizedDescription }
             }
             .sheet(item: $selectedDocument) { doc in ReviewView(document: doc) }
+            .navigationDestination(isPresented: Binding(get: { detailDocument != nil }, set: { if !$0 { detailDocument = nil } })) {
+                if let doc = detailDocument { DocumentDetailView(documentId: doc.id, fileName: doc.fileName, documentType: doc.documentType) }
+            }
             .sheet(item: $model.answer) { answer in AnswerView(answer: answer) }
             .alert("CORTEX", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK") { model.message = nil }
@@ -310,6 +339,7 @@ struct ContentView: View {
         List {
             Section("Permissions") {
                 ConsentRow(title: "Report storage", detail: "Store and organize uploaded health reports.", isOn: model.consents["medical_record_storage"] ?? false) { value in Task { await model.setConsent("medical_record_storage", granted: value) } }
+                ConsentRow(title: "Reminders", detail: "Show a private notification when a follow-up is due. It never includes health details.", isOn: model.consents["notifications"] ?? false) { value in Task { await model.setConsent("notifications", granted: value) } }
                 ConsentRow(title: "Document processing", detail: "Allow uploaded reports to be processed for review.", isOn: model.consents["document_processing"] ?? false) { value in Task { await model.setConsent("document_processing", granted: value) } }
             }
             Section {
@@ -322,9 +352,10 @@ struct ContentView: View {
                 .disabled(model.busy || model.consents["medical_record_storage"] != true || model.consents["document_processing"] != true)
             }
             Section("Reports · \(model.documents.count)") {
+                NavigationLink { DocumentSearchView() } label: { Label("Search all reports", systemImage: "magnifyingglass") }
                 if model.documents.isEmpty { Text("No reports yet.").foregroundStyle(.secondary) }
                 ForEach(model.documents) { document in
-                    Button { if ["review_required", "manual_review_required"].contains(document.status) { selectedDocument = document } else { Task { await model.refresh() } } } label: {
+                    Button { if ["review_required", "manual_review_required"].contains(document.status) { selectedDocument = document } else { detailDocument = document } } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(document.fileName).foregroundStyle(.primary)
                             Text(document.status.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -332,6 +363,7 @@ struct ContentView: View {
                         }
                     }
                     .contextMenu {
+                        Button("Details and history", systemImage: "clock.arrow.circlepath") { detailDocument = document }
                         Button("Upload a new version", systemImage: "arrow.trianglehead.2.clockwise.rotate.90") { supersedesDocumentID = document.id; documentType = document.documentType; showingImporter = true }
                         Button("Delete report", systemImage: "trash", role: .destructive) { documentToDelete = document; showingDeleteConfirmation = true }
                     }

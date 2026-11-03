@@ -47,7 +47,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
     patch:
-      summary: Update profile name, timezone, or measurement system
+      summary: Update profile name, timezone, measurement system, date of birth, sex, blood group or height
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
@@ -76,6 +76,101 @@ paths:
       description: 'Includes profile, consents, document metadata, observations with revisions and audit events. File bytes are not inlined; internal object keys are omitted. The export itself is audited.'
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/overview:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Command-centre overview
+      description: 'Profile summary, attention items, recent changes, goals with progress, next follow-up, reminders due within 7 days, suggested follow-ups, and a data-completeness score. Uses verified values only and never compares across units.'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/timeline:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Unified timeline of documents, observations, history and follow-ups, newest first
+      parameters:
+        - { name: kind, in: query, schema: { type: string }, description: 'Comma-separated kinds' }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid kind, paging or date range }
+  /profiles/{profileID}/history:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List medical history entries
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Add a medical history entry (needs storage consent)
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '403': { description: Storage consent missing }
+  /history/{entryID}:
+    parameters: [{ name: entryID, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch:
+      summary: Update a history entry
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not found }
+    delete:
+      summary: Delete a history entry
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+  /profiles/{profileID}/goals:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List goals with progress
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Add a goal (needs storage consent)
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '403': { description: Storage consent missing }
+  /goals/{goalID}:
+    parameters: [{ name: goalID, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch:
+      summary: Update a goal
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not found }
+    delete:
+      summary: Delete a goal
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
+  /profiles/{profileID}/follow-ups:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List follow-ups
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Add a follow-up (needs storage consent)
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '403': { description: Storage consent missing }
+  /follow-ups/{followUpID}:
+    parameters: [{ name: followUpID, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch:
+      summary: Update a follow-up
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not found }
+    delete:
+      summary: Delete a follow-up
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
   /profiles/{profileID}/consents:
     parameters: [{ $ref: '#/components/parameters/profileID' }]
     get:
@@ -127,6 +222,17 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/Success' }
         '403': { $ref: '#/components/responses/Error' }
+  /profiles/{profileID}/documents/search:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Search extracted text across all documents, returning document and page for each hit
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 200 } }
+        - { name: document_type, in: query, schema: { type: string } }
+        - { name: mode, in: query, description: "auto uses meaning plus keywords when AI processing is consented and the AI service is ready, otherwise keywords only", schema: { type: string, enum: [auto, keyword], default: auto } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/documents/{documentID}:
     get:
       summary: Read document status and review candidates
@@ -136,6 +242,11 @@ paths:
           in: path
           required: true
           schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /documents/{documentID}/history:
+    get:
+      summary: Processing, type-suggestion, owner-edit (with previous values) and approval events for a document
       responses:
         '200': { $ref: '#/components/responses/Success' }
   /documents/{documentID}/complete:

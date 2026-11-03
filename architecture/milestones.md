@@ -135,10 +135,14 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 | 12 Governance | M1, M6 | **New: M17** |
 
 ## M13. Command centre
-- [ ] Timeline read model across documents, labs, devices and visits
-- [ ] Today tab: changes, attention items, next follow-up
-- [ ] Goals and progress; data-completeness checks
-- [ ] Notifications (APNs) and reminders
+- [x] Timeline read model across documents, labs, history and follow-ups (kind filter, date range, paging)
+- [x] Profile details (date of birth, sex, blood group, height) and medical history
+- [x] Today tab: changes, attention items, next follow-up, suggested follow-ups
+- [x] Goals and progress; data-completeness checks
+- [x] Local reminders with tap-to-open (consent-gated, generic text)
+- [ ] Server push (APNs): needs Apple developer credentials
+- [ ] Lifestyle and device goals: depend on M14 and connected devices
+- [ ] Devices in the timeline: depends on connected diagnostics
 
 ## M14. Lifestyle and symptoms
 - [ ] Symptom journal, nutrition, sleep, exercise, stress
