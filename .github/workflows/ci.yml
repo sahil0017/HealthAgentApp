@@ -45,8 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -92,8 +92,8 @@ jobs:
       TEST_DATABASE_URL: postgres://cortex:cortex-ci@localhost:5432/cortex_test?sslmode=disable
     defaults: { run: { working-directory: backend } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -108,8 +108,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: cortex-ai } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -125,8 +125,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: web } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -151,14 +151,14 @@ jobs:
       CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
       CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Generate local secrets
         run: |
           ./scripts/bootstrap-env
           sed -i "s/^CORTEX_INFERENCE=.*/CORTEX_INFERENCE=$CORTEX_INFERENCE/; s/^CORTEX_EMBEDDING_REQUIRED=.*/CORTEX_EMBEDDING_REQUIRED=$CORTEX_EMBEDDING_REQUIRED/" .env
       - name: Build image
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           source: .
           files: docker-compose.yml
@@ -195,14 +195,14 @@ jobs:
       CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
       CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Generate local secrets
         run: |
           ./scripts/bootstrap-env
           sed -i "s/^CORTEX_INFERENCE=.*/CORTEX_INFERENCE=$CORTEX_INFERENCE/; s/^CORTEX_EMBEDDING_REQUIRED=.*/CORTEX_EMBEDDING_REQUIRED=$CORTEX_EMBEDDING_REQUIRED/" .env
       - name: Build images in parallel (layer cache shared across runs)
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           source: .
           files: docker-compose.yml
@@ -220,7 +220,7 @@ jobs:
           docker compose run --rm --no-deps --entrypoint tesseract worker --version
           docker compose run --rm --no-deps --entrypoint pdftoppm worker -v
       - name: Build all images (cache populated by docker-build)
-        uses: docker/bake-action@v6
+        uses: docker/bake-action@v7
         with:
           source: .
           files: docker-compose.yml
@@ -259,7 +259,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build unsigned simulator app
         working-directory: ios
         run: |
@@ -278,15 +278,15 @@ jobs:
       GO_MIN: ${{ inputs.go_min || '90' }}
       PY_MIN: ${{ inputs.py_min || '90' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Generate local secrets
         run: |
@@ -335,7 +335,7 @@ jobs:
         if: failure()
         run: $COMPOSE ps -a && $COMPOSE logs --no-color --tail=150
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-results
@@ -367,8 +367,8 @@ jobs:
       TEST_DATABASE_URL: postgres://cortex:cortex-ci@localhost:5432/cortex_test?sslmode=disable
     defaults: { run: { working-directory: backend } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -411,7 +411,7 @@ jobs:
     needs: [gate]
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build unsigned simulator app
         working-directory: ios
@@ -421,7 +421,7 @@ jobs:
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build" build
           cd build/Debug-iphonesimulator && zip -qr ../../CortexApp-simulator.zip CortexApp.app
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: CortexApp-simulator
           path: ios/CortexApp-simulator.zip
