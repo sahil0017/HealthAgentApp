@@ -17,6 +17,8 @@ go_total=$(awk '/^total:/ {gsub("%","",$3); print $3}' .cover/out/go-func.txt)
 
 python3 -m pip install --quiet coverage
 rm -f .coverage
+# coverage combine only reads files named .coverage.*; the service writes a plain .coverage
+if [ -f .cover/py/.coverage ]; then mv .cover/py/.coverage .cover/py/.coverage.service; fi
 python3 -m coverage combine --rcfile=e2e/coveragerc .cover/py
 python3 -m coverage report --rcfile=e2e/coveragerc > .cover/out/py-report.txt || true
 python3 -m coverage xml --rcfile=e2e/coveragerc -o .cover/out/py.xml >/dev/null || true
