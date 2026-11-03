@@ -154,6 +154,7 @@ jobs:
       - name: Build images in parallel (layer cache shared across runs)
         uses: docker/bake-action@v6
         with:
+          source: .
           files: docker-compose.yml
           targets: api,worker,cortex-ai
           load: true
