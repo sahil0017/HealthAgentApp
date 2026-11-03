@@ -392,3 +392,30 @@ jobs:
             -F "platform=ios" "$url" | tee appetize.json
           echo
           echo "Set repo variable APPETIZE_PUBLIC_KEY to the publicKey above to reuse the same link."
+
+  wiki-sync:
+    name: wiki / publish wiki/ to the GitHub wiki
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push wiki/ to the wiki repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The wiki repo only exists after its first page is created once in the GitHub UI.
+          if ! git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git" /tmp/wiki 2>/dev/null; then
+            echo "::warning::Wiki not initialised. Create the first page in the repository Wiki tab once, then re-run."
+            exit 0
+          fi
+          rsync -a --delete --exclude .git wiki/ /tmp/wiki/
+          cd /tmp/wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "Wiki already up to date"; exit 0; }
+          git commit -m "Sync wiki from ${GITHUB_SHA::7}"
+          git push
