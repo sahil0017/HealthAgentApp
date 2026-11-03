@@ -64,3 +64,44 @@ def test_retrieved_research_chunks_route_to_health_research():
     base = {"question": "how is prediabetes managed", "observations": []}
     assert "health_research" not in orchestrate({**base, "research_chunks": []})["domains"]
     assert "health_research" in orchestrate({**base, "research_chunks": [{"text": "x"}]})["domains"]
+
+
+def test_emergency_question_short_circuits_without_searching_records():
+    result = invoke("I have chest pain and my left arm is numb", OBSERVATIONS, explain=lambda facts, q: "should not run")
+    assert result["urgent"] is True and result["triage"] == "emergency"
+    assert "emergency" in result["answer"].lower()
+    assert result["domains"] == [] and not result.get("findings") and not result.get("sources")
+    assert result["confidence"] == "not_applicable"
+
+
+def test_self_harm_question_returns_crisis_support():
+    result = invoke("I want to die")
+    assert result["triage"] == "crisis" and "988" in result["answer"]
+
+
+def test_ordinary_question_is_not_urgent():
+    result = invoke("Why did my HbA1c increase?", OBSERVATIONS)
+    assert result["urgent"] is False and result["triage"] == "none"
+
+
+def test_confidence_high_when_trend_is_grounded_in_records():
+    result = invoke("Why did my HbA1c increase?", OBSERVATIONS)
+    assert result["confidence"] == "high"
+    assert any("HbA1c" in q for q in result["suggested_questions"])
+
+
+def test_confidence_insufficient_without_sources_and_asks_for_uploads():
+    result = invoke("How is my health?")
+    assert result["confidence"] == "insufficient"
+    assert "no approved record" in result["uncertainty"].lower()
+    assert any("upload" in q.lower() for q in result["suggested_questions"])
+
+
+def test_confidence_limited_for_single_result():
+    result = invoke("What is my HbA1c?", OBSERVATIONS[:1])
+    assert result["confidence"] == "limited"
+
+
+def test_medication_question_adds_clinician_limitation():
+    result = invoke("What dosage should I take?", OBSERVATIONS)
+    assert any("clinician" in item for item in result["limitations"])

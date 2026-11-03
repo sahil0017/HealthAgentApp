@@ -194,4 +194,9 @@ def answer(question: Question) -> dict[str, object]:
         "sources": result.get("sources", []),
         "limitations": result["limitations"],
         "workflow": result["domains"],
+        "urgent": result.get("urgent", False),
+        "triage": result.get("triage", "none"),
+        "confidence": result.get("confidence", "insufficient"),
+        "uncertainty": result.get("uncertainty", ""),
+        "suggested_questions": result.get("suggested_questions", []),
     }

@@ -74,7 +74,7 @@ def test_overview_flags_out_of_range_and_measurement_gaps(api, profile):
     kinds = {a["kind"] for a in overview["attention"]}
     assert "out_of_range" in kinds
     assert "measurement_gap" in kinds
-    assert overview["summary"]["biomarkers_traced"] >= 2
+    assert overview["summary"]["biomarkers_tracked"] >= 2
     assert overview["completeness"] is not None
     assert "recent_changes" in overview and "goals" in overview and "suggestions" in overview
 

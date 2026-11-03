@@ -26,5 +26,9 @@ func (m *Module) Public(r chi.Router) {
 
 func (m *Module) Authed(r chi.Router) {
 	r.Post("/profiles/{profileID}/questions", m.askQuestion)
+	r.Get("/profiles/{profileID}/questions", m.listQuestions)
+	r.Get("/profiles/{profileID}/questions/{questionID}", m.getQuestion)
+	r.Put("/profiles/{profileID}/questions/{questionID}/feedback", m.rateQuestion)
+	r.Delete("/profiles/{profileID}/questions/{questionID}", m.deleteQuestion)
 	r.Post("/profiles/{profileID}/mcp-tokens", m.createMCPToken)
 }

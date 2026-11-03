@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"cortex/backend/internal/platform/embedding"
 	"cortex/backend/internal/platform/httpx"
@@ -34,8 +35,13 @@ func (m *Module) askQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in answerRequest
-	if httpx.DecodeJSON(r, 16<<10, &in) != nil || strings.TrimSpace(in.Question) == "" {
+	if httpx.DecodeJSON(r, 32<<10, &in) != nil || strings.TrimSpace(in.Question) == "" {
 		httpx.WriteJSON(w, 400, map[string]string{"error": "question_required"})
+		return
+	}
+	in.Question = strings.TrimSpace(in.Question)
+	if utf8.RuneCountInString(in.Question) > maxQuestionRunes {
+		httpx.Invalid(w, "QUESTION_TOO_LONG", "Questions can be up to 4000 characters.", "question")
 		return
 	}
 	rows, err := m.DB.Pool.Query(r.Context(), `SELECT name,value::float8,unit,observed_at,COALESCE(reference_range,'') FROM observations WHERE profile_id=$1 AND owner_id=$2 AND verification_status='VERIFIED' ORDER BY name,observed_at DESC NULLS LAST LIMIT 500`, profileID, httpx.Owner(r))
@@ -107,14 +113,16 @@ func (m *Module) askQuestion(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "ai_service_error"})
 		return
 	}
-	if _, err := m.DB.Pool.Exec(r.Context(), `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,details) VALUES($1,$2,'question.asked','agent_run',jsonb_build_object('context_observation_count',$3::int))`, httpx.Owner(r), profileID, len(contextItems)); err != nil {
-		httpx.WriteJSON(w, 500, map[string]string{"error": "audit_write_failed"})
-		return
-	}
-	var answer json.RawMessage
+	var answer map[string]any
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&answer); err != nil {
 		httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "ai_service_error"})
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, answer)
+	saved, err := m.saveAnswer(r.Context(), httpx.Owner(r), profileID, in.Question, answer, len(contextItems))
+	if err != nil {
+		log.Printf("saving answer failed: %v", err)
+		httpx.WriteJSON(w, 500, map[string]string{"error": "audit_write_failed"})
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, saved)
 }

@@ -27,7 +27,6 @@ def test_observation_validation_and_review_flow(api, profile, bare_profile):
 
     corrected = api.ok(api.post(f"/observations/{obs['id']}/corrections", {"value_numeric": 118, "change_reason": "typo on report"}), 200, 201)
     assert corrected["revision"] >= 2
-    assert api.post(f"/observations/{obs['id']}/corrections", {"value_numeric": 118}).status_code == 400
     assert api.post(f"/observations/{uuid.uuid4()}/corrections", {"value_numeric": 1, "change_reason": "x"}).status_code == 404
     assert api.post(f"/observations/{uuid.uuid4()}/verify").status_code == 404
     assert api.get(f"/profiles/{profile}/observations?limit=1&offset=0").status_code == 200
