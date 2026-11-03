@@ -7,7 +7,6 @@ services:
         BUILD_FLAGS: -cover -covermode=atomic -coverpkg=cortex/backend/...
     environment:
       GOCOVERDIR: /cover
-      CORTEX_ADMIN_OWNER_IDS: local-development-user
     volumes: ["./.cover/go:/cover"]
     stop_grace_period: 30s
   worker:
