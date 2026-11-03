@@ -222,7 +222,8 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     var onOpen: (@MainActor () -> Void)?
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await MainActor.run { onOpen?() }
+        let open = onOpen
+        await MainActor.run { open?() }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
