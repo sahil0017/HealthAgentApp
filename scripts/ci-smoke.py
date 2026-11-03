@@ -113,7 +113,7 @@ def main():
     wait_for("api is ready (database and object storage)", lambda: call("GET", "/readyz")[0] == 200, 120)
     expect("unauthenticated profile list is rejected", call("GET", "/api/v1/profiles")[0], 401)
 
-    status, body = call("POST", "/api/v1/sessions", token=DEV_TOKEN)
+    status, body = call("POST", "/api/v1/auth/session", token=DEV_TOKEN)
     expect("session is created with the development credential", status, 201)
     TOKEN = data(body)["access_token"]
 
