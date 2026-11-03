@@ -36,6 +36,50 @@ def test_question_without_records_is_safe(api, profile):
     assert "diagnos" not in answer["answer"].lower() or "not" in answer["answer"].lower()
 
 
+def test_answer_reports_confidence_uncertainty_and_follow_ups(api, profile):
+    seed(api, profile)
+    answer = api.ok(api.post(f"/profiles/{profile}/questions", {"question": "What was my latest HbA1c?"}), 200)
+    assert answer["id"] and answer["created_at"]
+    assert answer["confidence"] in {"high", "limited"} and answer["uncertainty"]
+    assert answer["urgent"] is False and answer["triage"] == "none"
+    assert answer["suggested_questions"]
+
+
+def test_emergency_wording_gets_urgent_guidance_only(api, profile):
+    seed(api, profile)
+    answer = api.ok(api.post(f"/profiles/{profile}/questions", {"question": "I have crushing chest pain and cannot breathe"}), 200)
+    assert answer["urgent"] is True and answer["triage"] == "emergency"
+    assert "emergency" in answer["answer"].lower()
+    assert answer["sources"] == [] and answer["workflow"] == []
+    crisis = api.ok(api.post(f"/profiles/{profile}/questions", {"question": "I want to end my life"}), 200)
+    assert crisis["triage"] == "crisis" and "988" in crisis["answer"]
+
+
+def test_question_history_feedback_and_delete(api, profile, bare_profile):
+    first = api.ok(api.post(f"/profiles/{profile}/questions", {"question": "First question"}), 200)
+    second = api.ok(api.post(f"/profiles/{profile}/questions", {"question": "Second question"}), 200)
+    listed = api.ok(api.get(f"/profiles/{profile}/questions"), 200)["questions"]
+    assert [q["question"] for q in listed][:2] == ["Second question", "First question"]
+    assert len(api.ok(api.get(f"/profiles/{profile}/questions?limit=1"), 200)["questions"]) == 1
+    assert api.get(f"/profiles/{profile}/questions?limit=0").status_code == 400
+
+    one = api.ok(api.get(f"/profiles/{profile}/questions/{first['id']}"), 200)
+    assert one["answer"] == first["answer"] and one["feedback"] is None
+
+    assert api.put(f"/profiles/{profile}/questions/{first['id']}/feedback", {"rating": "meh"}).status_code == 400
+    rated = api.ok(api.put(f"/profiles/{profile}/questions/{first['id']}/feedback", {"rating": "not_helpful", "comment": "too vague"}), 200)
+    assert rated["feedback"] == "not_helpful" and rated["feedback_comment"] == "too vague"
+
+    assert api.get(f"/profiles/{bare_profile}/questions/{first['id']}").status_code == 404, "history is scoped to its profile"
+    assert api.delete(f"/profiles/{profile}/questions/{second['id']}").status_code == 204
+    assert api.get(f"/profiles/{profile}/questions/{second['id']}").status_code == 404
+    assert api.get(f"/profiles/{profile}/questions/not-a-uuid").status_code == 404
+
+
+def test_overlong_question_is_rejected(api, profile):
+    assert api.post(f"/profiles/{profile}/questions", {"question": "x" * 4001}).status_code == 400
+
+
 def rpc(api, token, method, params=None, id_=1):
     body = {"jsonrpc": "2.0", "method": method, "id": id_}
     if params is not None:
