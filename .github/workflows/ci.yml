@@ -1,5 +1,5 @@
 # The single pipeline. Static, unit, package, e2e and iOS jobs all start at once and run in parallel;
-# only real dependencies are chained (docker-integration reuses the image cache from docker-build, deploy waits for the gate).
+# only real dependencies are chained (e2e reuses the images built once by docker-build, deploy waits for the gate).
 # A new push cancels the superseded run, and the `gate` job is the one required check.
 # Every pull request must pass the `gate` job before merging:
 #   static checks, Go tests per module, Python tests, web unit tests, Docker image builds, a full-stack smoke test,
@@ -136,6 +136,8 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Each image is built once here (instrumented for coverage, which is harmless at runtime) and handed to the e2e job as an
+  # artifact, so nothing downstream rebuilds it. A failed build cancels the run immediately.
   docker-build:
     name: package · docker-build / ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -161,7 +163,9 @@ jobs:
         uses: docker/bake-action@v6
         with:
           source: .
-          files: docker-compose.yml
+          files: |
+            docker-compose.yml
+            docker-compose.coverage.yml
           targets: ${{ matrix.service }}
           load: true
           set: |
@@ -171,88 +175,21 @@ jobs:
       - name: Worker image has OCR tools
         if: matrix.service == 'worker'
         run: |
-          docker compose run --rm --no-deps --entrypoint tesseract worker --version
-          docker compose run --rm --no-deps --entrypoint pdftoppm worker -v
+          docker run --rm --entrypoint tesseract healthagentapp-worker:latest --version
+          docker run --rm --entrypoint pdftoppm healthagentapp-worker:latest -v
+      - name: Save the image for the e2e job
+        run: docker save healthagentapp-${{ matrix.service }}:latest | gzip -1 > image-${{ matrix.service }}.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.service }}
+          path: image-${{ matrix.service }}.tar.gz
+          retention-days: 1
+          compression-level: 0
       - name: Cancel the whole run on the first image build failure
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
-      - name: Free disk space
-        if: always()
-        run: |
-          docker image prune -af
-          docker builder prune -af
-          docker system df
-
-  docker-integration:
-    name: integrate · docker-integration / full stack end to end
-    needs: [docker-build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      # Fast path: no model download in pull requests. The full regression runs the real BGE embedding image.
-      CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
-      CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Generate local secrets
-        run: |
-          ./scripts/bootstrap-env
-          sed -i "s/^CORTEX_INFERENCE=.*/CORTEX_INFERENCE=$CORTEX_INFERENCE/; s/^CORTEX_EMBEDDING_REQUIRED=.*/CORTEX_EMBEDDING_REQUIRED=$CORTEX_EMBEDDING_REQUIRED/" .env
-      - name: Build images in parallel (layer cache shared across runs)
-        uses: docker/bake-action@v6
-        with:
-          source: .
-          files: docker-compose.yml
-          targets: api,worker,cortex-ai
-          load: true
-          set: |
-            api.cache-from=type=gha,scope=api
-            api.cache-to=type=gha,scope=api,mode=max
-            worker.cache-from=type=gha,scope=worker
-            worker.cache-to=type=gha,scope=worker,mode=max
-            cortex-ai.cache-from=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }}
-            cortex-ai.cache-to=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }},mode=max
-      - name: Worker image has OCR tools
-        run: |
-          docker compose run --rm --no-deps --entrypoint tesseract worker --version
-          docker compose run --rm --no-deps --entrypoint pdftoppm worker -v
-      - name: Build all images (cache populated by docker-build)
-        uses: docker/bake-action@v6
-        with:
-          source: .
-          files: docker-compose.yml
-          targets: api,worker,cortex-ai
-          load: true
-          set: |
-            api.tags=healthagentapp-api:latest
-            worker.tags=healthagentapp-worker:latest
-            cortex-ai.tags=healthagentapp-cortex-ai:latest
-            api.cache-from=type=gha,scope=api-${{ env.CORTEX_INFERENCE }}
-            worker.cache-from=type=gha,scope=worker-${{ env.CORTEX_INFERENCE }}
-            cortex-ai.cache-from=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }}
-      - name: Start the stack
-        run: |
-          pip install cryptography==43.0.3
-          python3 scripts/testidp.py init
-          export COMPOSE_FILE=docker-compose.yml:docker-compose.idp.yml
-          if [ "$CORTEX_INFERENCE" != "1" ]; then export COMPOSE_FILE=$COMPOSE_FILE:docker-compose.ci.yml; fi
-          echo "COMPOSE_FILE=$COMPOSE_FILE" >> "$GITHUB_ENV"
-          docker compose up -d --no-build --wait --wait-timeout 300
-      - name: Smoke test (sign in, profile, consent, upload, worker extraction, export, delete)
-        run: |
-          python3 scripts/ci-smoke.py http://localhost:8080
-      - name: Show logs on failure
-        if: failure()
-        run: docker compose ps -a && docker compose logs --no-color --tail=200
-      - name: Tear down containers, volumes and images
-        if: always()
-        run: |
-          docker compose down -v --rmi all --remove-orphans
-          docker system prune -af --volumes
-          docker system df
 
   ios-build:
     name: integrate · swift-build / iOS app
@@ -269,12 +206,13 @@ jobs:
 
   e2e:
     name: integrate · e2e / full stack, browser UI and coverage
+    needs: [docker-build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.ci.yml -f docker-compose.idp.yml -f docker-compose.coverage.yml
-      CORTEX_INFERENCE: "0"
-      CORTEX_EMBEDDING_REQUIRED: "false"
+      COMPOSE: docker compose -f docker-compose.yml -f docker-compose.idp.yml -f docker-compose.coverage.yml ${{ (inputs.full || github.event_name == 'schedule') && '' || '-f docker-compose.ci.yml' }}
+      CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
+      CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
       GO_MIN: ${{ inputs.go_min || '90' }}
       PY_MIN: ${{ inputs.py_min || '90' }}
     steps:
@@ -286,22 +224,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Generate local secrets
         run: |
           scripts/bootstrap-env
+          sed -i "s/^CORTEX_INFERENCE=.*/CORTEX_INFERENCE=$CORTEX_INFERENCE/; s/^CORTEX_EMBEDDING_REQUIRED=.*/CORTEX_EMBEDDING_REQUIRED=$CORTEX_EMBEDDING_REQUIRED/" .env
           pip install cryptography==43.0.3
           python3 scripts/testidp.py init
           mkdir -p .cover/go .cover/py
           chmod -R 777 .cover
 
-      - name: Build instrumented images
-        run: $COMPOSE build
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          path: images
+          merge-multiple: true
+
+      - name: Load the images built by docker-build
+        run: |
+          for f in images/*.tar.gz; do gunzip -c "$f" | docker load; done
+          rm -rf images
 
       - name: Start the stack
         run: |
-          $COMPOSE up -d
+          $COMPOSE up -d --no-build
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/readyz >/dev/null 2>&1 && curl -fsS http://localhost:8000/healthz >/dev/null 2>&1 && exit 0
             sleep 3
@@ -309,6 +260,9 @@ jobs:
           echo "stack did not become ready" >&2
           $COMPOSE ps -a
           exit 1
+
+      - name: Smoke test (fail fast before the long suites)
+        run: python3 scripts/ci-smoke.py http://localhost:8080
 
       - name: Run the end-to-end suite
         run: |
@@ -379,7 +333,7 @@ jobs:
   gate:
     name: gate · required check
     if: always()
-    needs: [backend-static, backend-test, ai-test, web-test, docker-build, docker-integration, e2e, ios-build]
+    needs: [backend-static, backend-test, ai-test, web-test, docker-build, e2e, ios-build]
     runs-on: ubuntu-latest
     steps:
       - name: Summarize and require every job to succeed
@@ -390,7 +344,7 @@ jobs:
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
           labels = {"backend-static": "Go static checks", "backend-test": "Go tests (all modules)", "ai-test": "Python tests", "web-test": "React web app",
-                    "docker-build": "Docker images (api, worker, cortex-ai)", "docker-integration": "Full-stack smoke test",
+                    "docker-build": "Docker images (api, worker, cortex-ai)",
                     "e2e": "End-to-end suite, browser UI and 90% coverage",
                     "ios-build": "Swift iOS build"}
           rows = ["| Check | Result |", "|---|---|"]
