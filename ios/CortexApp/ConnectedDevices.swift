@@ -81,7 +81,7 @@ extension CortexModel {
     func connectAppleHealth() async -> ConnectedDevice? {
         guard let profile else { return nil }
         do {
-            let body = try encoder.encode(DeviceCreateBody(kind: "phone", source: "apple_health", name: "Apple Health", externalId: "apple-health"))
+            let body = try encoder.encode(DeviceCreateBody(kind: "phone_health_app", source: "healthkit", name: "Apple Health", externalId: "apple-health"))
             let data = try await request(path: "/api/v1/profiles/\(profile.id)/devices", method: "POST", body: body)
             return try decoder.decode(ConnectedDevice.self, from: data)
         } catch { message = error.localizedDescription; return nil }
@@ -247,7 +247,7 @@ struct ConnectedDevicesView: View {
     @State private var status: String?
 
     private var consented: Bool { model.consents["health_data_integration"] == true }
-    private var appleHealth: ConnectedDevice? { devices.first { $0.source == "apple_health" } }
+    private var appleHealth: ConnectedDevice? { devices.first { $0.source == "healthkit" } }
 
     var body: some View {
         NavigationStack {

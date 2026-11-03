@@ -173,7 +173,7 @@ def main():
     # Module 05: a connected device syncs readings, repeats are de-duplicated, and the device can be removed.
     status, _ = call("PUT", f"/api/v1/profiles/{profile}/consents/health_data_integration", {"granted": True})
     expect("consent health_data_integration is granted", status, 200)
-    status, body = call("POST", f"/api/v1/profiles/{profile}/devices", {"kind": "phone", "source": "apple_health", "name": "Apple Health", "external_id": "smoke"})
+    status, body = call("POST", f"/api/v1/profiles/{profile}/devices", {"kind": "phone_health_app", "source": "healthkit", "name": "Apple Health", "external_id": "smoke"})
     expect("a device is connected", status, 201)
     device = data(body)["id"]
     batch = {"readings": [{"metric": "resting_heart_rate", "value": 62, "unit": "bpm", "measured_at": "2025-01-0%dT08:00:00Z" % d, "external_id": "s%d" % d} for d in range(1, 5)]}

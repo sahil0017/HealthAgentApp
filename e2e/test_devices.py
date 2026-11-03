@@ -13,7 +13,7 @@ def readings(count=12):
 
 
 def test_device_requires_consent(api, bare_profile):
-    body = {"kind": "phone", "source": "apple_health", "name": "Apple Health", "external_id": "ah"}
+    body = {"kind": "phone_health_app", "source": "healthkit", "name": "Apple Health", "external_id": "ah"}
     response = api.post(f"/profiles/{bare_profile}/devices", body)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
@@ -24,7 +24,7 @@ def test_device_lifecycle_sync_and_summary(api, profile):
     metrics = api.ok(api.get("/device-metrics"), 200)
     assert any(m["key"] == "heart_rate" for m in metrics)
 
-    body = {"kind": "phone", "source": "apple_health", "name": "Apple Health", "external_id": "ah"}
+    body = {"kind": "phone_health_app", "source": "healthkit", "name": "Apple Health", "external_id": "ah"}
     device = api.ok(api.post(f"/profiles/{profile}/devices", body), 201)
     assert api.post(f"/profiles/{profile}/devices", body).status_code == 200  # idempotent
 
