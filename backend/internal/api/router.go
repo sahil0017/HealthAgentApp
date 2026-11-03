@@ -22,12 +22,16 @@ type API struct {
 	devToken  string
 	objects   *objects.Store
 	knowledge *knowledge.Service
+	remover   objectRemover
 }
 
 var errPagination = errors.New("invalid pagination")
 
 func New(db *store.Store, objectStore *objects.Store, devToken string) http.Handler {
 	a := &API{db: db, objects: objectStore, devToken: devToken, knowledge: knowledge.NewService(db)}
+	if objectStore != nil {
+		a.remover = objectStore
+	}
 	r := chi.NewRouter()
 	r.Use(requestContext)
 	r.Use(accessLog)
@@ -46,6 +50,9 @@ func New(db *store.Store, objectStore *objects.Store, devToken string) http.Hand
 				r.Post("/profiles", a.createProfile)
 				r.Get("/profiles/{profileID}", a.getProfile)
 				r.Patch("/profiles/{profileID}", a.updateProfile)
+				r.Delete("/profiles/{profileID}", a.deleteProfile)
+				r.Get("/profiles/{profileID}/access-history", a.accessHistory)
+				r.Get("/profiles/{profileID}/export", a.exportProfile)
 				r.Get("/profiles/{profileID}/consents", a.getConsents)
 				r.Post("/profiles/{profileID}/consents", a.createConsent)
 				r.Put("/profiles/{profileID}/consents/{purpose}", a.setConsent)

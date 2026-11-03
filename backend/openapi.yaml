@@ -51,6 +51,31 @@ paths:
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
         '200': { $ref: '#/components/responses/Success' }
+    delete:
+      summary: Permanently delete the profile, its stored files, observations and embeddings
+      description: 'Requires the body {"confirm":"DELETE"}. Files are removed first; if storage fails nothing else is deleted and the call can be repeated. Audit events are kept as metadata only.'
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '204': { description: Deleted }
+        '400': { description: Confirmation missing }
+        '404': { description: Profile not found }
+        '502': { description: Some files could not be removed; retry }
+  /profiles/{profileID}/access-history:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: List access and activity events for the profile, newest first
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/export:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Download all data held for the profile as JSON
+      description: 'Includes profile, consents, document metadata, observations with revisions and audit events. File bytes are not inlined; internal object keys are omitted. The export itself is audited.'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/consents:
     parameters: [{ $ref: '#/components/parameters/profileID' }]
     get:

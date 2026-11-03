@@ -157,10 +157,14 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 - [ ] Caregiver roles and permissions
 
 ## M17. Data governance
-- [ ] Access-history screen
-- [ ] Data export
-- [ ] Deletion covering objects and embeddings
-- [ ] Retention controls and AI/agent activity history
+- [x] Access-history API (`GET /profiles/{id}/access-history`, paged, owner-scoped)
+- [x] Data export API (`GET /profiles/{id}/export`, audited, no object keys)
+- [x] Profile deletion covering files, observations, revisions, embeddings and queued jobs (confirmation required, safe to retry)
+- [x] Unit and DB tests for all three (`governance_test.go`)
+- [ ] iOS Privacy centre (history, export, delete)
+- [ ] Retention controls
+- [ ] AI/agent activity history (MCP tool calls are already audited; needs a filtered view)
+- [ ] Family sharing controls (depends on identity, M6)
 
 ## Suggested order
 
