@@ -26,10 +26,16 @@
 
 ### The report-to-record flow
 
+<p align="center">
+  <img src="./docs/assets/cortex-workflow.svg" alt="Animated CORTEX technical workflow: report upload to reviewed record, and question to cited answer with emergency triage" width="100%">
+</p>
+
+Text version of the same flow:
+
 ```mermaid
 flowchart LR
     A["iOS app"] -->|"consent + signed upload"| B["Go API"]
-    B --> C[("PostgreSQL")]
+    B --> C[("PostgreSQL + pgvector")]
     B --> D[("Private object storage")]
     C --> E["Go worker"]
     D --> E
@@ -37,8 +43,12 @@ flowchart LR
     F -->|"candidates + warnings"| E
     E --> G["Human review"]
     G -->|"approved values"| B
-    B --> H["Profile-scoped retrieval"]
-    H --> I["Answer with sources + limits"]
+    B --> H["Consent gate + profile-scoped retrieval"]
+    H --> T{"Urgent wording?"}
+    T -->|"yes"| U["Emergency guidance only"]
+    T -->|"no"| F2["AI service: LangGraph + safety checks"]
+    F2 --> I["Answer with sources, confidence + limits"]
+    I --> J[("Saved history + feedback")]
 ```
 
 The Go service is the authorization and data-access boundary. Python receives only operation-specific inputs and does not access the health database directly. Extracted values stay candidates until a person reviews and approves them.
@@ -51,7 +61,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 - Separate permissions for report storage and document processing.
 - PDF, JPEG, and PNG uploads through short-lived signed URLs.
 - Report list, preview, candidate editing, and explicit approval.
-- Approved health-value list and question interface.
+- Approved health-value list and question interface with confidence badges, suggested follow-ups, emergency banner, past questions, and helpful/not-helpful feedback.
 - Session token stored in Keychain; uploaded files are SHA-256 hashed.
 
 ### API and data services
@@ -60,6 +70,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 - PostgreSQL with transactional migrations and profile/owner-scoped records.
 - Background document and research processing with persisted state and retries.
 - Private S3-compatible storage, upload verification, and expiring download links.
+- Saved question history (list, rate, delete) included in data export and removed with the profile.
 - Hybrid record retrieval using PostgreSQL full-text search and pgvector.
 - Read-only MCP tools with short-lived profile-scoped HMAC tokens.
 - OpenAPI contract, request IDs, bounded requests, and health/readiness endpoints.
@@ -69,6 +80,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 - FastAPI service with LangGraph workflows for Medical Records, Lab Intelligence, and Health Research.
 - Conservative text-based report extraction; scanned-document OCR is not wired up.
 - 384-dimensional embeddings with a deterministic fallback or pinned Hugging Face model; optional reranking.
+- Emergency and self-harm wording is triaged before any retrieval or model call; answers carry a confidence level and uncertainty note.
 - Profile-scoped record retrieval and curated research retrieval with source metadata and limitations.
 - Optional local explanation generation with safety checks; recorded facts remain separate from generated explanations.
 - Allowlisted lookups for public sources such as MedlinePlus, LOINC, UCUM, and PubMed. New knowledge remains pending until administrator review.
@@ -112,6 +124,9 @@ For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from
 - [`backend/`](./backend/) — Go API, worker, OpenAPI contract, and migrations.
 - [`cortex-ai/`](./cortex-ai/) — FastAPI service, workflows, retrieval, safety checks, and tests.
 - [`ios/`](./ios/) — SwiftUI iOS client.
+- [`e2e/`](./e2e/) — end-to-end tests against the Docker stack.
+- [`docs/assets/cortex-workflow.svg`](./docs/assets/cortex-workflow.svg) — animated technical workflow.
+- [`.github/workflows/`](./.github/workflows/) — parallel CI (Go matrix, Python, Docker builds, integration, iOS build) and nightly regression.
 - [`infra/`](./infra/) — local database initialization.
 - [`architecture/full-architecture.md`](./architecture/full-architecture.md) — system architecture, boundaries, and roadmap.
 - [`architecture/milestones.md`](./architecture/milestones.md) — end-to-end milestone checklist and current status.
