@@ -1,5 +1,4 @@
 import SwiftUI
-import AuthenticationServices
 import UniformTypeIdentifiers
 import Security
 import QuickLook
@@ -72,6 +71,16 @@ final class CortexModel: ObservableObject {
             KeychainToken.save(token)
             await loadProfiles()
         } catch { token = ""; KeychainToken.save(""); message = error.localizedDescription }
+    }
+
+    /// Providers the server has enabled; the same list the web app shows.
+    func authProviders() async throws -> [AuthProviderInfo] {
+        let base = apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: base + "/api/v1/auth/config") else { throw CortexError.invalidURL }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        try check(response)
+        struct Config: Decodable { let providers: [AuthProviderInfo] }
+        return try decoder.decode(Config.self, from: unwrap(data)).providers
     }
 
     func logout() async {
@@ -246,6 +255,12 @@ final class CortexModel: ObservableObject {
 
     private func check(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw CortexError.invalidResponse }
+        if http.statusCode == 401, !token.isEmpty {
+            // An expired or revoked session returns to the sign-in screen, as on the web.
+            token = ""
+            KeychainToken.save("")
+            profile = nil
+        }
         guard (200..<300).contains(http.statusCode) else { throw CortexError.httpStatus(http.statusCode) }
     }
 }
@@ -253,7 +268,6 @@ final class CortexModel: ObservableObject {
 struct ContentView: View {
     @EnvironmentObject private var model: CortexModel
     @State private var profileName = ""
-    @State private var appleNonce = ""
     @State private var showingImporter = false
     @State private var selectedDocument: MedicalDocument?
     @State private var question = ""
@@ -319,24 +333,11 @@ struct ContentView: View {
     private var connectView: some View {
         Form {
             if model.token.isEmpty {
-                Section("Sign in") {
-                    SignInWithAppleButton(.continue) { request in
-                        appleNonce = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-                        request.requestedScopes = [.email]
-                        request.nonce = SHA256.hash(data: Data(appleNonce.utf8)).map { String(format: "%02x", $0) }.joined()
-                    } onCompletion: { result in
-                        switch result {
-                        case .success(let auth):
-                            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential,
-                                  let tokenData = credential.identityToken,
-                                  let idToken = String(data: tokenData, encoding: .utf8) else { model.message = "Apple did not return an identity token."; return }
-                            let nonce = appleNonce
-                            Task { await model.connect(provider: "apple", idToken: idToken, nonce: nonce) }
-                        case .failure(let error):
-                            if (error as? ASAuthorizationError)?.code != .canceled { model.message = error.localizedDescription }
-                        }
+                SignInSection()
+                Section {
+                    DisclosureGroup("Server") {
+                        TextField("API URL", text: $model.apiURL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
-                    .frame(height: 44)
                 }
             }
             if !model.token.isEmpty && model.profile == nil {
@@ -675,7 +676,7 @@ enum CortexError: LocalizedError {
         switch self {
         case .invalidResponse: return "The CORTEX API returned an invalid response."
         case .invalidURL: return "Enter a valid CORTEX API URL."
-        case .httpStatus(401): return "Authentication failed. Check your development token."
+        case .httpStatus(401): return "Your session has ended. Please sign in again."
         case .httpStatus(403): return "This action needs the consent shown in the app."
         case .httpStatus(let code): return "The CORTEX API returned HTTP \(code)."
         }

@@ -7,7 +7,7 @@ The API owns profiles, purpose-based consent, private document storage, manual r
 Users sign in with Google or Apple. The client obtains an OpenID Connect ID token (with a fresh nonce) and posts `{provider, id_token, nonce}` to `POST /api/v1/auth/session`. The API verifies the RS256 signature against the provider's JWKS, plus issuer, audience, expiry and nonce, then maps the account to the owner `google:<sub>` / `apple:<sub>`. It creates an 8-hour session and stores only its SHA-256 hash.
 
 - **Web** receives an HttpOnly, SameSite=Strict `cortex_session` cookie, so no token reaches JavaScript or the UI. Cookie-authenticated writes must send `X-Cortex-Client` (CSRF guard).
-- **iOS** uses the bearer token from the response body, kept in the Keychain.
+- **iOS** behaves the same: it reads `/auth/config`, offers the same Google and Apple options, exchanges the ID token at `/auth/session`, and keeps the returned session in the Keychain. A 401 returns it to sign-in. Google on iOS uses its own OAuth client, set in `CORTEX_GOOGLE_IOS_CLIENT_ID` (also accepted as an audience); Apple uses the app bundle ID, listed in `CORTEX_APPLE_CLIENT_IDS`.
 - **Configure** with `CORTEX_GOOGLE_CLIENT_IDS` and `CORTEX_APPLE_CLIENT_IDS` (comma-separated). `GET /api/v1/auth/config` tells clients which providers are enabled. Without any, `/auth/session` returns 503.
 - **CI/e2e** trust a throwaway IdP through `docker-compose.idp.yml` (`scripts/testidp.py`).
 

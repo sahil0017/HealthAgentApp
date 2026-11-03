@@ -193,14 +193,15 @@ func TestProviderKeysUnavailableIsNotAnInvalidToken(t *testing.T) {
 
 func TestLoadProviders(t *testing.T) {
 	env := map[string]string{
-		"CORTEX_GOOGLE_CLIENT_IDS": "g1, g2",
-		"CORTEX_APPLE_CLIENT_IDS":  "com.example.app",
-		"CORTEX_OIDC_ISSUER":       "https://idp.test",
-		"CORTEX_OIDC_JWKS_URL":     "https://idp.test/keys",
-		"CORTEX_OIDC_AUDIENCE":     "aud",
+		"CORTEX_GOOGLE_CLIENT_IDS":    "g1, g2",
+		"CORTEX_GOOGLE_IOS_CLIENT_ID": "g-ios",
+		"CORTEX_APPLE_CLIENT_IDS":     "com.example.app",
+		"CORTEX_OIDC_ISSUER":          "https://idp.test",
+		"CORTEX_OIDC_JWKS_URL":        "https://idp.test/keys",
+		"CORTEX_OIDC_AUDIENCE":        "aud",
 	}
 	got := LoadProviders(func(k string) string { return env[k] })
-	if len(got) != 3 || got[0].Name != "google" || len(got[0].Audiences) != 2 || got[1].Name != "apple" || got[2].Name != "oidc" {
+	if len(got) != 3 || got[0].Name != "google" || len(got[0].Audiences) != 3 || got[0].NativeClientID != "g-ios" || got[1].Name != "apple" || got[2].Name != "oidc" {
 		t.Fatalf("providers %+v", got)
 	}
 	if len(LoadProviders(func(string) string { return "" })) != 0 {
@@ -284,7 +285,7 @@ func TestSessionEndpointWithoutProviders(t *testing.T) {
 
 func TestAuthConfigListsOnlyBrowserProviders(t *testing.T) {
 	v := NewVerifier([]Provider{
-		{Name: "google", Audiences: []string{"g-web", "g-ios"}},
+		{Name: "google", Audiences: []string{"g-web", "g-ios"}, NativeClientID: "g-ios"},
 		{Name: "apple", Audiences: []string{"svc.id"}},
 		{Name: "oidc", Audiences: []string{"internal"}},
 	})
@@ -299,7 +300,7 @@ func TestAuthConfigListsOnlyBrowserProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.Data.Providers
-	if len(got) != 2 || got[0] != (providerInfo{"google", "g-web"}) || got[1] != (providerInfo{"apple", "svc.id"}) {
+	if len(got) != 2 || got[0] != (providerInfo{"google", "g-web", "g-ios"}) || got[1] != (providerInfo{"apple", "svc.id", ""}) {
 		t.Fatalf("providers %+v", got)
 	}
 }

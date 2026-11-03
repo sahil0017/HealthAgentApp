@@ -25,6 +25,8 @@ type Provider struct {
 	Issuers   []string
 	JWKSURL   string
 	Audiences []string
+	// NativeClientID is the OAuth client the iOS app signs in with; it is also an accepted audience.
+	NativeClientID string
 }
 
 // Claims are the verified facts CORTEX keeps from an ID token. Email and name are never read.
@@ -91,12 +93,17 @@ func (v *Verifier) Providers() []Provider {
 func LoadProviders(getenv func(string) string) []Provider {
 	var out []Provider
 	if ids := splitList(getenv("CORTEX_GOOGLE_CLIENT_IDS")); len(ids) > 0 {
-		out = append(out, Provider{
+		g := Provider{
 			Name:      "google",
 			Issuers:   []string{"https://accounts.google.com", "accounts.google.com"},
 			JWKSURL:   "https://www.googleapis.com/oauth2/v3/certs",
 			Audiences: ids,
-		})
+		}
+		if native := strings.TrimSpace(getenv("CORTEX_GOOGLE_IOS_CLIENT_ID")); native != "" {
+			g.NativeClientID = native
+			g.Audiences = append(g.Audiences, native)
+		}
+		out = append(out, g)
 	}
 	if ids := splitList(getenv("CORTEX_APPLE_CLIENT_IDS")); len(ids) > 0 {
 		out = append(out, Provider{

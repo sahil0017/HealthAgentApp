@@ -139,6 +139,8 @@ func (m *Module) currentUser(w http.ResponseWriter, r *http.Request) {
 type providerInfo struct {
 	Name     string `json:"name"`
 	ClientID string `json:"client_id"`
+	// IOSClientID is set only where the native app needs a different client than the browser (Google).
+	IOSClientID string `json:"ios_client_id,omitempty"`
 }
 
 // authConfig tells a client which sign-in providers are available and the client ID to start each with.
@@ -146,7 +148,7 @@ func (m *Module) authConfig(w http.ResponseWriter, r *http.Request) {
 	out := []providerInfo{}
 	for _, p := range m.OIDC.Providers() {
 		if p.Name == "google" || p.Name == "apple" {
-			out = append(out, providerInfo{Name: p.Name, ClientID: p.Audiences[0]})
+			out = append(out, providerInfo{Name: p.Name, ClientID: p.Audiences[0], IOSClientID: p.NativeClientID})
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"providers": out})
