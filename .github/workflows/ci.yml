@@ -133,6 +133,7 @@ jobs:
           targets: ${{ matrix.service }}
           load: true
           set: |
+            *.tags=healthagentapp-${{ matrix.service }}:latest
             *.cache-from=type=gha,scope=${{ matrix.service }}-${{ env.CORTEX_INFERENCE }}
             *.cache-to=type=gha,scope=${{ matrix.service }}-${{ env.CORTEX_INFERENCE }},mode=max
       - name: Worker image has OCR tools
@@ -175,6 +176,20 @@ jobs:
         run: |
           docker compose run --rm --no-deps --entrypoint tesseract worker --version
           docker compose run --rm --no-deps --entrypoint pdftoppm worker -v
+      - name: Build all images (cache populated by docker-build)
+        uses: docker/bake-action@v6
+        with:
+          source: .
+          files: docker-compose.yml
+          targets: api,worker,cortex-ai
+          load: true
+          set: |
+            api.tags=healthagentapp-api:latest
+            worker.tags=healthagentapp-worker:latest
+            cortex-ai.tags=healthagentapp-cortex-ai:latest
+            api.cache-from=type=gha,scope=api-${{ env.CORTEX_INFERENCE }}
+            worker.cache-from=type=gha,scope=worker-${{ env.CORTEX_INFERENCE }}
+            cortex-ai.cache-from=type=gha,scope=cortex-ai-${{ env.CORTEX_INFERENCE }}
       - name: Start the stack
         run: docker compose up -d --no-build --wait --wait-timeout 300
       - name: Smoke test (sign in, profile, consent, upload, worker extraction, export, delete)
