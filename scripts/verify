@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Fast local version of the CI gate. Run before pushing; the pre-push hook runs it for you.
+# Database tests run when TEST_DATABASE_URL is set, otherwise they are skipped (CI always runs them).
+set -euo pipefail
+cd "$(dirname "$0")/../backend"
+
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
+go vet ./...
+go test -count=1 -p 1 ./...
+
+if [ -d ../cortex-ai ] && python3 -c "import pytest, fastapi" 2>/dev/null; then
+  (cd ../cortex-ai && python3 -m pytest -q)
+else
+  echo "skipping cortex-ai tests (pytest or fastapi not installed)"
+fi
+if [ -z "${TEST_DATABASE_URL:-}" ]; then echo "note: TEST_DATABASE_URL unset, database tests were skipped"; fi
+echo "verify passed"

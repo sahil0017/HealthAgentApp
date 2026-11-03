@@ -1,8 +1,10 @@
+# Publishes the simulator build to Appetize. Pull requests are checked by ci.yml (ios-build), so this runs on main only.
 name: ios-simulator
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "ios/**"
       - ".github/workflows/ios-simulator.yml"
