@@ -55,6 +55,13 @@ The Go service is the authorization and data-access boundary. Python receives on
 
 ## Features in this build
 
+### Web app (React + TypeScript)
+
+- `web/` is a Vite app that mirrors the iOS screens: Today, Vault, Biomarkers (with trend chart), Ask AI, Timeline and the Privacy centre.
+- The same screens and design tokens serve desktop and mobile; only the navigation placement changes (sidebar at 900px and wider, bottom tab bar below).
+- Run it with `cd web && npm install && npm run dev` (proxies `/api` to `http://localhost:8080`; override with `CORTEX_API_URL`), test with `npm test`.
+- `docker compose --profile web up -d --build web` serves the production build on <http://localhost:5173>.
+
 ### iOS app
 
 - SwiftUI profile setup and local API connection.

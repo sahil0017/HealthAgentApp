@@ -34,7 +34,7 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [~] Rebuilt stack verified with the latest code (research routing, date and range extraction)
 - [x] Learn reference ranges from reviewed reports (min 3 distinct reports, 80% agreement, pending until a reviewer approves)
 - [ ] Learn abbreviations and synonyms from reviewed labels
-- [ ] Review queue UI in the iOS app (or a small admin web page)
+- [ ] Review queue UI in the iOS app (or a small admin web page; not yet in the React app)
 - [ ] Remove the remaining hard-coded routing terms (`LAB_TERMS`, `RESEARCH_TERMS`) and consent purpose list from code
 
 ## M5. Controlled orchestration: partial
@@ -182,3 +182,17 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 4. Learned reference ranges (M4) and range comparison (M7).
 5. OCR (M2), MCP client (M5), observability and CI (M11).
 6. Devices, vision and imaging (M10, M12) last, each as a separate consented domain.
+
+## M18. Web app (React + TypeScript): in progress
+
+- [x] Vite + React + TypeScript app in `web/`, typed API client with envelope and error handling, `/api` dev proxy
+- [x] One responsive layout for desktop and mobile (sidebar at 900px and wider, bottom tab bar below)
+- [x] Sign-in, profile creation, Today (attention, completeness, goals, follow-ups), Timeline
+- [x] Vault: upload, list, search, review and approve extracted values, retry, delete
+- [x] Biomarkers: grouped summary, SVG trend chart with reference range, test coverage
+- [x] Ask AI: cited answers, urgent banner, confidence, feedback, saved history
+- [x] Privacy centre: consents, access history, export, delete
+- [x] Vitest and Testing Library tests, `web-test` CI job, Dockerfile and `web` compose profile
+- [ ] Goals, history entries, biomarker compare and manual entry screens
+- [ ] Knowledge review queue (admin)
+- [ ] Add the web app to the e2e workflow (Playwright against the compose stack)
