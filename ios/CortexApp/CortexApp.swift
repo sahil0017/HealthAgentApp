@@ -272,6 +272,7 @@ struct ContentView: View {
     @State private var selectedDocument: MedicalDocument?
     @State private var question = ""
     @State private var showingQuestionHistory = false
+    @State private var showingDevices = false
     @State private var documentType = "LAB_REPORT"
     @State private var supersedesDocumentID: String?
     @State private var documentToDelete: MedicalDocument?
@@ -300,6 +301,7 @@ struct ContentView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+                            Button("Connected devices", systemImage: "applewatch") { showingDevices = true }
                             Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { Task { await model.logout() } }
                         } label: { Image(systemName: "ellipsis.circle") }
                     }
@@ -319,6 +321,7 @@ struct ContentView: View {
             }
             .sheet(item: $model.answer) { answer in AnswerView(answer: answer).environmentObject(model) }
             .sheet(isPresented: $showingQuestionHistory) { QuestionHistoryView().environmentObject(model) }
+            .sheet(isPresented: $showingDevices) { ConnectedDevicesView().environmentObject(model) }
             .alert("CORTEX", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
                 Button("OK") { model.message = nil }
             } message: { Text(model.message ?? "") }

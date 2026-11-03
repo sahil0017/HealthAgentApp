@@ -170,6 +170,20 @@ def main():
     expect("a question can be deleted", call("DELETE", f"/api/v1/profiles/{profile}/questions/{question_id}")[0], 204)
     expect("a deleted question is gone", call("GET", f"/api/v1/profiles/{profile}/questions/{question_id}")[0], 404)
 
+    # Module 05: a connected device syncs readings, repeats are de-duplicated, and the device can be removed.
+    status, _ = call("PUT", f"/api/v1/profiles/{profile}/consents/health_data_integration", {"granted": True})
+    expect("consent health_data_integration is granted", status, 200)
+    status, body = call("POST", f"/api/v1/profiles/{profile}/devices", {"kind": "phone", "source": "apple_health", "name": "Apple Health", "external_id": "smoke"})
+    expect("a device is connected", status, 201)
+    device = data(body)["id"]
+    batch = {"readings": [{"metric": "resting_heart_rate", "value": 62, "unit": "bpm", "measured_at": "2025-01-0%dT08:00:00Z" % d, "external_id": "s%d" % d} for d in range(1, 5)]}
+    status, body = call("POST", f"/api/v1/profiles/{profile}/devices/{device}/readings", batch)
+    expect("readings are accepted", (status, data(body)["accepted"]), (200, 4))
+    status, body = call("POST", f"/api/v1/profiles/{profile}/devices/{device}/readings", batch)
+    expect("a repeated sync is de-duplicated", (status, data(body)["duplicates"]), (200, 4))
+    expect("device summary is available", call("GET", f"/api/v1/profiles/{profile}/device-readings/summary")[0], 200)
+    expect("a device can be removed", call("DELETE", f"/api/v1/profiles/{profile}/devices/{device}")[0], 200)
+
     expect("an unknown session cannot read the profile", call("GET", f"/api/v1/profiles/{profile}", token="not-a-session")[0], 401)
     expect("profile export works", call("GET", f"/api/v1/profiles/{profile}/export")[0], 200)
     expect("profile is deleted with its data", call("DELETE", f"/api/v1/profiles/{profile}", {"confirm": "DELETE"})[0] in (200, 204), True)

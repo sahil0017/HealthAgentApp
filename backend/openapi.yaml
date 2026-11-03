@@ -456,6 +456,96 @@ paths:
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
         '200': { description: JSON-RPC 2.0 response }
+  /device-metrics:
+    get:
+      summary: List the device metrics that can be synced
+      description: Each metric has its canonical `unit`, `accepted_units` (others are converted on sync), whether it is `cumulative` (steps, active energy, sleep are summed per day) and an optional `lab_biomarker_code` for lab comparison.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/devices:
+    get:
+      summary: List connected devices with reading counts and last sync
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Connect a device (idempotent on `source` + `external_id`)
+      description: Requires `health_data_integration` consent. Body `{kind, source, name, manufacturer?, model?, external_id?}`. `kind` is phone_health_app, smartwatch, fitness_band, blood_pressure_monitor, glucometer, cgm, scale, pulse_oximeter, thermometer or other; `source` is healthkit, bluetooth, import or manual. Reconnecting the same external id returns the existing device with 200. At most 50 devices per profile.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { description: Existing device reconnected }
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid device }
+        '403': { description: Integration consent required }
+        '409': { description: Device limit reached }
+  /profiles/{profileID}/devices/{deviceID}:
+    patch:
+      summary: Rename, disconnect or reconnect a device
+      description: "Body `{name?, status?: connected|disconnected}`. Disconnecting keeps history and blocks further syncs; reconnecting needs integration consent."
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: deviceID, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid change }
+        '404': { description: Not found or not owned }
+    delete:
+      summary: Remove a device and erase every reading and sync record it produced (audited with counts only)
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: deviceID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not found or not owned }
+  /profiles/{profileID}/devices/{deviceID}/readings:
+    post:
+      summary: Sync a batch of readings (idempotent)
+      description: "Requires `health_data_integration` consent and a connected device. Body `{readings: [{metric, value, unit, measured_at (RFC 3339), external_id?, utc_offset_minutes?}]}`, 1-500 per call. Values are converted to the canonical unit and checked for plausibility. A reading seen before (same `external_id`, or same metric, time, value and unit) is counted in `duplicates`; invalid ones are listed by index in `errors` and do not block the rest. `utc_offset_minutes` decides the local calendar day used for daily summaries. Returns `accepted`, `duplicates`, `rejected`, `errors`."
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: deviceID, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Empty or oversized batch }
+        '403': { description: Integration consent required }
+        '404': { description: Not found or not owned }
+        '409': { description: Device is disconnected }
+  /profiles/{profileID}/devices/{deviceID}/syncs:
+    get:
+      summary: Sync history of a device, newest first
+      description: Query `limit` and `offset`. Each entry has accepted, duplicates, rejected counts and the measurement time span.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: deviceID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not found or not owned }
+  /profiles/{profileID}/device-readings:
+    get:
+      summary: List raw device readings, newest first
+      description: Query `metric`, `device_id`, `from` and `to` (YYYY-MM-DD local dates), `limit`, `offset`. Every item has `measurement_kind` of `device`, never `lab`.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid filter }
+  /profiles/{profileID}/device-readings/summary:
+    get:
+      summary: Descriptive summary per metric
+      description: Latest value, 7 and 30 day averages, and the change against the previous 30 days (`rising`, `falling`, `stable`, `insufficient_data`; at least 3 days in each window and a 5% change). Cumulative metrics average daily totals. Typical adult ranges are informational only and never a diagnosis.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/device-readings/{metric}/daily:
+    get:
+      summary: Daily aggregates (mean, min, max, sum, count) for one metric
+      description: Query `days` (1-365, default 30).
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: metric, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Unknown metric or range }
+  /profiles/{profileID}/device-readings/{metric}/lab-comparison:
+    get:
+      summary: Verified laboratory results beside device readings taken near them
+      description: Only for metrics with a `lab_biomarker_code` (blood_glucose). Query `window_days` (0-14, default 3). Lab results are converted only through known units, others are listed in `excluded`. The response states that the two are not interchangeable and the laboratory result is the reference.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: metric, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Unknown metric, or no laboratory equivalent }
   /knowledge/entries:
     get:
       summary: List learned knowledge proposals (administrators only)

@@ -66,6 +66,9 @@ func (m *Module) exportProfile(w http.ResponseWriter, r *http.Request) {
 		{"goals", `SELECT COALESCE(jsonb_agg(to_jsonb(g) ORDER BY g.created_at),'[]') FROM goals g WHERE profile_id=$1 AND owner_id=$2`},
 		{"follow_ups", `SELECT COALESCE(jsonb_agg(to_jsonb(f) ORDER BY f.created_at),'[]') FROM follow_ups f WHERE profile_id=$1 AND owner_id=$2`},
 		{"health_questions", `SELECT COALESCE(jsonb_agg(to_jsonb(q) ORDER BY q.created_at),'[]') FROM health_questions q WHERE profile_id=$1 AND owner_id=$2`},
+		{"devices", `SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY d.created_at),'[]') FROM devices d WHERE profile_id=$1 AND owner_id=$2`},
+		{"device_readings", `SELECT COALESCE(jsonb_agg(to_jsonb(r)-'dedupe_key' ORDER BY r.measured_at),'[]') FROM device_readings r WHERE profile_id=$1 AND owner_id=$2`},
+		{"device_syncs", `SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.id),'[]') FROM device_syncs s WHERE profile_id=$1 AND owner_id=$2`},
 		{"audit_events", `SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]') FROM audit_events e WHERE profile_id=$1 AND owner_id=$2`},
 	}
 	out := map[string]json.RawMessage{}

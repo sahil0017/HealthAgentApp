@@ -11,7 +11,7 @@ Status: ✅ done · 🟡 partial · ⬜ not started
 | 02 | Medical Intelligence Vault | 🟢 | [02-medical-vault.md](02-medical-vault.md) |
 | 03 | Biomarker & Longitudinal Intelligence | 🟢 | [03-biomarkers.md](03-biomarkers.md) |
 | 04 | Multimodal Body Observation | ⬜ | [04-body-observation.md](04-body-observation.md) |
-| 05 | Connected Diagnostics | ⬜ | [05-connected-diagnostics.md](05-connected-diagnostics.md) |
+| 05 | Connected Diagnostics | 🟢 | [05-connected-diagnostics.md](05-connected-diagnostics.md) |
 | 06 | Medical Imaging | ⬜ | [06-medical-imaging.md](06-medical-imaging.md) |
 | 07 | CORTEX Personal Health AI | 🟢 | [07-health-ai.md](07-health-ai.md) |
 | 08 | Agentic Health Research | 🟡 | [08-health-research.md](08-health-research.md) |

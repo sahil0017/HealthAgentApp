@@ -25,6 +25,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Sehat reads the health data you choose from Apple Health to show your readings alongside your lab results.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your local CORTEX development server.</string>
 	<key>UILaunchScreen</key>

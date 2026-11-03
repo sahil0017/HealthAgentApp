@@ -32,7 +32,7 @@
   <img src="./docs/assets/cortex-architecture-12-modules.svg" alt="Animated CORTEX architecture: iOS app, Go API with modules 01 to 12 and shared platform, PostgreSQL with pgvector, object storage, Go worker, Python AI service, external sources and CI" width="100%">
 </p>
 
-Solid green modules are shipped (01, 02, 03, 07), amber are partial (08, 12) and dashed are planned (04, 05, 06, 09, 10, 11). Status lives in [`modules/README.md`](./modules/README.md).
+Solid green modules are shipped (01, 02, 03, 05, 07), amber are partial (08, 12) and dashed are planned (04, 06, 09, 10, 11). Status lives in [`modules/README.md`](./modules/README.md).
 
 ### The report-to-record flow
 
