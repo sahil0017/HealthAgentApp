@@ -32,8 +32,8 @@ class MoreTab extends ConsumerWidget {
       ),
       (
         Icons.medical_services_outlined,
-        'Doctors',
-        'Registry-verified, when connected',
+        'Care near you',
+        'Doctors, clinics, pharmacies, labs',
         const DoctorsScreen(),
       ),
       (

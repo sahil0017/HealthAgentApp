@@ -132,68 +132,221 @@ class HealthNewsScreen extends ConsumerWidget {
 
 // ----------------------------------------------------------------- Doctors
 
-class DoctorsScreen extends ConsumerWidget {
+typedef _PlaceKey = (double, double, String);
+
+final _placesProvider = FutureProvider.autoDispose.family<Json, _PlaceKey>(
+  (ref, k) => ref
+      .read(apiProvider)
+      .map('/nearby/places?kind=${k.$3}&lat=${k.$1}&lng=${k.$2}&radius_km=10'),
+);
+
+const _kinds = [
+  ('doctor', 'Doctors', Icons.medical_services_outlined),
+  ('clinic', 'Clinics', Icons.local_hospital_outlined),
+  ('pharmacy', 'Pharmacies', Icons.local_pharmacy_outlined),
+  ('lab', 'Labs', Icons.biotech_outlined),
+];
+
+/// Doctors, clinics, pharmacies and labs around the phone's approximate location.
+class DoctorsScreen extends ConsumerStatefulWidget {
   const DoctorsScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final src = ref.watch(_sourcesProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Doctors')),
-      body: AsyncBody<List<Json>>(
-        src,
-        onRetry: () => ref.invalidate(_sourcesProvider),
-        builder: (s) {
-          final doctors = s.firstWhere(
-            (x) => x['category'] == 'doctors',
-            orElse: () => <String, dynamic>{},
-          );
-          final available = doctors['available'] == true;
-          return ListView(
-            padding: const EdgeInsets.all(14),
+  ConsumerState<DoctorsScreen> createState() => _DoctorsState();
+}
+
+class _DoctorsState extends ConsumerState<DoctorsScreen> {
+  String _kind = 'doctor';
+  bool _map = false;
+
+  @override
+  Widget build(BuildContext context) => _NeedsArea('Care near you', (area) {
+    final res = ref.watch(_placesProvider((area.lat, area.lng, _kind)));
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+          child: Row(
             children: [
-              SCard(
-                color: Pal.priBg,
-                child: Text(
-                  available
-                      ? 'Doctors are verified against a medical council registry. This is not a recommendation.'
-                      : '${doctors['reason'] ?? 'No doctor registry is connected yet, so no doctors are listed. Sehat never shows unverified doctors or ratings.'}',
-                  style: const TextStyle(fontSize: 11.5, height: 1.4),
-                ),
-              ),
-              const SectionTitle('Meanwhile'),
-              SCard(
-                onTap: () => _open(context, const HospitalsMapScreen()),
-                child: const Row(
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
                   children: [
-                    Icon(Icons.local_hospital_outlined, color: Pal.pri),
-                    SizedBox(width: 10),
-                    Expanded(child: Text('Hospitals near you', style: _bold)),
-                    Icon(Icons.chevron_right, color: Pal.mut),
+                    for (final k in _kinds)
+                      ChoiceChip(
+                        label: Text(k.$2, style: const TextStyle(fontSize: 11)),
+                        selected: _kind == k.$1,
+                        onSelected: (_) => setState(() => _kind = k.$1),
+                      ),
                   ],
                 ),
               ),
-              SCard(
-                onTap: () => _open(context, const AreaMapScreen()),
-                child: const Row(
-                  children: [
-                    Icon(Icons.map_outlined, color: Pal.pri),
-                    SizedBox(width: 10),
-                    Expanded(child: Text('Area map', style: _bold)),
-                    Icon(Icons.chevron_right, color: Pal.mut),
-                  ],
+              IconButton(
+                tooltip: _map ? 'List' : 'Map',
+                icon: Icon(_map ? Icons.list : Icons.map_outlined),
+                onPressed: () => setState(() => _map = !_map),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: AsyncBody<Json>(
+            res,
+            onRetry: () =>
+                ref.invalidate(_placesProvider((area.lat, area.lng, _kind))),
+            builder: (r) {
+              final list = ((r['places'] as List?) ?? []).cast<Json>();
+              if (_map) {
+                return _HospitalMap(
+                  area,
+                  list,
+                  onTap: (p) => _open(context, PlaceScreen(p)),
+                );
+              }
+              return ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  SCard(
+                    color: Pal.priBg,
+                    child: Text(
+                      '${r['note'] ?? ''}',
+                      style: const TextStyle(fontSize: 11, height: 1.4),
+                    ),
+                  ),
+                  if (list.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                        child: Text(
+                          'Nothing mapped within 10 km.',
+                          style: _note,
+                        ),
+                      ),
+                    ),
+                  for (final p in list)
+                    SCard(
+                      onTap: () => _open(context, PlaceScreen(p)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${p['name']}', style: _bold),
+                                Text(
+                                  [
+                                    if ('${p['speciality'] ?? ''}'.isNotEmpty)
+                                      '${p['speciality']}',
+                                    '${fmtNum(numOf(p['distance_km']))} km',
+                                  ].join(' · '),
+                                  style: _note,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right, color: Pal.mut),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  });
+}
+
+class PlaceScreen extends StatelessWidget {
+  const PlaceScreen(this.p, {super.key});
+  final Json p;
+
+  Widget _row(IconData i, String? text) => text == null || text.isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(i, size: 16, color: Pal.mut),
+              const SizedBox(width: 8),
+              Expanded(child: Text(text, style: const TextStyle(fontSize: 12))),
+            ],
+          ),
+        );
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = p['phone'] as String?;
+    final site = p['website'] as String?;
+    return Scaffold(
+      appBar: AppBar(title: Text('${p['name']}')),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          SCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${p['name']}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _row(Icons.work_outline, p['speciality'] as String?),
+                _row(Icons.place_outlined, p['address'] as String?),
+                _row(
+                  Icons.near_me_outlined,
+                  '${fmtNum(numOf(p['distance_km']))} km away',
+                ),
+                _row(Icons.schedule, p['opening_hours'] as String?),
+                _row(Icons.call_outlined, phone),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              if (phone != null && phone.isNotEmpty)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _launch(
+                      context,
+                      Uri(scheme: 'tel', path: phone.replaceAll(' ', '')),
+                    ),
+                    icon: const Icon(Icons.call),
+                    label: const Text('Call'),
+                  ),
+                ),
+              if (phone != null && phone.isNotEmpty) const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _directions(context, p),
+                  icon: const Icon(Icons.directions),
+                  label: const Text('Directions'),
                 ),
               ),
             ],
-          );
-        },
+          ),
+          if (site != null && site.startsWith('http'))
+            TextButton(
+              onPressed: () => _launch(context, Uri.parse(site)),
+              child: const Text('Website'),
+            ),
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Text(
+              'Listed by OpenStreetMap contributors. Not verified against a medical registry and not a recommendation. Confirm hours and registration by phone.',
+              style: _note,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
-
-final _sourcesProvider = FutureProvider.autoDispose<List<Json>>(
-  (ref) => ref.read(apiProvider).list('/nearby/sources', key: 'sources'),
-);
 
 // -------------------------------------------------------------------- Maps
 

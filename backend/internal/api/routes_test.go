@@ -41,6 +41,7 @@ var expectedRoutes = []string{
 	"GET /lifestyle-categories",
 	"GET /nearby/alerts",
 	"GET /nearby/hospitals",
+	"GET /nearby/places",
 	"GET /nearby/sources",
 	"GET /profiles",
 	"GET /profiles/{profileID}",

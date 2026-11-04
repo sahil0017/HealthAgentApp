@@ -56,6 +56,7 @@ func (m *Module) Authed(r chi.Router) {
 	r.Get("/nearby/sources", m.sources)
 	r.Get("/nearby/alerts", m.alerts)
 	r.Get("/nearby/hospitals", m.hospitals)
+	r.Get("/nearby/places", m.places)
 }
 
 func (m *Module) fromCache(key string) (any, bool) {

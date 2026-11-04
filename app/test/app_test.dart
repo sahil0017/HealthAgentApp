@@ -108,7 +108,10 @@ void main() {
     expect(find.text('Measles - India'), findsOneWidget);
     expect(find.text('Your country'), findsOneWidget);
     expect(find.text('City Hospital'), findsOneWidget);
-    expect(find.textContaining('none is connected'), findsOneWidget);
+    expect(
+      find.textContaining('not verified against a medical registry'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('approving a suggestion calls the approve endpoint', (t) async {
@@ -199,5 +202,39 @@ void main() {
     expect(find.textContaining('Call ambulance (112)'), findsOneWidget);
     expect(find.textContaining('Penicillin'), findsOneWidget);
     expect(find.textContaining('O+'), findsOneWidget);
+  });
+
+  testWidgets('care near you lists places for the detected area', (t) async {
+    String? kind;
+    final api = _api((r) {
+      if (r.url.path.endsWith('/nearby/places')) {
+        kind = r.url.queryParameters['kind'];
+        return _json({
+          'places': [
+            {
+              'id': 'n/1',
+              'kind': 'doctor',
+              'name': 'Dr. Rao Clinic',
+              'speciality': 'Endocrinology',
+              'distance_km': 3.2,
+              'lat': 28.6,
+              'lng': 77.2,
+              'phone': '+91 20 1234',
+            },
+          ],
+          'note': 'Not verified against a medical registry.',
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const DoctorsScreen()));
+    await t.tap(find.text('Allow approximate location'));
+    await t.pumpAndSettle();
+    expect(kind, 'doctor');
+    expect(find.text('Dr. Rao Clinic'), findsOneWidget);
+    await t.tap(find.text('Dr. Rao Clinic'));
+    await t.pumpAndSettle();
+    expect(find.text('Call'), findsOneWidget);
+    expect(find.text('Directions'), findsOneWidget);
   });
 }

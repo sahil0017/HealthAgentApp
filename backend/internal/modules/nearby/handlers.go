@@ -35,8 +35,11 @@ func (m *Module) sources(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, 200, map[string]any{"sources": []map[string]any{
 		{"category": "alerts", "name": "WHO Disease Outbreak News", "scope": "global", "available": true},
 		{"category": "hospitals", "name": "OpenStreetMap", "scope": "global", "available": true},
-		{"category": "doctors", "name": "", "scope": "", "available": false,
-			"reason": "Doctor directories are national registries; none is connected yet."},
+		{"category": "doctors", "name": "OpenStreetMap", "scope": "global", "available": true, "verified": false,
+			"reason": "Community-mapped listings, not verified against a medical registry. A national registry is not connected yet."},
+		{"category": "clinics", "name": "OpenStreetMap", "scope": "global", "available": true, "verified": false},
+		{"category": "pharmacies", "name": "OpenStreetMap", "scope": "global", "available": true, "verified": false},
+		{"category": "labs", "name": "OpenStreetMap", "scope": "global", "available": true, "verified": false},
 	}})
 }
 

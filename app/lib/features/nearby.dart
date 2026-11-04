@@ -6,6 +6,7 @@ import '../core/hardware.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'places.dart';
 
 final alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
   (ref, country) => ref
@@ -134,11 +135,22 @@ class NearbyResults extends ConsumerWidget {
                   ],
                 ),
         ),
-        const SectionTitle('Doctors'),
-        const SCard(
-          child: Text(
-            'Doctor directories are national registries and none is connected yet, so no doctors are listed.',
-            style: TextStyle(fontSize: 11.5, color: Pal.mut, height: 1.4),
+        const SectionTitle('Doctors, clinics, pharmacies & labs'),
+        SCard(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const DoctorsScreen()),
+          ),
+          child: const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Find care near you. Listings come from OpenStreetMap and are not verified against a medical registry.',
+                  style: TextStyle(fontSize: 11.5, color: Pal.mut, height: 1.4),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Pal.mut),
+            ],
           ),
         ),
       ],

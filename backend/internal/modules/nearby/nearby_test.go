@@ -98,10 +98,33 @@ func TestNearbyPointsShareOneCachedAnswer(t *testing.T) {
 	}
 }
 
-func TestSourcesAdmitThereIsNoDoctorDirectory(t *testing.T) {
+func TestSourcesSayDoctorListingsAreNotVerified(t *testing.T) {
 	_, h := testModule(t)
 	body := get(h, "/nearby/sources").Body.String()
-	if !strings.Contains(body, `"category":"doctors"`) || !strings.Contains(body, `"available":false`) {
+	if !strings.Contains(body, `"category":"doctors"`) || !strings.Contains(body, `"verified":false`) {
 		t.Fatal(body)
+	}
+}
+
+func TestPlacesAreTaggedUnverifiedSortedAndValidated(t *testing.T) {
+	_, h := testModule(t)
+	rec := get(h, "/nearby/places?kind=doctor&lat=28.61&lng=77.21&radius_km=10")
+	var out struct {
+		Data struct {
+			Places   []place `json:"places"`
+			Verified bool    `json:"verified"`
+			Note     string  `json:"note"`
+		} `json:"data"`
+	}
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &out) != nil || len(out.Data.Places) != 2 {
+		t.Fatalf("places: %d %s", rec.Code, rec.Body)
+	}
+	if out.Data.Verified || out.Data.Note == "" || out.Data.Places[0].Name != "Near Hospital" || out.Data.Places[0].Kind != "doctor" {
+		t.Fatalf("unexpected: %+v", out.Data)
+	}
+	for _, p := range []string{"", "?kind=spa&lat=1&lng=1", "?kind=lab&lat=999&lng=1", "?kind=lab&lat=1&lng=1&radius_km=500"} {
+		if c := get(h, "/nearby/places"+p).Code; c != 400 {
+			t.Fatalf("%q: want 400, got %d", p, c)
+		}
 	}
 }

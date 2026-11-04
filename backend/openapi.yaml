@@ -783,6 +783,14 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid parameter }
+  /nearby/places:
+    get:
+      summary: Doctors, clinics, pharmacies or labs near an area from OpenStreetMap, nearest first
+      description: Query `kind` (doctor, clinic, pharmacy or lab), `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored) and `radius_km` (1-50, default 10). Listings are community-mapped and flagged `verified:false`; they are not a registry or a recommendation.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid kind or area }
+        '502': { description: Source unavailable }
   /nearby/sources:
     get:
       summary: Data sources behind the Nearby care screens, and which categories have none
