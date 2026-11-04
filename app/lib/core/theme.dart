@@ -30,24 +30,34 @@ ThemeData buildTheme() {
       error: Pal.bad,
     ),
   );
-  final text = base.textTheme
-      .apply(bodyColor: Pal.ink, displayColor: Pal.ink)
-      .copyWith(
-        headlineSmall: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.3,
-        ),
-        titleMedium: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-        bodyMedium: TextStyle(fontSize: 14, height: 1.35),
-        bodySmall: TextStyle(fontSize: 12, color: Pal.mut, height: 1.3),
-        labelSmall: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: Pal.mut,
-          letterSpacing: .6,
-        ),
-      );
+  final applied = base.textTheme.apply(
+    bodyColor: Pal.ink,
+    displayColor: Pal.ink,
+  );
+  // Merge onto the coloured defaults so unstyled Text keeps the light colour.
+  final text = applied.copyWith(
+    headlineSmall: applied.headlineSmall?.copyWith(
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.3,
+    ),
+    titleMedium: applied.titleMedium?.copyWith(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+    ),
+    bodyMedium: applied.bodyMedium?.copyWith(fontSize: 14, height: 1.35),
+    bodySmall: applied.bodySmall?.copyWith(
+      fontSize: 12,
+      color: Pal.mut,
+      height: 1.3,
+    ),
+    labelSmall: applied.labelSmall?.copyWith(
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      color: Pal.mut,
+      letterSpacing: .6,
+    ),
+  );
   return base.copyWith(
     textTheme: text,
     appBarTheme: AppBarTheme(
@@ -70,7 +80,7 @@ ThemeData buildTheme() {
       indicatorColor: Pal.priBg,
       height: 62,
       labelTextStyle: WidgetStatePropertyAll(
-        TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+        TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Pal.ink),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -78,7 +88,7 @@ ThemeData buildTheme() {
         minimumSize: const Size.fromHeight(48),
         backgroundColor: Pal.pri,
         foregroundColor: Pal.onPri,
-        textStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),

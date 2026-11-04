@@ -41,10 +41,11 @@ class _SignInState extends ConsumerState<SignInScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              const Icon(Icons.favorite_rounded, size: 40, color: Pal.pri),
+              const Icon(Icons.favorite_rounded, size: 44, color: Pal.pri),
               const SizedBox(height: 14),
               const Text(
                 'Sehat',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w700,
@@ -54,6 +55,7 @@ class _SignInState extends ConsumerState<SignInScreen> {
               const SizedBox(height: 4),
               const Text(
                 'Your health records, understood. Private by design.',
+                textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: Pal.mut),
               ),
               const Spacer(),
