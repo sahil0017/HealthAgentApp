@@ -41,6 +41,35 @@ class NeedsArea extends ConsumerStatefulWidget {
 class NeedsAreaState extends ConsumerState<NeedsArea> {
   bool _busy = false;
   bool _denied = false;
+  final _city = TextEditingController();
+  String? _cityError;
+
+  @override
+  void dispose() {
+    _city.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    setState(() {
+      _busy = true;
+      _cityError = null;
+    });
+    try {
+      final a = await searchPlace(_city.text);
+      if (!mounted) return;
+      if (a == null) {
+        setState(() => _cityError = 'No place found. Try a city name.');
+      } else {
+        ref.read(areaProvider.notifier).set(a);
+      }
+    } catch (_) {
+      if (mounted)
+        setState(() => _cityError = 'Could not search. Check your connection.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _detect({bool precise = false}) async {
     final prefs = await SharedPreferences.getInstance();
@@ -80,6 +109,20 @@ class NeedsAreaState extends ConsumerState<NeedsArea> {
                   OutlinedButton(
                     onPressed: _busy ? null : () => _detect(precise: true),
                     child: const Text('Approximate + precise for directions'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _city,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _search(),
+                    decoration: InputDecoration(
+                      hintText: 'Or type your city',
+                      errorText: _cityError,
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.search),
+                        onPressed: _busy ? null : _search,
+                      ),
+                    ),
                   ),
                   const Padding(
                     padding: EdgeInsets.only(top: 6),

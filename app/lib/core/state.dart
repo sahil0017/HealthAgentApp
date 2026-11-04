@@ -174,6 +174,8 @@ class AreaNotifier extends Notifier<Area?> {
     state = a;
     return a != null;
   }
+
+  void set(Area a) => state = a;
 }
 
 final areaProvider = NotifierProvider<AreaNotifier, Area?>(AreaNotifier.new);

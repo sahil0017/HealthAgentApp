@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
@@ -6,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:health/health.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -34,6 +36,34 @@ class Area {
 
   String get label =>
       [city, region].whereType<String>().where((s) => s.isNotEmpty).join(', ');
+}
+
+/// Looks a typed city up with Open-Meteo's free geocoder, for when GPS is blocked (for example a browser on plain HTTP).
+/// Only the typed name leaves the device; the result is rounded to the same coarse grid.
+Future<Area?> searchPlace(String query) async {
+  final q = query.trim();
+  if (q.length < 2) return null;
+  final r = await http
+      .get(
+        Uri.https('geocoding-api.open-meteo.com', '/v1/search', {
+          'name': q,
+          'count': '1',
+          'language': 'en',
+        }),
+      )
+      .timeout(const Duration(seconds: 12));
+  if (r.statusCode != 200) return null;
+  final list = (jsonDecode(r.body) as Map)['results'] as List?;
+  if (list == null || list.isEmpty) return null;
+  final m = list.first as Map;
+  return Area(
+    lat: roundCoord((m['latitude'] as num).toDouble()),
+    lng: roundCoord((m['longitude'] as num).toDouble()),
+    city: m['name'] as String?,
+    region: m['admin1'] as String?,
+    countryCode: m['country_code'] as String?,
+    country: m['country'] as String?,
+  );
 }
 
 double roundCoord(double v) => (v / 0.05).round() * 0.05;
