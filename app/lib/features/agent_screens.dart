@@ -112,6 +112,55 @@ class AgentHubCard extends ConsumerWidget {
   }
 }
 
+/// Today-tab summary of the agent's daily briefing.
+class BriefingCard extends ConsumerWidget {
+  const BriefingCard({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final b = ref.watch(_briefingProvider).asData?.value;
+    if (b == null) return const SizedBox.shrink();
+    final items = [
+      for (final s in (b['sections'] as List? ?? []).cast<Json>())
+        for (final i in (s['items'] as List? ?? []).cast<Json>()) i,
+    ];
+    final attention = items.where((i) => i['tone'] == 'attention').toList();
+    final pending = numOf(b['pending_approvals'])?.toInt() ?? 0;
+    return SCard(
+      onTap: () => _open(context, const BriefingScreen()),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome, color: Pal.pri, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Daily briefing',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  attention.isNotEmpty
+                      ? '${attention.first['text']}'
+                      : items.isEmpty
+                      ? 'Nothing new today.'
+                      : '${items.length} items from your record.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: _note,
+                ),
+                if (pending > 0)
+                  Text('$pending waiting for your approval', style: _note),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Pal.mut),
+        ],
+      ),
+    );
+  }
+}
+
 class BriefingScreen extends ConsumerWidget {
   const BriefingScreen({super.key});
   @override

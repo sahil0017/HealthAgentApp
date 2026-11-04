@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -57,6 +59,9 @@ class ApiClient {
   void Function()? onUnauthorized;
   String? _token;
 
+  /// True while the last request failed to reach the server.
+  final ValueNotifier<bool> offline = ValueNotifier(false);
+
   Future<bool> restore() async {
     _token = await tokens.read();
     return _token != null;
@@ -107,12 +112,14 @@ class ApiClient {
     } on ApiError {
       rethrow;
     } catch (_) {
+      offline.value = true;
       throw ApiError(
         0,
         'offline',
         'No connection. Check your network and try again.',
       );
     }
+    offline.value = false;
     if (res.statusCode == 204 || res.bodyBytes.isEmpty) return null;
     dynamic payload;
     try {

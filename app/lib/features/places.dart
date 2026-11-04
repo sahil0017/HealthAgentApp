@@ -42,7 +42,10 @@ class _NeedsAreaState extends ConsumerState<_NeedsArea> {
   bool _busy = false;
   bool _denied = false;
 
-  Future<void> _detect() async {
+  Future<void> _detect({bool precise = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_preciseKey, precise);
+    if (!mounted) return;
     setState(() => _busy = true);
     final ok = await ref.read(areaProvider.notifier).detect();
     if (mounted) {
@@ -66,9 +69,27 @@ class _NeedsAreaState extends ConsumerState<_NeedsArea> {
               body: _denied
                   ? 'Location is off or unavailable. You can allow it in your phone settings.'
                   : 'Approximate location (city level) shows alerts and care near you. Your exact position is only used when you tap Directions or Share my location, and it never goes to Sehat.',
-              action: FilledButton(
-                onPressed: _busy ? null : _detect,
-                child: Text(_busy ? 'Locating…' : 'Allow approximate location'),
+              action: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton(
+                    onPressed: _busy ? null : () => _detect(),
+                    child: Text(_busy ? 'Locating…' : 'Approximate only'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: _busy ? null : () => _detect(precise: true),
+                    child: const Text('Approximate + precise for directions'),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Precise is read on this phone only to start directions and to share your location. You can change this any time.',
+                      textAlign: TextAlign.center,
+                      style: _note,
+                    ),
+                  ),
+                ],
               ),
             ),
     );
@@ -432,12 +453,25 @@ class _HospitalMap extends StatelessWidget {
 
 /// Opens turn-by-turn directions in Google Maps. With no origin given, Google Maps starts from the
 /// phone's live position, so Sehat never needs the exact location.
-Future<void> _directions(BuildContext context, Json h) => _launch(
-  context,
-  Uri.parse(
-    'https://www.google.com/maps/dir/?api=1&destination=${h['lat']},${h['lng']}&travelmode=driving',
-  ),
-);
+Future<void> _directions(BuildContext context, Json h) async {
+  final prefs = await SharedPreferences.getInstance();
+  var origin = '';
+  if (prefs.getBool(_preciseKey) ?? false) {
+    final p = await ProviderScope.containerOf(context)
+        .read(locationProvider)
+        .preciseNow();
+    if (p != null) origin = '&origin=${p.lat},${p.lng}';
+  }
+  if (!context.mounted) return;
+  return _launch(
+    context,
+    Uri.parse(
+      'https://www.google.com/maps/dir/?api=1$origin&destination=${h['lat']},${h['lng']}&travelmode=driving',
+    ),
+  );
+}
+
+const _preciseKey = 'precise_location_ok';
 
 class HospitalsMapScreen extends ConsumerStatefulWidget {
   const HospitalsMapScreen({super.key});
@@ -664,6 +698,31 @@ class EmergencyScreen extends ConsumerWidget {
   const EmergencyScreen({super.key});
 
   Future<void> _shareLocation(BuildContext context, WidgetRef ref) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_preciseKey) ?? false)) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Share your exact location?'),
+          content: const Text(
+            'Your phone will read your precise position once and put it in a message you choose to send. Sehat never receives it.',
+            style: TextStyle(fontSize: 12),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Allow and share'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await prefs.setBool(_preciseKey, true);
+    }
     final p = await ref.read(locationProvider).preciseNow();
     if (!context.mounted) return;
     if (p == null) {

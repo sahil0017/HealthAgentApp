@@ -26,7 +26,8 @@ class _HealthState extends ConsumerState<HealthTab> {
           showSelectedIcon: false,
           segments: const [
             ButtonSegment(value: 0, label: Text('Lab results')),
-            ButtonSegment(value: 1, label: Text('Devices')),
+            ButtonSegment(value: 1, label: Text('Vitals')),
+            ButtonSegment(value: 2, label: Text('Devices')),
           ],
           selected: {_seg},
           onSelectionChanged: (s) => setState(() => _seg = s.first),
@@ -41,7 +42,13 @@ class _HealthState extends ConsumerState<HealthTab> {
             label: const Text('Add a value'),
           ),
         ),
-      Expanded(child: _seg == 0 ? const _Labs() : const _Devices()),
+      Expanded(
+        child: switch (_seg) {
+          0 => const _Labs(),
+          1 => const _Vitals(),
+          _ => const _Devices(),
+        },
+      ),
     ],
   );
 }
@@ -448,3 +455,84 @@ final _summaryProvider = FutureProvider<List<Json>>((ref) {
       .read(apiProvider)
       .list('/profiles/$id/device-readings/summary', key: 'summaries');
 });
+
+/// Latest heart, blood pressure, oxygen, temperature, weight and glucose readings from the phone.
+class _Vitals extends ConsumerWidget {
+  const _Vitals();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(_summaryProvider);
+    return AsyncBody<List<Json>>(
+      s,
+      onRetry: () => ref.invalidate(_summaryProvider),
+      builder: (all) {
+        final list = all
+            .where(
+              (m) => const {'vitals', 'body', 'metabolic'}.contains(m['group']),
+            )
+            .toList();
+        if (list.isEmpty) {
+          return const Empty(
+            Icons.favorite_border,
+            'No vitals yet',
+            body: 'Sync from your phone’s health app in the Devices tab.',
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+          children: [
+            for (final m in list)
+              SCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${m['name']}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            [
+                              '7-day avg ${fmtNum(numOf(m['mean_7_days']))}',
+                              if (m['typical_adult_range'] is Map)
+                                'typical ${fmtNum(numOf((m['typical_adult_range'] as Map)['low']))}–${fmtNum(numOf((m['typical_adult_range'] as Map)['high']))}',
+                            ].join(' · '),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Pal.mut,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${fmtNum(numOf(m['latest_value']))} ${m['unit']}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: m['outside_typical_range'] == true
+                            ? Pal.warn
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text(
+                'Typical ranges are general adult ranges, not a diagnosis. Device readings are not lab results.',
+                style: TextStyle(fontSize: 10, color: Pal.mut),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

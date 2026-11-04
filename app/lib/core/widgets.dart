@@ -282,14 +282,55 @@ class AsyncBody<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) => value.when(
     data: builder,
-    loading: () => const Center(
-      child: SizedBox(
-        width: 22,
-        height: 22,
-        child: CircularProgressIndicator(strokeWidth: 2.5),
+    loading: () => const Skeleton(),
+    error: (e, _) => ErrorView(e, onRetry: onRetry),
+  );
+}
+
+/// Pulsing placeholder rows shown while content loads.
+class Skeleton extends StatefulWidget {
+  const Skeleton({super.key, this.rows = 4});
+  final int rows;
+  @override
+  State<Skeleton> createState() => _SkeletonState();
+}
+
+class _SkeletonState extends State<Skeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _c,
+    builder: (_, _) => Opacity(
+      opacity: 0.35 + 0.4 * _c.value,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < widget.rows; i++)
+              Container(
+                height: 56,
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: Pal.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+          ],
+        ),
       ),
     ),
-    error: (e, _) => ErrorView(e, onRetry: onRetry),
   );
 }
 

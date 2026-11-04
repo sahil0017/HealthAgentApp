@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent_screens.dart';
+import 'more.dart';
+import 'vault.dart';
 
 class TodayTab extends ConsumerWidget {
   const TodayTab({super.key});
@@ -48,6 +51,27 @@ class _Body extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
       children: [
+        const _ReportReady(),
+        const BriefingCard(),
+        SCard(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const NearbyScreen()),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.place_outlined, color: Pal.pri, size: 18),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Nearby: outbreak alerts, hospitals and air quality for your area',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Pal.mut),
+            ],
+          ),
+        ),
         SCard(
           child: Row(
             children: [
@@ -301,4 +325,44 @@ class _Stat extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Shown when an uploaded report has been read and is waiting for the user to confirm it.
+class _ReportReady extends ConsumerWidget {
+  const _ReportReady();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final docs = ref.watch(profileListProvider('/documents')).asData?.value;
+    final ready = (docs ?? [])
+        .where(
+          (d) =>
+              d['status'] == 'review_required' ||
+              d['status'] == 'manual_review_required',
+        )
+        .toList();
+    if (ready.isEmpty) return const SizedBox.shrink();
+    final d = ready.first;
+    return SCard(
+      color: Pal.priBg,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute<void>(builder: (_) => DocumentScreen('${d['id']}')),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.description_outlined, color: Pal.pri, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              ready.length == 1
+                  ? '${d['file_name']} is ready. Check the values and confirm.'
+                  : '${ready.length} reports are ready to review.',
+              style: const TextStyle(fontSize: 12, color: Pal.pri),
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: Pal.pri),
+        ],
+      ),
+    );
+  }
 }

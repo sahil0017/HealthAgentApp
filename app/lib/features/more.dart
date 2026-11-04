@@ -5,6 +5,7 @@ import '../core/hardware.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'lock.dart';
 import 'nearby.dart';
 import 'places.dart';
 import 'plan.dart';
@@ -484,6 +485,10 @@ class _LifestyleState extends ConsumerState<LifestyleScreen> {
               );
             },
           ),
+          const SectionTitle('Patterns'),
+          _Patterns(
+            ref.watch(profileMapProvider('/lifestyle/correlations?days=60')),
+          ),
           const SectionTitle('Symptoms'),
           AsyncBody<List<Json>>(
             symptoms,
@@ -707,6 +712,39 @@ class _PrivacyState extends ConsumerState<PrivacyScreen> {
       ListView(
         padding: const EdgeInsets.all(14),
         children: [
+          const SectionTitle('App lock'),
+          SCard(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text(
+                'Lock app with Face ID / fingerprint',
+                style: TextStyle(fontSize: 12.5),
+              ),
+              subtitle: const Text(
+                'Asked each time the app opens. Stored on this phone only.',
+                style: TextStyle(fontSize: 10.5),
+              ),
+              value: ref.watch(appLockEnabledProvider).asData?.value ?? false,
+              onChanged: (v) async {
+                final bio = ref.read(biometricProvider);
+                if (v) {
+                  if (!await bio.available()) {
+                    if (context.mounted) {
+                      toast(
+                        context,
+                        'This phone has no Face ID or fingerprint set up.',
+                      );
+                    }
+                    return;
+                  }
+                  if (!await bio.confirm('Turn on app lock')) return;
+                }
+                await setAppLock(ref, v);
+              },
+            ),
+          ),
           const SectionTitle('Consents'),
           AsyncBody<List<Json>>(
             consents,
@@ -819,4 +857,53 @@ class _PrivacyState extends ConsumerState<PrivacyScreen> {
       ),
     );
   }
+}
+
+/// Associations between logged lifestyle and symptom severity. Never presented as causes.
+class _Patterns extends StatelessWidget {
+  const _Patterns(this.data);
+  final AsyncValue<Json> data;
+  @override
+  Widget build(BuildContext context) => AsyncBody<Json>(
+    data,
+    builder: (d) {
+      final rows = ((d['correlations'] as List?) ?? [])
+          .cast<Json>()
+          .where((c) => c['status'] == 'ok')
+          .toList();
+      return Column(
+        children: [
+          const SCard(
+            color: Pal.warnBg,
+            child: Text(
+              'Correlation, not cause. These are patterns in what you logged. They can be coincidence.',
+              style: TextStyle(fontSize: 11, color: Pal.warn),
+            ),
+          ),
+          if (rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text(
+                'Log lifestyle and symptoms on at least 7 days with varying values to see patterns.',
+                style: TextStyle(fontSize: 11, color: Pal.mut),
+              ),
+            ),
+          for (final c in rows)
+            SCard(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${c['description']}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  Pill('${c['strength']}'),
+                ],
+              ),
+            ),
+        ],
+      );
+    },
+  );
 }

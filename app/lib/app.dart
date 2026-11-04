@@ -6,6 +6,7 @@ import 'core/api.dart';
 import 'core/state.dart';
 import 'core/theme.dart';
 import 'core/widgets.dart';
+import 'features/lock.dart';
 import 'features/agent.dart';
 import 'features/auth.dart';
 import 'features/health.dart';
@@ -60,7 +61,7 @@ class _RootState extends ConsumerState<Root> {
         body: Center(child: CircularProgressIndicator()),
       ),
       AuthStatus.signedOut => const SignInScreen(),
-      AuthStatus.signedIn => const Gate(),
+      AuthStatus.signedIn => const LockGate(child: Gate()),
     };
   }
 }
@@ -156,14 +157,35 @@ class _ShellState extends ConsumerState<Shell> {
             ),
         ],
       ),
-      body: IndexedStack(
-        index: _i,
-        children: const [
-          TodayTab(),
-          VaultTab(),
-          HealthTab(),
-          AgentTab(),
-          MoreTab(),
+      body: Column(
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: ref.read(apiProvider).offline,
+            builder: (_, off, _) => off
+                ? Container(
+                    width: double.infinity,
+                    color: Pal.warnBg,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: const Text(
+                      'You’re offline. Showing what’s on this phone; pull to refresh when back online.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: Pal.warn),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: _i,
+              children: const [
+                TodayTab(),
+                VaultTab(),
+                HealthTab(),
+                AgentTab(),
+                MoreTab(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

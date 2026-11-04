@@ -308,7 +308,11 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
       if (mounted) {
         setState(() {
           _doc = d;
-          _rows = rows;
+          _rows = [...rows]
+            ..sort((a, b) {
+              int u(Json r) => '${r['biomarker_code'] ?? ''}'.isEmpty ? 0 : 1;
+              return u(a).compareTo(u(b));
+            });
         });
       }
     } catch (e) {
@@ -417,6 +421,25 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
                                   style: const TextStyle(
                                     fontSize: 10,
                                     color: Pal.mut,
+                                  ),
+                                ),
+                              if ('${_rows[i]['biomarker_code'] ?? ''}'.isEmpty)
+                                const Text(
+                                  'Not matched to a known test. Check this one.',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Pal.warn,
+                                  ),
+                                ),
+                              if ('${_rows[i]['evidence'] ?? ''}'.isNotEmpty)
+                                Text(
+                                  'From the report${_rows[i]['page'] != null ? ' (page ${_rows[i]['page']})' : ''}: “${_rows[i]['evidence']}”',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Pal.mut,
+                                    fontStyle: FontStyle.italic,
                                   ),
                                 ),
                             ],

@@ -11,9 +11,11 @@ import 'package:sehat/core/api.dart';
 import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
+import 'package:sehat/features/health.dart';
 import 'package:sehat/features/more.dart';
 import 'package:sehat/features/places.dart';
 import 'package:sehat/features/plan.dart';
+import 'package:sehat/features/vault.dart';
 
 class _FakeLocation implements LocationSource {
   @override
@@ -235,7 +237,7 @@ void main() {
       return _json({});
     }, token: 'tok');
     await t.pumpWidget(_app(api, home: const DoctorsScreen()));
-    await t.tap(find.text('Allow approximate location'));
+    await t.tap(find.text('Approximate only'));
     await t.pumpAndSettle();
     expect(kind, 'doctor');
     expect(find.text('Dr. Rao Clinic'), findsOneWidget);
@@ -243,5 +245,99 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Call'), findsOneWidget);
     expect(find.text('Directions'), findsOneWidget);
+  });
+
+  testWidgets('review shows evidence and puts unmatched rows first', (t) async {
+    final api = _api((r) {
+      if (r.url.path.contains('/documents/d1')) {
+        return _json({
+          'id': 'd1',
+          'file_name': 'lab.pdf',
+          'status': 'review_required',
+          'extraction': {
+            'biomarkers': [
+              {
+                'name': 'Glucose',
+                'biomarker_code': 'GLUCOSE',
+                'value': 5,
+                'unit': 'mmol/L',
+                'evidence': 'Glucose 5.0',
+                'page': 2,
+              },
+              {'name': 'Mystery test', 'value': 1, 'unit': 'x'},
+            ],
+          },
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const DocumentScreen('d1')));
+    await t.pumpAndSettle();
+    expect(find.textContaining('page 2'), findsOneWidget);
+    expect(find.textContaining('Not matched'), findsOneWidget);
+    expect(
+      t.getTopLeft(find.text('Mystery test')).dy <
+          t.getTopLeft(find.text('Glucose')).dy,
+      isTrue,
+    );
+  });
+
+  testWidgets('lifestyle patterns are labelled correlation not cause', (
+    t,
+  ) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/lifestyle/correlations')) {
+        return _json({
+          'correlations': [
+            {
+              'status': 'ok',
+              'description': 'Sleep tracks with headache',
+              'strength': 'moderate',
+            },
+          ],
+        });
+      }
+      return _json(r.url.path.contains('categories') ? [] : {});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const LifestyleScreen()));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(
+      find.textContaining('Correlation, not cause'),
+      200,
+    );
+    expect(find.text('Sleep tracks with headache'), findsOneWidget);
+  });
+
+  testWidgets('vitals tab lists readings with a typical range', (t) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/device-readings/summary')) {
+        return _json({
+          'summaries': [
+            {
+              'name': 'Resting heart rate',
+              'unit': 'bpm',
+              'group': 'vitals',
+              'latest_value': 64,
+              'mean_7_days': 66,
+              'typical_adult_range': {'low': 60, 'high': 100},
+            },
+            {
+              'name': 'Steps',
+              'unit': 'count',
+              'group': 'activity',
+              'latest_value': 5000,
+            },
+          ],
+        });
+      }
+      return _json([]);
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const Scaffold(body: HealthTab())));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Vitals'));
+    await t.pumpAndSettle();
+    expect(find.text('Resting heart rate'), findsOneWidget);
+    expect(find.text('Steps'), findsNothing);
+    expect(find.textContaining('typical 60'), findsOneWidget);
   });
 }
