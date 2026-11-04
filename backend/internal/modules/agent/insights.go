@@ -92,13 +92,14 @@ func (m *Module) setPermission(w http.ResponseWriter, r *http.Request) {
 }
 
 type flaggedLab struct {
-	Code          string  `json:"biomarker_code"`
-	Name          string  `json:"name"`
-	Value         float64 `json:"value"`
-	Unit          string  `json:"unit"`
-	Flag          string  `json:"flag"`
-	ObservedAt    string  `json:"observed_at"`
-	ObservationID string  `json:"observation_id"`
+	Code          string   `json:"biomarker_code"`
+	Name          string   `json:"name"`
+	Value         float64  `json:"value"`
+	Unit          string   `json:"unit"`
+	Flag          string   `json:"flag"`
+	ObservedAt    string   `json:"observed_at"`
+	ObservationID string   `json:"observation_id"`
+	Previous      *float64 `json:"previous_value,omitempty"`
 }
 
 func (l flaggedLab) describe() string {
@@ -135,7 +136,12 @@ func (m *Module) flaggedLabs(ctx context.Context, owner, profileID string) ([]fl
 		}
 		p := t.Points[len(t.Points)-1]
 		if p.Flag == "below_range" || p.Flag == "above_range" {
-			out = append(out, flaggedLab{code, t.DisplayName, p.Value, t.CanonicalUnit, p.Flag, p.ObservedAt, p.ObservationID})
+			l := flaggedLab{Code: code, Name: t.DisplayName, Value: p.Value, Unit: t.CanonicalUnit, Flag: p.Flag, ObservedAt: p.ObservedAt, ObservationID: p.ObservationID}
+			if n := len(t.Points); n > 1 {
+				prev := t.Points[n-2].Value
+				l.Previous = &prev
+			}
+			out = append(out, l)
 		}
 	}
 	return out, nil
@@ -270,6 +276,20 @@ func (m *Module) visitPrep(w http.ResponseWriter, r *http.Request) {
 		"conditions":      collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind IN ('condition','allergy') AND status='active' ORDER BY title`, profileID, owner),
 		"open_follow_ups": collect(`SELECT title FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 20`, profileID, owner),
 		"goals":           collect(`SELECT title FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 20`, profileID, owner),
+		"questions":       visitQuestions(labs),
 		"note":            "A summary of your own records to bring to an appointment. It is not a diagnosis.",
 	})
+}
+
+// visitQuestions are neutral prompts built from the user's own out-of-range results. They are not advice.
+func visitQuestions(labs []flaggedLab) []string {
+	out := []string{}
+	for _, l := range labs {
+		out = append(out, "What could explain my "+l.Name+" being outside its range?")
+	}
+	if len(labs) > 0 {
+		out = append(out, "When should I repeat these tests?")
+	}
+	out = append(out, "Is there anything in my records I should follow up on?")
+	return out
 }

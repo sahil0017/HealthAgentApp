@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/hardware.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent.dart';
 import 'places.dart';
 
 final alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
@@ -190,11 +192,11 @@ class _Section<T> extends StatelessWidget {
   );
 }
 
-class AlertScreen extends StatelessWidget {
+class AlertScreen extends ConsumerWidget {
   const AlertScreen(this.a, {super.key});
   final Json a;
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     appBar: AppBar(title: const Text('Outbreak alert')),
     body: ListView(
       padding: const EdgeInsets.all(14),
@@ -224,9 +226,32 @@ class AlertScreen extends StatelessWidget {
             ],
           ),
         ),
-        const Text(
-          'Public-health notices are general and not a diagnosis. Talk to a clinician if you have symptoms.',
-          style: _small,
+        FilledButton.tonalIcon(
+          onPressed: () => launchUrl(
+            Uri.parse('${a['url']}'),
+            mode: LaunchMode.externalApplication,
+          ),
+          icon: const Icon(Icons.open_in_new, size: 16),
+          label: const Text('Read the official guidance'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => AskAboutScreen(
+                'What does this outbreak notice mean for me: ${a['title']}?',
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: const Text('Ask the agent about this'),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'Public-health notices are general and not a diagnosis. Talk to a clinician if you have symptoms.',
+            style: _small,
+          ),
         ),
       ],
     ),

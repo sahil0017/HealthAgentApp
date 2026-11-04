@@ -41,21 +41,46 @@ double roundCoord(double v) => (v / 0.05).round() * 0.05;
 abstract class LocationSource {
   /// Returns null when permission is denied or location is unavailable.
   Future<Area?> currentArea();
+
+  /// The exact position, read only when the user asks for directions or to share where they are.
+  /// It is never sent to the Sehat server.
+  Future<({double lat, double lng})?> preciseNow();
 }
 
 class PhoneLocation implements LocationSource {
-  @override
-  Future<Area?> currentArea() async {
+  Future<Position?> _position({required bool precise}) async {
     if (!await Geolocator.isLocationServiceEnabled()) return null;
     var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied)
+    if (perm == LocationPermission.denied) {
       perm = await Geolocator.requestPermission();
+    }
     if (perm == LocationPermission.denied ||
-        perm == LocationPermission.deniedForever)
+        perm == LocationPermission.deniedForever) {
       return null;
-    final p = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
-    );
+    }
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: precise ? LocationAccuracy.best : LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 15),
+        ),
+      );
+    } catch (_) {
+      // A cold GPS fix can time out indoors; the last known fix is still good enough for a ~5 km area.
+      return Geolocator.getLastKnownPosition();
+    }
+  }
+
+  @override
+  Future<({double lat, double lng})?> preciseNow() async {
+    final p = await _position(precise: true);
+    return p == null ? null : (lat: p.latitude, lng: p.longitude);
+  }
+
+  @override
+  Future<Area?> currentArea() async {
+    final p = await _position(precise: false);
+    if (p == null) return null;
     final lat = roundCoord(p.latitude), lng = roundCoord(p.longitude);
     try {
       final marks = await Geocoding().placemarkFromCoordinates(lat, lng);

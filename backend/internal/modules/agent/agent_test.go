@@ -151,6 +151,9 @@ func TestBriefingAndVisitPrepRestateTheRecord(t *testing.T) {
 	if !strings.Contains(string(body), "Metformin") || !strings.Contains(string(body), "Glucose") {
 		t.Fatalf("visit prep: %s", body)
 	}
+	if !strings.Contains(string(body), "What could explain my Glucose") || !strings.Contains(string(body), "When should I repeat") {
+		t.Fatalf("visit prep questions: %s", body)
+	}
 
 	// Withdrawing read access removes the section instead of reading around the user's choice.
 	f.do("PUT", "/agent/permissions/read_labs", `{"granted":false}`)

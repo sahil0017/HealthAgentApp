@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/hardware.dart';
@@ -61,7 +65,7 @@ class _NeedsAreaState extends ConsumerState<_NeedsArea> {
               'Use my location?',
               body: _denied
                   ? 'Location is off or unavailable. You can allow it in your phone settings.'
-                  : 'We use your city, not your exact position, to show care near you.',
+                  : 'Approximate location (city level) shows alerts and care near you. Your exact position is only used when you tap Directions or Share my location, and it never goes to Sehat.',
               action: FilledButton(
                 onPressed: _busy ? null : _detect,
                 child: Text(_busy ? 'Locating…' : 'Allow approximate location'),
@@ -73,10 +77,17 @@ class _NeedsAreaState extends ConsumerState<_NeedsArea> {
 
 // ------------------------------------------------------------ Health news
 
-class HealthNewsScreen extends ConsumerWidget {
+class HealthNewsScreen extends ConsumerStatefulWidget {
   const HealthNewsScreen({super.key});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HealthNewsScreen> createState() => _NewsState();
+}
+
+class _NewsState extends ConsumerState<HealthNewsScreen> {
+  String _scope = 'All';
+
+  @override
+  Widget build(BuildContext context) {
     final country = ref.watch(areaProvider)?.country ?? '';
     final alerts = ref.watch(alertsProvider(country));
     return Scaffold(
@@ -84,18 +95,44 @@ class HealthNewsScreen extends ConsumerWidget {
       body: AsyncBody<List<Json>>(
         alerts,
         onRetry: () => ref.invalidate(alertsProvider(country)),
-        builder: (list) {
-          if (list.isEmpty) {
-            return const Empty(Icons.newspaper, 'Nothing new right now');
-          }
+        builder: (all) {
+          final list = switch (_scope) {
+            'Local' => all.where((a) => a['in_country'] == true).toList(),
+            'Global' => all.where((a) => a['in_country'] != true).toList(),
+            _ => all,
+          };
           return ListView(
             padding: const EdgeInsets.all(14),
             children: [
+              Wrap(
+                spacing: 6,
+                children: [
+                  for (final k in const ['All', 'Local', 'Global'])
+                    ChoiceChip(
+                      label: Text(k),
+                      selected: _scope == k,
+                      onSelected: (_) => setState(() => _scope = k),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
               const Text(
                 'From the WHO Disease Outbreak News feed. Each item shows its source and date.',
                 style: _note,
               ),
               const SizedBox(height: 8),
+              if (list.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Text(
+                      _scope == 'Local' && country.isEmpty
+                          ? 'Turn on approximate location to see news for your country.'
+                          : 'Nothing here right now.',
+                      style: _note,
+                    ),
+                  ),
+                ),
               for (final a in list)
                 SCard(
                   onTap: () => _open(context, AlertScreen(a)),
@@ -116,11 +153,6 @@ class HealthNewsScreen extends ConsumerWidget {
                       if (a['in_country'] == true) const Pill('Your country'),
                     ],
                   ),
-                ),
-              if (country.isEmpty)
-                const Text(
-                  'Turn on approximate location to see your country first.',
-                  style: _note,
                 ),
             ],
           );
@@ -398,10 +430,12 @@ class _HospitalMap extends StatelessWidget {
   );
 }
 
+/// Opens turn-by-turn directions in Google Maps. With no origin given, Google Maps starts from the
+/// phone's live position, so Sehat never needs the exact location.
 Future<void> _directions(BuildContext context, Json h) => _launch(
   context,
   Uri.parse(
-    'https://www.openstreetmap.org/?mlat=${h['lat']}&mlon=${h['lng']}#map=17/${h['lat']}/${h['lng']}',
+    'https://www.google.com/maps/dir/?api=1&destination=${h['lat']},${h['lng']}&travelmode=driving',
   ),
 );
 
@@ -578,14 +612,119 @@ const _ambulance = {
   'NZ': '111',
 };
 
+const _contactsKey = 'emergency_contacts';
+const _medicalIdKey = 'medical_id_cache';
+
+/// Contacts are kept on the phone only, so they work offline and are never uploaded.
+final emergencyContactsProvider = FutureProvider.autoDispose<List<Json>>((
+  ref,
+) async {
+  final p = await SharedPreferences.getInstance();
+  return (p.getStringList(_contactsKey) ?? [])
+      .map((e) => (jsonDecode(e) as Map).cast<String, dynamic>())
+      .toList();
+});
+
+Future<void> _saveContacts(List<Json> list) async {
+  final p = await SharedPreferences.getInstance();
+  await p.setStringList(_contactsKey, [for (final c in list) jsonEncode(c)]);
+}
+
+/// Medical ID read from the account; the last good copy is kept so it still shows without a connection.
+final medicalIdProvider = FutureProvider.autoDispose<Json>((ref) async {
+  final prefs = await SharedPreferences.getInstance();
+  try {
+    final profile = await ref.watch(profileMapProvider('').future);
+    final history = await ref.watch(profileListProvider('/history').future);
+    final id = <String, dynamic>{
+      'blood_group': profile['blood_group'],
+      'items': [
+        for (final e in history)
+          if (e['status'] == 'active' &&
+              (e['kind'] == 'allergy' ||
+                  e['kind'] == 'condition' ||
+                  e['kind'] == 'medication'))
+            '${e['kind']}: ${e['title']}',
+      ],
+      'cached': false,
+    };
+    await prefs.setString(_medicalIdKey, jsonEncode(id));
+    return id;
+  } catch (_) {
+    final saved = prefs.getString(_medicalIdKey);
+    if (saved == null) rethrow;
+    return {
+      ...(jsonDecode(saved) as Map).cast<String, dynamic>(),
+      'cached': true,
+    };
+  }
+});
+
 class EmergencyScreen extends ConsumerWidget {
   const EmergencyScreen({super.key});
+
+  Future<void> _shareLocation(BuildContext context, WidgetRef ref) async {
+    final p = await ref.read(locationProvider).preciseNow();
+    if (!context.mounted) return;
+    if (p == null) {
+      toast(context, 'Location is off or not allowed on this phone.');
+      return;
+    }
+    await Share.share(
+      'I need help. My location: https://www.google.com/maps?q=${p.lat},${p.lng}',
+    );
+  }
+
+  Future<void> _addContact(BuildContext context, WidgetRef ref) async {
+    final name = TextEditingController(), phone = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Emergency contact'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            TextField(
+              controller: phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Phone'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || name.text.trim().isEmpty || phone.text.trim().isEmpty) {
+      return;
+    }
+    final list = [
+      ...await ref.read(emergencyContactsProvider.future),
+      {'name': name.text.trim(), 'phone': phone.text.trim()},
+    ];
+    await _saveContacts(list);
+    ref.invalidate(emergencyContactsProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final area = ref.watch(areaProvider);
     final number = _ambulance[area?.countryCode] ?? '112';
-    final profile = ref.watch(profileMapProvider(''));
-    final history = ref.watch(profileListProvider('/history'));
+    final medical = ref.watch(medicalIdProvider);
+    final contacts = ref.watch(emergencyContactsProvider).asData?.value ?? [];
     final hospitals = area == null
         ? const AsyncValue<List<Json>>.data([])
         : ref.watch(hospitalsProvider(area));
@@ -652,54 +791,85 @@ class EmergencyScreen extends ConsumerWidget {
             ),
           const SectionTitle('Medical ID'),
           SCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Blood group: ${profile.asData?.value['blood_group'] ?? 'not set'}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                const SizedBox(height: 6),
-                ...() {
-                  final items = (history.asData?.value ?? [])
-                      .where(
-                        (e) =>
-                            e['status'] == 'active' &&
-                            (e['kind'] == 'allergy' ||
-                                e['kind'] == 'condition' ||
-                                e['kind'] == 'medication'),
-                      )
-                      .toList();
-                  if (items.isEmpty) {
-                    return [
-                      const Text(
-                        'No allergies, conditions or medications recorded.',
-                        style: _note,
-                      ),
-                    ];
-                  }
-                  return [
-                    for (final e in items)
-                      Text(
-                        '${'${e['kind']}'.replaceAll('_', ' ')}: ${e['title']}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                  ];
-                }(),
-              ],
+            child: medical.when(
+              loading: () => const Text('Loading…', style: _note),
+              error: (e, _) => Text(friendly(e), style: _note),
+              data: (m) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Blood group: ${m['blood_group'] ?? 'not set'}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                  if ((m['items'] as List).isEmpty)
+                    const Text(
+                      'No allergies, conditions or medications recorded.',
+                      style: _note,
+                    ),
+                  for (final i in (m['items'] as List))
+                    Text('$i', style: const TextStyle(fontSize: 12)),
+                  if (m['cached'] == true)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('Saved copy (no connection).', style: _note),
+                    ),
+                ],
+              ),
             ),
           ),
-          if (area != null)
-            OutlinedButton.icon(
-              onPressed: () => _launch(
-                context,
-                Uri.parse(
-                  'https://www.openstreetmap.org/?mlat=${area.lat}&mlon=${area.lng}#map=15/${area.lat}/${area.lng}',
-                ),
-              ),
-              icon: const Icon(Icons.share_location),
-              label: const Text('Open my area in maps'),
+          SectionTitle(
+            'Emergency contacts',
+            trailing: TextButton(
+              onPressed: () => _addContact(context, ref),
+              child: const Text('Add'),
             ),
+          ),
+          if (contacts.isEmpty)
+            const Text(
+              'Saved on this phone only, so they work offline.',
+              style: _note,
+            ),
+          for (var i = 0; i < contacts.length; i++)
+            SCard(
+              onTap: () => _launch(
+                context,
+                Uri(scheme: 'tel', path: '${contacts[i]['phone']}'),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.call, size: 16, color: Pal.pri),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${contacts[i]['name']} · ${contacts[i]['phone']}',
+                      style: _bold,
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close, size: 16, color: Pal.mut),
+                    onPressed: () async {
+                      await _saveContacts([...contacts]..removeAt(i));
+                      ref.invalidate(emergencyContactsProvider);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            onPressed: () => _shareLocation(context, ref),
+            icon: const Icon(Icons.share_location),
+            label: const Text('Share my location'),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Sends a Google Maps link with your exact position through the app you pick. Sehat never receives it.',
+              style: _note,
+            ),
+          ),
         ],
       ),
     );

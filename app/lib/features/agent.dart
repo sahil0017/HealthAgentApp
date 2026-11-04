@@ -360,3 +360,57 @@ class _AnswerCardState extends ConsumerState<AnswerCard> {
     );
   }
 }
+
+/// Sends one question to the agent and shows the cited answer.
+class AskAboutScreen extends ConsumerStatefulWidget {
+  const AskAboutScreen(this.question, {super.key});
+  final String question;
+  @override
+  ConsumerState<AskAboutScreen> createState() => _AskAboutState();
+}
+
+class _AskAboutState extends ConsumerState<AskAboutScreen> {
+  Json? _answer;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    setState(() => _error = null);
+    try {
+      final a = await ref.read(apiProvider).post(
+        '/profiles/${ref.read(profileIdProvider)}/questions',
+        {'question': widget.question},
+      );
+      if (mounted) setState(() => _answer = (a as Map).cast<String, dynamic>());
+      ref.invalidate(_historyProvider);
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Ask the agent')),
+    body: ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        Text(
+          widget.question,
+          style: const TextStyle(fontSize: 12, color: Pal.mut),
+        ),
+        const SizedBox(height: 10),
+        if (_error != null)
+          ErrorView(_error!, onRetry: _run)
+        else if (_answer == null)
+          const Center(child: CircularProgressIndicator())
+        else
+          AnswerCard(_answer!),
+      ],
+    ),
+  );
+}

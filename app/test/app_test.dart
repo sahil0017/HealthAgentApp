@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sehat/app.dart';
 import 'package:sehat/core/api.dart';
 import 'package:sehat/core/hardware.dart';
@@ -15,6 +16,10 @@ import 'package:sehat/features/places.dart';
 import 'package:sehat/features/plan.dart';
 
 class _FakeLocation implements LocationSource {
+  @override
+  Future<({double lat, double lng})?> preciseNow() async =>
+      (lat: 28.6123, lng: 77.2091);
+
   @override
   Future<Area?> currentArea() async => const Area(
     lat: 28.6,
@@ -53,6 +58,8 @@ Widget _app(ApiClient api, {Widget? home}) => ProviderScope(
 );
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   testWidgets('signed out shows sign-in', (t) async {
     await t.pumpWidget(_app(_api((_) => _json({}))));
     await t.pumpAndSettle();

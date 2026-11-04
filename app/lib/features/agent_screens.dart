@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../core/api.dart';
 import '../core/state.dart';
@@ -440,46 +442,91 @@ class ActivityScreen extends ConsumerWidget {
 class VisitPrepScreen extends ConsumerWidget {
   const VisitPrepScreen({super.key});
 
-  Widget _list(String title, List items, {bool labs = false}) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionTitle(title),
-        for (final i in items)
-          SCard(
-            child: Text(
-              labs && i is Map
-                  ? '${i['name']}: ${fmtNum(numOf(i['value']))} ${i['unit'] ?? ''} (${'${i['flag']}'.replaceAll('_', ' ')})'
-                  : i is Map
-                  ? '${i['name'] ?? i['title']}'
-                  : '$i',
-              style: const TextStyle(fontSize: 12),
-            ),
+  static String _lab(Json l) =>
+      '${l['name']}: ${fmtNum(numOf(l['value']))} ${l['unit'] ?? ''} (${'${l['flag']}'.replaceAll('_', ' ')})';
+
+  static String _change(Json l) {
+    final prev = numOf(l['previous_value']);
+    return prev == null
+        ? '${l['name']}: ${fmtNum(numOf(l['value']))} ${l['unit'] ?? ''}'
+        : '${l['name']}: ${fmtNum(prev)} → ${fmtNum(numOf(l['value']))} ${l['unit'] ?? ''}';
+  }
+
+  static List<(String, List<String>)> _sections(Json v) {
+    List<String> strs(String k) => [
+      for (final i in (v[k] as List? ?? []))
+        i is Map ? '${i['name'] ?? i['title']}' : '$i',
+    ];
+    final labs = (v['labs_to_discuss'] as List? ?? []).cast<Json>();
+    return [
+      ('Key changes', [for (final l in labs) _change(l)]),
+      ('Results to discuss', [for (final l in labs) _lab(l)]),
+      ('Questions to ask', strs('questions')),
+      ('Active symptoms', strs('active_symptoms')),
+      ('Medications', strs('medications')),
+      ('Conditions & allergies', strs('conditions')),
+      ('Open follow-ups', strs('open_follow_ups')),
+      ('Goals', strs('goals')),
+    ];
+  }
+
+  Future<void> _export(BuildContext context, Json v) async {
+    final doc = pw.Document();
+    doc.addPage(
+      pw.MultiPage(
+        build: (_) => [
+          pw.Text(
+            'Visit summary',
+            style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
           ),
-      ],
+          pw.Text('Prepared from my own records with Sehat.'),
+          for (final (title, items) in _sections(v))
+            if (items.isNotEmpty) ...[
+              pw.SizedBox(height: 12),
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              for (final i in items) pw.Bullet(text: i),
+            ],
+          pw.SizedBox(height: 16),
+          pw.Text('${v['note'] ?? ''}', style: const pw.TextStyle(fontSize: 9)),
+        ],
+      ),
     );
+    try {
+      await Printing.sharePdf(
+        bytes: await doc.save(),
+        filename: 'visit-summary.pdf',
+      );
+    } catch (e) {
+      if (context.mounted) toast(context, 'Could not export the PDF.');
+    }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => _page(
-    'Visit prep',
+    'Visit summary',
     AsyncBody<Json>(
       ref.watch(_visitPrepProvider),
       onRetry: () => ref.invalidate(_visitPrepProvider),
       builder: (v) => ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          _list(
-            'Results to discuss',
-            v['labs_to_discuss'] as List? ?? [],
-            labs: true,
+          for (final (title, items) in _sections(v))
+            if (items.isNotEmpty) ...[
+              SectionTitle(title),
+              for (final i in items)
+                SCard(child: Text(i, style: const TextStyle(fontSize: 12))),
+            ],
+          FilledButton.icon(
+            onPressed: () => _export(context, v),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Export PDF / share'),
           ),
-          _list('Active symptoms', v['active_symptoms'] as List? ?? []),
-          _list('Medications', v['medications'] as List? ?? []),
-          _list('Conditions & allergies', v['conditions'] as List? ?? []),
-          _list('Open follow-ups', v['open_follow_ups'] as List? ?? []),
-          _list('Goals', v['goals'] as List? ?? []),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Text('${v['note'] ?? ''}', style: _note),
