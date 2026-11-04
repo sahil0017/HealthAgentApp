@@ -868,6 +868,21 @@ paths:
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/chat:
+    post:
+      summary: Ask the agent; it reads the user's record with tools and returns the steps it took
+      description: |
+        Body {message, mode (explain|plan|visit), history[]}. Returns {answer, steps[], actions[], source (model|records|safety), model, urgent}.
+        Needs the ai_processing consent and the read_labs permission. A cloud model is used only when the cloud_model permission is granted;
+        otherwise, or if the model is unavailable or its answer is not grounded in tool results, the answer is built from the record alone.
+        Emergency wording is answered with a safety message and never reaches a model. Actions are suggestions the app carries out on tap.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [message], properties: { message: { type: string, maxLength: 1000 }, mode: { type: string, enum: [explain, plan, visit] }, history: { type: array, items: { type: object } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Error' }
   /profiles/{profileID}/agent/visit-prep:
     get:
       summary: Summary of the record to bring to an appointment

@@ -25,6 +25,7 @@ var permissionDefaults = []struct {
 	{"read_devices", "Read my device data", true},
 	{"read_lifestyle", "Read my lifestyle and symptom log", true},
 	{"propose_actions", "Suggest follow-ups for me to approve", false},
+	{"cloud_model", "Let the agent use a cloud AI model (sends only the lab values it reads to answer your question)", false},
 }
 
 func (m *Module) notFound(w http.ResponseWriter) {

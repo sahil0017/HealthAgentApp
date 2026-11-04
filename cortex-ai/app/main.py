@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app import config
 from app.research import agent as research_agent, sources as research_sources
+from app.inference import hf_api
 from app.inference.generate import generate_explanation
 from app.inference.registry import REGISTRY, ModelRecord
 from app.rag.service import EmbeddingUnavailable, service as embedding_service
@@ -176,6 +177,7 @@ def capabilities() -> dict[str, object]:
         "mcp": "served_by_api_gateway",
         "embeddings": embedding_service.status(),
         "model_inference": config.INFERENCE_STATUS,
+        "agent_model": config.HF_AGENT_MODEL if hf_api.configured() else "disabled",
     }
 
 
@@ -200,3 +202,25 @@ def answer(question: Question) -> dict[str, object]:
         "uncertainty": result.get("uncertainty", ""),
         "suggested_questions": result.get("suggested_questions", []),
     }
+
+
+class AgentMessage(BaseModel):
+    role: str = Field(pattern="^(system|user|assistant|tool)$")
+    content: str = Field(default="", max_length=12000)
+    tool_call_id: str | None = None
+    tool_calls: list[dict] | None = None
+
+
+class AgentStep(BaseModel):
+    messages: list[AgentMessage] = Field(min_length=1, max_length=40)
+    tools: list[dict] = Field(default_factory=list, max_length=12)
+
+
+@app.post("/v1/agent/step")
+def agent_step(step: AgentStep) -> JSONResponse:
+    """One model turn of the agent loop: either tool calls to run or a final answer."""
+    try:
+        result = hf_api.chat([m.model_dump(exclude_none=True) for m in step.messages], step.tools)
+    except hf_api.AgentModelUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "agent_model_unavailable", "reason": str(exc)})
+    return JSONResponse(result)

@@ -142,7 +142,8 @@ class GoalsScreen extends ConsumerWidget {
 }
 
 class GoalForm extends ConsumerStatefulWidget {
-  const GoalForm({super.key});
+  const GoalForm({super.key, this.initialCode});
+  final String? initialCode;
   @override
   ConsumerState<GoalForm> createState() => _GoalFormState();
 }
@@ -202,6 +203,11 @@ class _GoalFormState extends ConsumerState<GoalForm> {
       AsyncBody<List<Json>>(
         summary,
         builder: (list) {
+          if (_biomarker == null && widget.initialCode != null) {
+            for (final b in list) {
+              if (b['biomarker_code'] == widget.initialCode) _biomarker = b;
+            }
+          }
           if (list.isEmpty) {
             return const Empty(
               Icons.science_outlined,

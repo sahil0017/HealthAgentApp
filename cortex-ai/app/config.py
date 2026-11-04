@@ -25,6 +25,13 @@ OLLAMA_URL = os.getenv("CORTEX_OLLAMA_URL", "http://localhost:11434").strip()
 OLLAMA_MODEL = os.getenv("CORTEX_OLLAMA_MODEL", "").strip()
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("CORTEX_OLLAMA_TIMEOUT_SECONDS", "60"))
 
+# Hugging Face Inference Providers (OpenAI-compatible). Used only by the agent loop, which the API
+# gateway gates behind the user's "cloud_model" permission, so no record data reaches it by default.
+HF_TOKEN = os.getenv("CORTEX_HF_TOKEN", "").strip()
+HF_API_URL = os.getenv("CORTEX_HF_API_URL", "https://router.huggingface.co/v1").strip().rstrip("/")
+HF_AGENT_MODEL = os.getenv("CORTEX_HF_AGENT_MODEL", "Qwen/Qwen2.5-7B-Instruct").strip()
+HF_TIMEOUT_SECONDS = float(os.getenv("CORTEX_HF_TIMEOUT_SECONDS", "45"))
+
 INFERENCE_STATUS = "ollama" if OLLAMA_MODEL else ("enabled" if INFERENCE_ENABLED and MODEL_ID else "disabled")
 
 ENVIRONMENT = os.getenv("CORTEX_ENV", "development").strip().lower()

@@ -117,6 +117,7 @@ var expectedRoutes = []string{
 	"POST /profiles",
 	"POST /profiles/{profileID}/agent/actions/{actionID}/approve",
 	"POST /profiles/{profileID}/agent/actions/{actionID}/reject",
+	"POST /profiles/{profileID}/agent/chat",
 	"POST /profiles/{profileID}/agent/plan",
 	"POST /profiles/{profileID}/consents",
 	"POST /profiles/{profileID}/devices",

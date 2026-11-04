@@ -28,6 +28,7 @@ func (m *Module) Authed(r chi.Router) {
 	r.Get("/profiles/{profileID}/agent/briefing", m.briefing)
 	r.Get("/profiles/{profileID}/agent/visit-prep", m.visitPrep)
 	r.Get("/profiles/{profileID}/agent/suggestions", m.suggestions)
+	r.Post("/profiles/{profileID}/agent/chat", m.chat)
 	r.Post("/profiles/{profileID}/agent/plan", m.plan)
 	r.Get("/profiles/{profileID}/agent/actions", m.listActions)
 	r.Post("/profiles/{profileID}/agent/actions/{actionID}/approve", m.approve)

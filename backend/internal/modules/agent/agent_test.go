@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -52,13 +53,14 @@ func TestPermissionsDefaultAndPersist(t *testing.T) {
 	f := newFixture(t)
 	_, out := f.do("GET", "/agent/permissions", "")
 	perms, _ := data(out)["permissions"].([]any)
-	if len(perms) != 4 {
+	if len(perms) != 5 {
 		t.Fatalf("permissions: %v", out)
 	}
 	for _, p := range perms {
 		m := p.(map[string]any)
-		if (m["permission"] == "propose_actions") == m["granted"].(bool) {
-			t.Fatalf("only propose_actions starts off: %v", m)
+		off := m["permission"] == "propose_actions" || m["permission"] == "cloud_model"
+		if off == m["granted"].(bool) {
+			t.Fatalf("only propose_actions and cloud_model start off: %v", m)
 		}
 	}
 	if c, _ := f.do("PUT", "/agent/permissions/propose_actions", `{"granted":true}`); c != 200 {
@@ -179,5 +181,83 @@ func TestSuggestionsComeFromTheRecord(t *testing.T) {
 	}
 	if code, _ := f.do("GET", "/agent/suggestions", "", "owner-b"); code != 404 {
 		t.Fatalf("other owner: %d", code)
+	}
+}
+
+func TestChatAnswersFromTheRecordWithoutAModel(t *testing.T) {
+	f := newFixture(t)
+	f.seedHighGlucose()
+	code, out := f.do("POST", "/agent/chat", `{"message":"What about my glucose?","mode":"explain"}`)
+	d := data(out)
+	if code != 200 || d["source"] != "records" {
+		t.Fatalf("chat: %d %v", code, out)
+	}
+	if !strings.Contains(d["answer"].(string), "9") || len(d["steps"].([]any)) == 0 || len(d["actions"].([]any)) < 3 {
+		t.Fatalf("answer should cite the stored value, show steps and offer actions: %v", d)
+	}
+}
+
+func TestChatEmergencyNeverReachesAModel(t *testing.T) {
+	f := newFixture(t)
+	f.do("PUT", "/agent/permissions/cloud_model", `{"granted":true}`)
+	t.Setenv("AI_SERVICE_URL", "http://127.0.0.1:1")
+	_, out := f.do("POST", "/agent/chat", `{"message":"I have chest pain and my glucose is high"}`)
+	if d := data(out); d["urgent"] != true || d["source"] != "safety" {
+		t.Fatalf("emergency: %v", out)
+	}
+}
+
+func TestChatUsesModelToolsOnlyWithCloudPermission(t *testing.T) {
+	f := newFixture(t)
+	f.seedHighGlucose()
+	calls := 0
+	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var in struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in.Messages[len(in.Messages)-1]["role"] == "tool" {
+			w.Write([]byte(`{"content":"Your Glucose is 9 mmol/L, above range.","tool_calls":[],"model":"fake"}`))
+			return
+		}
+		w.Write([]byte(`{"content":"","tool_calls":[{"id":"c1","name":"get_trend","arguments":"{\"name\":\"Glucose\"}"}],"model":"fake"}`))
+	}))
+	defer ai.Close()
+	t.Setenv("AI_SERVICE_URL", ai.URL)
+	if _, out := f.do("POST", "/agent/chat", `{"message":"glucose?"}`); data(out)["source"] != "records" || calls != 0 {
+		t.Fatalf("without the permission the model must not be called: %v calls=%d", out, calls)
+	}
+	f.do("PUT", "/agent/permissions/cloud_model", `{"granted":true}`)
+	_, out := f.do("POST", "/agent/chat", `{"message":"glucose?"}`)
+	d := data(out)
+	if d["source"] != "model" || d["model"] != "fake" || calls != 2 || len(d["steps"].([]any)) != 1 {
+		t.Fatalf("model loop: %v calls=%d", out, calls)
+	}
+}
+
+func TestChatRejectsUngroundedModelAnswer(t *testing.T) {
+	f := newFixture(t)
+	f.seedHighGlucose()
+	f.do("PUT", "/agent/permissions/cloud_model", `{"granted":true}`)
+	ai := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"content":"Your glucose is 42 and you have diabetes.","tool_calls":[],"model":"fake"}`))
+	}))
+	defer ai.Close()
+	t.Setenv("AI_SERVICE_URL", ai.URL)
+	_, out := f.do("POST", "/agent/chat", `{"message":"glucose?"}`)
+	if d := data(out); d["source"] != "records" || strings.Contains(d["answer"].(string), "diabetes") {
+		t.Fatalf("an answer with invented numbers or a diagnosis must be replaced: %v", out)
+	}
+}
+
+func TestChatNeedsLabPermissionAndOwnership(t *testing.T) {
+	f := newFixture(t)
+	if c, _ := f.do("POST", "/agent/chat", `{"message":"hi"}`, "owner-b"); c != 404 {
+		t.Fatalf("other owner: %d", c)
+	}
+	f.do("PUT", "/agent/permissions/read_labs", `{"granted":false}`)
+	if c, _ := f.do("POST", "/agent/chat", `{"message":"hi"}`); c != 403 {
+		t.Fatalf("no lab permission: %d", c)
 	}
 }

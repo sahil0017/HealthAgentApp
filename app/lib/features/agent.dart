@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent_chat.dart';
 import 'agent_screens.dart';
 
 final _suggestionsProvider = FutureProvider<List<String>>((ref) async {
@@ -72,6 +73,22 @@ class _AgentState extends ConsumerState<AgentTab> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
             children: [
+              SCard(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.auto_awesome, color: Pal.pri),
+                  title: const Text('Chat with your agent'),
+                  subtitle: const Text(
+                    'Tools, what-if sliders, voice and tap-to-act answers',
+                    style: TextStyle(fontSize: 11, color: Pal.mut),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AgentChatScreen()),
+                  ),
+                ),
+              ),
               const AgentHubCard(),
               if (_latest == null && !_busy) ...[
                 const SCard(

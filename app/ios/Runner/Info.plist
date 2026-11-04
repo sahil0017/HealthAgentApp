@@ -83,5 +83,9 @@
 		<string>tel</string>
 		<string>https</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Used only when you tap the microphone to speak a question to the agent.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Turns your spoken question into text for the agent.</string>
 </dict>
 </plist>
