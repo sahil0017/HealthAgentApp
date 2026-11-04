@@ -40,6 +40,7 @@ func data(out map[string]any) map[string]any { d, _ := out["data"].(map[string]a
 
 func (f *fixture) seedHighGlucose() {
 	f.t.Helper()
+	f.c.DB.Pool.Exec(context.Background(), `INSERT INTO biomarker_catalog(code,display_name,synonyms,supported_units) VALUES('GLUCOSE','Glucose','{}','{mmol/L}') ON CONFLICT DO NOTHING`)
 	_, err := f.c.DB.Pool.Exec(context.Background(), `INSERT INTO observations(profile_id,owner_id,biomarker_code,name,value,unit,reference_range,observed_at,source_type,verification_status)
 		VALUES($1,'owner-a','GLUCOSE','Glucose',9.0,'mmol/L','3.9-5.6',$2,'LAB_DOCUMENT','VERIFIED')`, f.profile, time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02"))
 	if err != nil {
