@@ -9,6 +9,7 @@ export const TABS: { to: string; label: string; icon: IconName }[] = [
   { to: "/", label: "Today", icon: "today" },
   { to: "/documents", label: "Vault", icon: "vault" },
   { to: "/biomarkers", label: "Biomarkers", icon: "biomarkers" },
+  { to: "/lifestyle", label: "Lifestyle", icon: "heart" },
   { to: "/ask", label: "Ask AI", icon: "ask" },
   { to: "/timeline", label: "Timeline", icon: "timeline" },
   { to: "/privacy", label: "Privacy", icon: "privacy" },

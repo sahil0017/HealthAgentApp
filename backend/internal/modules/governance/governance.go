@@ -69,6 +69,8 @@ func (m *Module) exportProfile(w http.ResponseWriter, r *http.Request) {
 		{"devices", `SELECT COALESCE(jsonb_agg(to_jsonb(d) ORDER BY d.created_at),'[]') FROM devices d WHERE profile_id=$1 AND owner_id=$2`},
 		{"device_readings", `SELECT COALESCE(jsonb_agg(to_jsonb(r)-'dedupe_key' ORDER BY r.measured_at),'[]') FROM device_readings r WHERE profile_id=$1 AND owner_id=$2`},
 		{"device_syncs", `SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.id),'[]') FROM device_syncs s WHERE profile_id=$1 AND owner_id=$2`},
+		{"symptom_entries", `SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.started_at),'[]') FROM symptom_entries s WHERE profile_id=$1 AND owner_id=$2`},
+		{"lifestyle_logs", `SELECT COALESCE(jsonb_agg(to_jsonb(l) ORDER BY l.logged_on,l.created_at),'[]') FROM lifestyle_logs l WHERE profile_id=$1 AND owner_id=$2`},
 		{"retention_policy", `SELECT COALESCE((SELECT to_jsonb(r) FROM retention_policies r WHERE profile_id=$1 AND $2::text IS NOT NULL),'null'::jsonb)`},
 		{"shares", `SELECT COALESCE(jsonb_agg(to_jsonb(s)-'code_hash' ORDER BY s.created_at),'[]') FROM profile_shares s WHERE profile_id=$1 AND owner_id=$2`},
 		{"research_investigations", `SELECT COALESCE(jsonb_agg(to_jsonb(i) || jsonb_build_object('items',(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.created_at),'[]') FROM research_investigation_items t WHERE t.investigation_id=i.id)) ORDER BY i.created_at),'[]') FROM research_investigations i WHERE profile_id=$1 AND owner_id=$2`},

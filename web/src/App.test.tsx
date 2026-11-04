@@ -138,6 +138,27 @@ describe("App", () => {
     for (const t of TABS) expect(nav).toHaveTextContent(t.label);
   });
 
+  it("logs a symptom and shows the journal, summary and patterns", async () => {
+    let symptoms: unknown[] = [];
+    const f = api({
+      "GET /profiles": [{ id: "p1", display_name: "Asha" }],
+      "GET /lifestyle-categories": [{ code: "sleep", name: "Sleep", unit: "h", min: 0, max: 24 }],
+      "GET /profiles/p1/symptoms": () => symptoms,
+      "POST /profiles/p1/symptoms": () => { symptoms = [{ id: "s1", name: "Headache", severity: 4, started_at: "2026-01-02T10:00:00Z", ended_at: null, active: true }]; return symptoms[0]; },
+      "GET /profiles/p1/lifestyle-logs": [],
+      "GET /profiles/p1/lifestyle/summary": { days: 30, note: "n", categories: [{ category: "sleep", name: "Sleep", unit: "h", days_logged: 2, average_per_day: 7, latest: null, daily: [] }] },
+      "GET /profiles/p1/lifestyle/correlations": { days: 90, lag: 0, note: "Associations are not causes.", correlations: [{ category: "sleep", name: "Sleep", status: "ok", r: -0.8, days: 12, strength: "strong negative", description: "Less sleep goes with worse headaches." }] },
+    });
+    renderApp("/lifestyle");
+    expect(await screen.findByText("Nothing logged yet")).toBeInTheDocument();
+    expect(await screen.findByText("Less sleep goes with worse headaches.")).toBeInTheDocument();
+    expect(screen.getByText("2 days logged")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/What are you feeling/), "Headache");
+    await userEvent.click(screen.getByRole("button", { name: "Log symptom" }));
+    expect(await screen.findByText(/severity 4 of 10/)).toBeInTheDocument();
+    expect(f.mock.calls.some(([u, i]) => u.endsWith("/profiles/p1/symptoms") && i?.method === "POST" && String(i.body).includes("Headache"))).toBe(true);
+  });
+
   it("shows an empty vault and the biomarker empty state", async () => {
     api({
       "GET /profiles": [{ id: "p1", display_name: "Asha" }],

@@ -9,6 +9,7 @@ import (
 	"cortex/backend/internal/modules/governance"
 	"cortex/backend/internal/modules/healthai"
 	"cortex/backend/internal/modules/identity"
+	"cortex/backend/internal/modules/lifestyle"
 	"cortex/backend/internal/modules/research"
 	"cortex/backend/internal/modules/vault"
 	"cortex/backend/internal/platform/core"
@@ -26,5 +27,6 @@ func All(c *core.Core) []module.Module {
 		research.New(c),
 		healthai.New(c),
 		devices.New(c),
+		lifestyle.New(c),
 	}
 }

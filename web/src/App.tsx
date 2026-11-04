@@ -10,6 +10,7 @@ import { Banner } from "./components/ui";
 import { Ask } from "./screens/Ask";
 import { Biomarkers } from "./screens/Biomarkers";
 import { Documents } from "./screens/Documents";
+import { Lifestyle } from "./screens/Lifestyle";
 import { Privacy } from "./screens/Privacy";
 import { SignIn } from "./screens/SignIn";
 import { Timeline } from "./screens/Timeline";
@@ -52,6 +53,7 @@ function Authed() {
         <Route index element={<Today />} />
         <Route path="documents" element={<Documents />} />
         <Route path="biomarkers" element={<Biomarkers />} />
+        <Route path="lifestyle" element={<Lifestyle />} />
         <Route path="ask" element={<Ask />} />
         <Route path="timeline" element={<Timeline />} />
         <Route path="privacy" element={<Privacy />} />

@@ -698,6 +698,91 @@ paths:
       parameters: [{ name: entryID, in: path, required: true, schema: { type: string, format: uuid } }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /lifestyle-categories:
+    get:
+      summary: List lifestyle log categories with their unit and allowed range
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/symptoms:
+    get:
+      summary: List symptom journal entries (newest first)
+      description: Filters `name`, `from`, `to` (YYYY-MM-DD) and `active=true|false`; paged with `limit` and `offset`.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid filter or pagination }
+    post:
+      summary: Log a symptom
+      description: Requires health data storage consent. Body `{name, severity 1-10, started_at?, ended_at?, notes?}`. At most 5000 entries per profile.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid symptom }
+        '403': { description: Consent required }
+        '409': { description: Entry limit reached }
+  /profiles/{profileID}/symptoms/summary:
+    get:
+      summary: Symptoms grouped by name over the last `days` (default 90) with count, average and maximum severity
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid window }
+  /profiles/{profileID}/symptoms/{symptomID}:
+    patch:
+      summary: Update severity or notes, or mark a symptom resolved with `ended_at`
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: symptomID, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid change }
+        '404': { description: Not found or not owned }
+    delete:
+      summary: Delete a symptom entry
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: symptomID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found or not owned }
+  /profiles/{profileID}/lifestyle-logs:
+    get:
+      summary: List lifestyle logs, optionally by `category`, `from` and `to`
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid filter or pagination }
+    post:
+      summary: Log sleep, exercise, nutrition, hydration, mood or stress for a day
+      description: Requires health data storage consent. Body `{category, value, label?, notes?, logged_on?}`. The unit is fixed by the category and the value must be within its range. At most 20000 entries per profile.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid entry }
+        '403': { description: Consent required }
+        '409': { description: Entry limit reached }
+  /profiles/{profileID}/lifestyle-logs/{logID}:
+    delete:
+      summary: Delete a lifestyle log
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: logID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found or not owned }
+  /profiles/{profileID}/lifestyle/summary:
+    get:
+      summary: Per-category daily series, days logged and average per day over the last `days` (default 90)
+      description: Sleep, exercise, nutrition and hydration are summed per day; mood and stress are averaged.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid window }
+  /profiles/{profileID}/lifestyle/correlations:
+    get:
+      summary: Association between each lifestyle category and symptom severity
+      description: Query `symptom` (optional name), `days` (1-365) and `lag` (0 same day, 1 next day). A category needs 7 days with varying values, otherwise its status is `insufficient_data`. Associations are not causes.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid parameter }
 components:
   securitySchemes:
     bearerAuth:

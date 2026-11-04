@@ -52,3 +52,9 @@ export interface Answer {
   feedback?: string | null; created_at?: string;
 }
 export interface AccessEvent { id: number; action: string; resource_type: string; resource_id: string | null; created_at: string }
+
+export interface Symptom { id: string; name: string; severity: number; started_at: string; ended_at: string | null; notes?: string; active: boolean }
+export interface LifestyleCategory { code: string; name: string; unit: string; min: number; max: number }
+export interface LifestyleLog { id: string; category: string; value: number; unit: string; label?: string; notes?: string; logged_on: string }
+export interface LifestyleSummary { days: number; note: string; categories: { category: string; name: string; unit: string; days_logged: number; average_per_day: number | null; latest: { date: string; value: number } | null; daily: { date: string; value: number }[] }[] }
+export interface LifestyleCorrelations { days: number; lag: number; note: string; correlations: { category: string; name: string; status: "ok" | "insufficient_data"; r?: number; days: number; strength?: string; description: string }[] }

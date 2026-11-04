@@ -184,6 +184,14 @@ def main():
     expect("device summary is available", call("GET", f"/api/v1/profiles/{profile}/device-readings/summary")[0], 200)
     expect("a device can be removed", call("DELETE", f"/api/v1/profiles/{profile}/devices/{device}")[0], 200)
 
+    # Module 09: a symptom and a lifestyle entry are logged, summarised and listed.
+    status, body = call("POST", f"/api/v1/profiles/{profile}/symptoms", {"name": "Headache", "severity": 4})
+    expect("a symptom is logged", status, 201)
+    expect("a lifestyle entry is logged", call("POST", f"/api/v1/profiles/{profile}/lifestyle-logs", {"category": "sleep", "value": 7.5})[0], 201)
+    expect("the symptom journal lists it", (call("GET", f"/api/v1/profiles/{profile}/symptoms")[0], len(data(call("GET", f"/api/v1/profiles/{profile}/symptoms")[1]))), (200, 1))
+    expect("correlations are available", call("GET", f"/api/v1/profiles/{profile}/lifestyle/correlations")[0], 200)
+    expect("a symptom can be deleted", call("DELETE", f"/api/v1/profiles/{profile}/symptoms/{data(body)['id']}")[0], 204)
+
     expect("an unknown session cannot read the profile", call("GET", f"/api/v1/profiles/{profile}", token="not-a-session")[0], 401)
     expect("profile export works", call("GET", f"/api/v1/profiles/{profile}/export")[0], 200)
     expect("profile is deleted with its data", call("DELETE", f"/api/v1/profiles/{profile}", {"confirm": "DELETE"})[0] in (200, 204), True)
