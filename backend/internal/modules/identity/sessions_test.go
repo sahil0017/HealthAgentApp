@@ -241,3 +241,12 @@ func TestSessionActivityIsRecorded(t *testing.T) {
 		t.Fatalf("last seen was not refreshed: %+v", s)
 	}
 }
+
+func TestAndroidClientGetsABearerSessionLabelledAndroid(t *testing.T) {
+	e := newSessionEnv(t)
+	token := e.signIn("and-"+uuid.NewString(), "android")
+	s := e.sessions(token)
+	if len(s) != 1 || s[0].Device != "android" {
+		t.Fatalf("android must be recorded as its own device: %+v", s)
+	}
+}

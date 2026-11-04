@@ -38,7 +38,7 @@ func newToken() (token, hash string, err error) {
 // deviceOf names the client for the device list. Only a short label and a truncated user agent are kept.
 func deviceOf(r *http.Request) (device, agent string) {
 	device = "api"
-	if c := strings.ToLower(strings.TrimSpace(r.Header.Get(core.CSRFHeader))); c == "web" || c == "ios" {
+	if c := strings.ToLower(strings.TrimSpace(r.Header.Get(core.CSRFHeader))); c == "web" || c == "ios" || c == "android" {
 		device = c
 	}
 	agent = r.UserAgent()

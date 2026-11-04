@@ -71,13 +71,20 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [ ] Evidence-type labels (guideline, review, trial) and publication dates in answers
 - [ ] Re-verification of sources and retraction checks
 
-## M9. iOS app
+## M9. Flutter app (iOS + Android): replaces the SwiftUI and React clients
 
-- [~] Consent, upload, review, approve, ask flow written; **never compiled (needs Xcode)**
-- [ ] Build and run in Simulator; fix compile errors (the views below are written but uncompiled)
-- [ ] UI tests for the main flow
-- [ ] Offline handling and error states
-- [ ] Accessibility pass
+Screen plan: [`design/screens.html`](../design/screens.html) (46 dark-theme screens). Code in `app/`.
+
+- [ ] Scaffold `app/`: Riverpod, go_router, dark Material 3 theme (Inter, compact type scale), API client with envelope and bearer token in secure storage
+- [ ] Auth: Google and Apple sign-in, first profile, consent, session list and sign-out
+- [ ] Five tabs: Today, Vault, Health, Agent, More
+- [ ] Vault: list, search, scan (camera to PDF), upload, review and approve
+- [ ] Health: biomarkers with range bars and trends, detail, devices, goals
+- [ ] More: lifestyle, timeline, care plan, investigations, sharing, privacy
+- [ ] Loading, empty and offline states on every screen
+- [ ] Phone hardware behind interfaces: camera, files, location, HealthKit and Health Connect, biometrics
+- [ ] Widget tests and `flutter analyze` in CI; `integration_test` on a real phone
+- [ ] Remove `web/` and `ios/` once the Flutter app reaches parity
 
 ## M9a. Intelligence UX
 
@@ -183,7 +190,7 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 5. OCR (M2), MCP client (M5), observability and CI (M11).
 6. Devices, vision and imaging (M10, M12) last, each as a separate consented domain.
 
-## M18. Web app (React + TypeScript): in progress
+## M18. Web app (React + TypeScript): superseded by M9 (Flutter)
 
 - [x] Vite + React + TypeScript app in `web/`, typed API client with envelope and error handling, `/api` dev proxy
 - [x] One responsive layout for desktop and mobile (sidebar at 900px and wider, bottom tab bar below)
@@ -196,3 +203,21 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 - [ ] Goals, history entries, biomarker compare and manual entry screens
 - [ ] Knowledge review queue (admin)
 - [ ] Add the web app to the e2e workflow (Playwright against the compose stack)
+
+## M19. Agent experience
+
+- [ ] Agent tab: suggestions, live plan with stop, answers with sources
+- [ ] Approval queue with risk levels and autonomy settings
+- [ ] Activity log with undo
+- [ ] Daily briefing and report-ready notifications
+- [ ] Doctor visit brief (PDF and secure share)
+- [ ] Connected tools (MCP tokens screen)
+
+## M20. Nearby care and location
+
+- [ ] `location` consent purpose; area-level (about 5 km) rounding on the phone
+- [ ] Go `nearby` module with a per-country source registry and cached feeds
+- [ ] Outbreak alerts and health news from official feeds, with source and date
+- [ ] Hospitals and labs (OpenStreetMap), emergency screen and medical ID
+- [ ] `DoctorProvider` interface; registry adapters (ABDM, NPI) and optional commercial APIs
+- [ ] Nearby hub, alert detail, doctor and hospital screens in the app
