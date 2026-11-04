@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -58,6 +59,13 @@ class IdentityService {
     if (token == null)
       throw ApiError(401, 'no_token', 'Google did not return an ID token.');
     await _api.signIn('google', token, nonce);
+  }
+
+  // Test-only: compiled in when built with --dart-define=SEHAT_TEST_LOGIN=true; the dev proxy mints a token for the test IdP.
+  Future<void> testLogin() async {
+    final r = await http.get(Uri.parse('${_api.baseUrl}/__testtoken'));
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    await _api.signIn('oidc', j['id_token'] as String, j['nonce'] as String);
   }
 
   Future<void> apple() async {

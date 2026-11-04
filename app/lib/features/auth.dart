@@ -45,7 +45,11 @@ class _SignInState extends ConsumerState<SignInScreen> {
               const SizedBox(height: 14),
               const Text(
                 'Sehat',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: Pal.ink,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -72,6 +76,13 @@ class _SignInState extends ConsumerState<SignInScreen> {
                 icon: const Icon(Icons.apple),
                 label: const Text('Continue with Apple'),
               ),
+              if (const bool.fromEnvironment('SEHAT_TEST_LOGIN')) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: _busy ? null : () => _run(id.testLogin),
+                  child: const Text('Test sign-in (dev builds only)'),
+                ),
+              ],
               const SizedBox(height: 14),
               const Text(
                 'We never see your password. Health data stays encrypted and under your control.',
