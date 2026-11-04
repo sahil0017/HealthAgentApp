@@ -1,0 +1,15 @@
+# Worker-only image for platforms that cannot select a Dockerfile target (Railway). Same as the `worker` stage in Dockerfile.
+FROM golang:1.27.3-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/cortex-worker ./cmd/worker
+
+FROM alpine:3.22
+ARG TESSERACT_PACKS="tesseract-ocr-data-eng"
+RUN apk add --no-cache tesseract-ocr poppler-utils $TESSERACT_PACKS \
+    && adduser -D -u 10001 cortex
+COPY --from=build /out/cortex-worker /cortex-worker
+USER cortex
+ENTRYPOINT ["/cortex-worker"]

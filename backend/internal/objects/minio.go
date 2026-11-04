@@ -29,7 +29,7 @@ func Connect(ctx context.Context) (*Store, error) {
 		return nil, err
 	}
 	presignClient, err := minio.New(env("S3_PUBLIC_ENDPOINT", "localhost:9000"), &minio.Options{
-		Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: false, Region: env("S3_REGION", "us-east-1"),
+		Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: env("S3_PUBLIC_SECURE", "false") == "true", Region: env("S3_REGION", "us-east-1"),
 	})
 	if err != nil {
 		return nil, err
