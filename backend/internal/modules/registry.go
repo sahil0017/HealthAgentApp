@@ -12,6 +12,7 @@ import (
 	"cortex/backend/internal/modules/healthai"
 	"cortex/backend/internal/modules/identity"
 	"cortex/backend/internal/modules/lifestyle"
+	"cortex/backend/internal/modules/medications"
 	"cortex/backend/internal/modules/nearby"
 	"cortex/backend/internal/modules/research"
 	"cortex/backend/internal/modules/vault"
@@ -34,5 +35,6 @@ func All(c *core.Core) []module.Module {
 		nearby.New(c),
 		agent.New(c),
 		environment.New(c),
+		medications.New(c),
 	}
 }

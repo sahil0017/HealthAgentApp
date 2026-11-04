@@ -16,6 +16,8 @@ ALLOWED_HOSTS = {
     "clinicaltables.nlm.nih.gov",
     "ucum.nlm.nih.gov",
     "eutils.ncbi.nlm.nih.gov",
+    "www.ebi.ac.uk",
+    "clinicaltrials.gov",
     "medlineplus.gov",
 }
 USER_AGENT = "cortex-research-agent/1.0 (personal health app; non-commercial lookups)"
@@ -178,4 +180,63 @@ def parse_pubmed_xml(xml: str) -> list[Abstract]:
         year_txt = art.findtext("MedlineCitation/Article/Journal/JournalIssue/PubDate/Year") or ""
         if pmid and title and parts:
             out.append(Abstract(pmid, title, art.findtext("MedlineCitation/Article/Journal/Title") or "", int(year_txt) if year_txt.isdigit() else None, "\n".join(parts)))
+    return out
+
+
+@dataclass
+class Paper:
+    identifier: str
+    title: str
+    journal: str
+    year: int | None
+    text: str
+    url: str
+    source: str
+    kind: str = "article"
+
+
+def search_europepmc(fetcher: Fetcher, query: str, limit: int = 5) -> list[Paper]:
+    """Reviews, meta-analyses and guidelines with an abstract. Records without an abstract are skipped."""
+    q = f"({query}) AND HAS_ABSTRACT:y AND (PUB_TYPE:\"review\" OR PUB_TYPE:\"meta-analysis\" OR PUB_TYPE:\"guideline\")"
+    data = fetcher.get(
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        f"?format=json&resultType=core&pageSize={limit}&query={quote(q)}"
+    ).json()
+    out = []
+    for r in (data.get("resultList") or {}).get("result", []):
+        text = re.sub(r"<[^>]+>", "", html.unescape(r.get("abstractText") or "")).strip()
+        title = re.sub(r"<[^>]+>", "", html.unescape(r.get("title") or "")).strip().rstrip(".")
+        src, rid = r.get("source"), r.get("id")
+        if not (text and title and src and rid):
+            continue
+        year = r.get("pubYear")
+        out.append(Paper(
+            identifier=f"PMID:{r['pmid']}" if r.get("pmid") else f"{src}:{rid}",
+            title=title, journal=r.get("journalTitle") or "", year=int(year) if str(year).isdigit() else None,
+            text=text, url=f"https://europepmc.org/article/{src}/{rid}", source="Europe PMC",
+        ))
+    return out
+
+
+def search_trials(fetcher: Fetcher, query: str, limit: int = 3) -> list[Paper]:
+    """Registered clinical studies. A trial record describes a study, not a finding."""
+    data = fetcher.get(
+        "https://clinicaltrials.gov/api/v2/studies"
+        f"?query.term={quote(query)}&pageSize={limit}&filter.overallStatus=COMPLETED&format=json"
+    ).json()
+    out = []
+    for st in data.get("studies", []):
+        ps = st.get("protocolSection", {})
+        ident = ps.get("identificationModule", {})
+        nct = ident.get("nctId")
+        title = ident.get("briefTitle")
+        summary = (ps.get("descriptionModule") or {}).get("briefSummary", "").strip()
+        if not (nct and title and summary):
+            continue
+        date = ((ps.get("statusModule") or {}).get("completionDateStruct") or {}).get("date", "")
+        out.append(Paper(
+            identifier=nct, title=title, journal="ClinicalTrials.gov registered study",
+            year=int(date[:4]) if date[:4].isdigit() else None, text=summary,
+            url=f"https://clinicaltrials.gov/study/{nct}", source="ClinicalTrials.gov", kind="trial",
+        ))
     return out

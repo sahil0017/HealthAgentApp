@@ -12,6 +12,7 @@ import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
 import 'package:sehat/features/health.dart';
+import 'package:sehat/features/lookup.dart';
 import 'package:sehat/features/more.dart';
 import 'package:sehat/features/places.dart';
 import 'package:sehat/features/plan.dart';
@@ -339,5 +340,61 @@ void main() {
     expect(find.text('Resting heart rate'), findsOneWidget);
     expect(find.text('Steps'), findsNothing);
     expect(find.textContaining('typical 60'), findsOneWidget);
+  });
+
+  testWidgets('air and weather show the category and advice', (t) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/environment/now')) {
+        return _json({
+          'air_category': 'Unhealthy',
+          'air_advice': 'Reduce prolonged outdoor exertion.',
+          'air': {
+            'current': {'us_aqi': 160, 'pm2_5': 40},
+          },
+          'weather': {
+            'current': {'temperature_2m': 31},
+          },
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const EnvironmentScreen()));
+    await t.tap(find.text('Approximate only'));
+    await t.pumpAndSettle();
+    expect(find.text('Unhealthy'), findsOneWidget);
+    expect(find.text('160'), findsOneWidget);
+    expect(find.textContaining('Reduce prolonged'), findsOneWidget);
+  });
+
+  testWidgets('medicine lookup shows label text and the coverage note', (
+    t,
+  ) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/medications/search')) {
+        return _json({
+          'medicines': [
+            {'name': 'metformin 500 MG Oral Tablet', 'type': 'Generic product'},
+          ],
+          'coverage': 'US catalogue, not an Indian brand list.',
+        });
+      }
+      if (r.url.path.endsWith('/medications/label')) {
+        return _json({
+          'sections': [
+            {'title': 'Boxed warning', 'text': 'Lactic acidosis.'},
+            {'title': 'Interactions', 'text': ''},
+          ],
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const MedicineScreen()));
+    await t.enterText(find.byType(TextField), 'metformin');
+    await t.testTextInput.receiveAction(TextInputAction.search);
+    await t.pumpAndSettle();
+    expect(find.text('Lactic acidosis.'), findsOneWidget);
+    expect(find.text('Interactions'), findsNothing);
+    expect(find.text('metformin 500 MG Oral Tablet'), findsOneWidget);
+    expect(find.textContaining('not an Indian brand list'), findsOneWidget);
   });
 }

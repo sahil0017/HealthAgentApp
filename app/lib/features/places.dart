@@ -30,15 +30,15 @@ Future<void> _launch(BuildContext context, Uri uri) async {
 }
 
 /// Asks for the user's area when it is not known yet, then shows [builder].
-class _NeedsArea extends ConsumerStatefulWidget {
-  const _NeedsArea(this.title, this.builder);
+class NeedsArea extends ConsumerStatefulWidget {
+  const NeedsArea(this.title, this.builder);
   final String title;
   final Widget Function(Area area) builder;
   @override
-  ConsumerState<_NeedsArea> createState() => _NeedsAreaState();
+  ConsumerState<NeedsArea> createState() => NeedsAreaState();
 }
 
-class _NeedsAreaState extends ConsumerState<_NeedsArea> {
+class NeedsAreaState extends ConsumerState<NeedsArea> {
   bool _busy = false;
   bool _denied = false;
 
@@ -212,7 +212,7 @@ class _DoctorsState extends ConsumerState<DoctorsScreen> {
   bool _map = false;
 
   @override
-  Widget build(BuildContext context) => _NeedsArea('Care near you', (area) {
+  Widget build(BuildContext context) => NeedsArea('Care near you', (area) {
     final res = ref.watch(_placesProvider((area.lat, area.lng, _kind)));
     return Column(
       children: [
@@ -483,7 +483,7 @@ class _HospitalsMapState extends ConsumerState<HospitalsMapScreen> {
   bool _emergencyOnly = false;
 
   @override
-  Widget build(BuildContext context) => _NeedsArea('Hospitals', (area) {
+  Widget build(BuildContext context) => NeedsArea('Hospitals', (area) {
     final h = ref.watch(hospitalsProvider(area));
     return AsyncBody<List<Json>>(
       h,
@@ -573,7 +573,7 @@ class _AreaMapState extends ConsumerState<AreaMapScreen> {
   String _layer = 'Hospitals';
 
   @override
-  Widget build(BuildContext context) => _NeedsArea('Your area', (area) {
+  Widget build(BuildContext context) => NeedsArea('Your area', (area) {
     final h = ref.watch(hospitalsProvider(area));
     final alerts = ref.watch(alertsProvider(area.country ?? ''));
     return Column(

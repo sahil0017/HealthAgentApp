@@ -6,6 +6,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'lock.dart';
+import 'lookup.dart';
 import 'nearby.dart';
 import 'places.dart';
 import 'plan.dart';
@@ -42,6 +43,18 @@ class MoreTab extends ConsumerWidget {
         'Area map',
         'Hospitals and alerts around you',
         const AreaMapScreen(),
+      ),
+      (
+        Icons.air,
+        'Air & weather',
+        'Air quality and heat near you',
+        const EnvironmentScreen(),
+      ),
+      (
+        Icons.medication_outlined,
+        'Medicine lookup',
+        'Names, uses and warnings',
+        const MedicineScreen(),
       ),
       (
         Icons.emergency_outlined,

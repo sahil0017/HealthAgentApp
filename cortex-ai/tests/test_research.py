@@ -99,3 +99,25 @@ def test_conversion_is_not_proposed_when_units_are_incompatible_or_nonlinear():
     assert agent.research_conversion(f, "mg/dL", "mmol/L") is None
     assert agent.research_conversion(f, "x", "y") is None
     assert agent.research_conversion(f, "mg/dL", "mg/dL") is None
+
+
+def test_literature_merges_sources_dedupes_and_survives_a_failing_one():
+    def handler(r: httpx.Request) -> httpx.Response:
+        h = r.url.host
+        if h == "eutils.ncbi.nlm.nih.gov":
+            return httpx.Response(500)
+        if h == "www.ebi.ac.uk":
+            return httpx.Response(200, json={"resultList": {"result": [
+                {"source": "MED", "id": "1", "pmid": "1", "title": "Statins review.", "abstractText": "<h4>Background</h4> Lowers LDL.", "journalTitle": "J", "pubYear": "2024"},
+                {"source": "MED", "id": "2", "title": "No abstract", "abstractText": ""},
+            ]}})
+        return httpx.Response(200, json={"studies": [{"protocolSection": {
+            "identificationModule": {"nctId": "NCT01", "briefTitle": "Statin trial"},
+            "descriptionModule": {"briefSummary": "A randomized study."},
+            "statusModule": {"completionDateStruct": {"date": "2021-05"}}}}]})
+
+    out = agent.research_literature(make_fetcher(handler), "statin")
+    keys = [o["key"] for o in out]
+    assert keys == ["PMID:1", "NCT01"]
+    assert out[0]["payload"]["abstract"] == "Background Lowers LDL."
+    assert out[1]["evidence"][0]["source"] == "ClinicalTrials.gov"

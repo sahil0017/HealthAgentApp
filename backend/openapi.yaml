@@ -796,6 +796,23 @@ paths:
       summary: Data sources behind the environment screens and whether each is available
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /medications/search:
+    get:
+      summary: Match a typed medicine name to RxNorm medicines
+      description: Query `q` (2-80 characters). Returns RxNorm identifiers, names and product type, a `did_you_mean` spelling suggestion when nothing matches, and a `coverage` note. The catalogue is US-based, not an Indian brand list. Nothing about the profile is sent upstream.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid query }
+        '502': { description: Source unavailable }
+  /medications/label:
+    get:
+      summary: FDA prescribing information for a medicine, quoted from the label
+      description: Query `name`. Returns uses, boxed warning, warnings, interactions and side effects, each clipped to 1500 characters, with brand and generic names.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid query }
+        '404': { description: No label found }
+        '502': { description: Source unavailable }
   /nearby/places:
     get:
       summary: Doctors, clinics, pharmacies or labs near an area from OpenStreetMap, nearest first

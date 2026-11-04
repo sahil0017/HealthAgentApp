@@ -9,7 +9,9 @@ from app.research.sources import (
     list_medlineplus_lab_tests,
     medlineplus_summary,
     search_loinc,
+    search_europepmc,
     search_pubmed,
+    search_trials,
     ucum_transform,
 )
 
@@ -82,17 +84,35 @@ def research_biomarker(fetcher: Fetcher, term: str, medlineplus_url: str | None 
 
 
 def research_literature(fetcher: Fetcher, term: str, limit: int = 3) -> list[dict]:
-    out = []
-    for a in search_pubmed(fetcher, term, limit):
-        out.append(
-            {
-                "key": f"PMID:{a.pmid}",
-                "payload": {"identifier": f"PMID:{a.pmid}", "title": a.title, "journal": a.journal, "year": a.year, "url": a.url, "abstract": a.text, "topic": term},
-                "evidence": [Evidence("PubMed", a.url, a.title).as_dict()],
-                "agreement": 1,
-            }
-        )
-    return out
+    """PubMed and Europe PMC reviews plus registered trials. One failing source never hides the others."""
+    papers: list[tuple[str, str, str, int | None, str, str, str]] = []
+    seen: set[str] = set()
+
+    def add(ident, title, journal, year, text, url, source):
+        if ident not in seen:
+            seen.add(ident)
+            papers.append((ident, title, journal, year, text, url, source))
+
+    try:
+        for a in search_pubmed(fetcher, term, limit):
+            add(f"PMID:{a.pmid}", a.title, a.journal, a.year, a.text, a.url, "PubMed")
+    except Exception:
+        pass
+    for fn, n in ((search_europepmc, limit), (search_trials, 2)):
+        try:
+            for p in fn(fetcher, term, n):
+                add(p.identifier, p.title, p.journal, p.year, p.text, p.url, p.source)
+        except Exception:
+            continue
+    return [
+        {
+            "key": ident,
+            "payload": {"identifier": ident, "title": title, "journal": journal, "year": year, "url": url, "abstract": text, "topic": term, "source": source},
+            "evidence": [Evidence(source, url, title).as_dict()],
+            "agreement": 1,
+        }
+        for ident, title, journal, year, text, url, source in papers
+    ]
 
 
 def discover_biomarkers(fetcher: Fetcher, limit: int = 40, offset: int = 0) -> dict:
