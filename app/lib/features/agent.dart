@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent_screens.dart';
 
 const _starters = [
   'What was my latest HbA1c?',
@@ -69,6 +70,7 @@ class _AgentState extends ConsumerState<AgentTab> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
             children: [
+              const AgentHubCard(),
               if (_latest == null && !_busy) ...[
                 const SCard(
                   child: Text(

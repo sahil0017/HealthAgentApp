@@ -3,6 +3,7 @@
 package modules
 
 import (
+	"cortex/backend/internal/modules/agent"
 	"cortex/backend/internal/modules/biomarkers"
 	"cortex/backend/internal/modules/commandcentre"
 	"cortex/backend/internal/modules/devices"
@@ -30,5 +31,6 @@ func All(c *core.Core) []module.Module {
 		devices.New(c),
 		lifestyle.New(c),
 		nearby.New(c),
+		agent.New(c),
 	}
 }

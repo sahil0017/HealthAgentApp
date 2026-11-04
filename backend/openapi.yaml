@@ -783,6 +783,86 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid parameter }
+  /nearby/sources:
+    get:
+      summary: Data sources behind the Nearby care screens, and which categories have none
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /nearby/alerts:
+    get:
+      summary: Outbreak alerts from WHO Disease Outbreak News, the caller's country first
+      description: Query `country` (name). Cached for 10 minutes. 502 when the source is unreachable; nothing is invented.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '502': { description: Source unavailable }
+  /nearby/hospitals:
+    get:
+      summary: Hospitals near an area from OpenStreetMap, nearest first
+      description: Query `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored) and `radius_km` (1-50, default 10).
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid area }
+        '502': { description: Source unavailable }
+  /profiles/{profileID}/agent/permissions:
+    get:
+      summary: What the assistant may do for this profile
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/permissions/{permission}:
+    put:
+      summary: Grant or withdraw one permission
+      description: Permission is read_labs, read_devices, read_lifestyle or propose_actions. Body `granted`.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Unknown permission }
+  /profiles/{profileID}/agent/briefing:
+    get:
+      summary: Daily briefing restating the user's own records
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/visit-prep:
+    get:
+      summary: Summary of the record to bring to an appointment
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/plan:
+    post:
+      summary: Read the record and propose follow-ups for the user to approve
+      description: Needs propose_actions and read_labs. Never re-proposes a result already proposed, approved or rejected.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { description: Permission required }
+  /profiles/{profileID}/agent/actions:
+    get:
+      summary: List proposed actions (query `status`)
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/actions/{actionID}/approve:
+    post:
+      summary: Approve a proposal; this creates the follow-up
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not waiting for a decision }
+  /profiles/{profileID}/agent/actions/{actionID}/reject:
+    post:
+      summary: Dismiss a proposal; nothing is created
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Not waiting for a decision }
+  /profiles/{profileID}/agent/activity:
+    get:
+      summary: What the assistant suggested and what the user decided
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
 components:
   securitySchemes:
     bearerAuth:

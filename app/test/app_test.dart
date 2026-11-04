@@ -9,6 +9,7 @@ import 'package:sehat/app.dart';
 import 'package:sehat/core/api.dart';
 import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
+import 'package:sehat/features/agent_screens.dart';
 import 'package:sehat/features/more.dart';
 
 class _FakeLocation implements LocationSource {
@@ -44,6 +45,7 @@ Widget _app(ApiClient api, {Widget? home}) => ProviderScope(
   overrides: [
     apiProvider.overrideWithValue(api),
     locationProvider.overrideWithValue(_FakeLocation()),
+    profileIdProvider.overrideWithValue('p1'),
   ],
   child: home == null ? const SehatApp() : MaterialApp(home: home),
 );
@@ -105,5 +107,38 @@ void main() {
     expect(find.text('Your country'), findsOneWidget);
     expect(find.text('City Hospital'), findsOneWidget);
     expect(find.textContaining('none is connected'), findsOneWidget);
+  });
+
+  testWidgets('approving a suggestion calls the approve endpoint', (t) async {
+    var approved = false;
+    final api = _api((r) {
+      if (r.url.path.endsWith('/agent/actions') && r.method == 'GET') {
+        return _json({
+          'actions': approved
+              ? []
+              : [
+                  {
+                    'id': 'x1',
+                    'kind': 'follow_up',
+                    'title': 'Discuss Glucose with your clinician',
+                    'reason': 'Glucose is above range',
+                    'status': 'proposed',
+                  },
+                ],
+        });
+      }
+      if (r.url.path.endsWith('/agent/actions/x1/approve')) {
+        approved = true;
+        return _json({'action': {}, 'follow_up_id': 'f1'});
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const ApprovalsScreen()));
+    await t.pumpAndSettle();
+    expect(find.text('Discuss Glucose with your clinician'), findsOneWidget);
+    await t.tap(find.text('Approve'));
+    await t.pumpAndSettle();
+    expect(approved, isTrue);
+    expect(find.text('Nothing to approve'), findsOneWidget);
   });
 }
