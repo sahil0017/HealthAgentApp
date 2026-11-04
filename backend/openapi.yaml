@@ -861,6 +861,13 @@ paths:
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/suggestions:
+    get:
+      summary: Questions worth asking, built from the user's own record
+      description: Empty when the record has nothing to ask about. Respects the read_labs and read_lifestyle permissions.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/agent/visit-prep:
     get:
       summary: Summary of the record to bring to an appointment

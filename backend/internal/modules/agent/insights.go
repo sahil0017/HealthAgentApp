@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"cortex/backend/internal/domain/biomarker"
@@ -292,4 +293,47 @@ func visitQuestions(labs []flaggedLab) []string {
 	}
 	out = append(out, "Is there anything in my records I should follow up on?")
 	return out
+}
+
+// suggestions are starter questions derived only from the user's own record; an empty record yields none.
+func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) {
+	if !m.ProfileOwned(r) {
+		m.notFound(w)
+		return
+	}
+	ctx, owner, profileID := r.Context(), httpx.Owner(r), chi.URLParam(r, "profileID")
+	out := []string{}
+	add := func(q string) {
+		if len(out) < 6 {
+			out = append(out, q)
+		}
+	}
+	if m.granted(ctx, profileID, "read_labs") {
+		labs, err := m.flaggedLabs(ctx, owner, profileID)
+		if err != nil {
+			httpx.WriteError(w, 500, "SUGGESTIONS_UNAVAILABLE", "Suggestions could not be prepared.", nil)
+			return
+		}
+		for i, l := range labs {
+			if i == 3 {
+				break
+			}
+			add("What could explain my " + l.Name + " being outside its range?")
+		}
+		if len(labs) > 0 {
+			add("What should I ask my doctor about these results?")
+		} else {
+			var name string
+			if m.DB.Pool.QueryRow(ctx, `SELECT name FROM observations WHERE profile_id=$1 AND owner_id=$2 AND verification_status='VERIFIED' ORDER BY observed_at DESC LIMIT 1`, profileID, owner).Scan(&name) == nil {
+				add("What was my latest " + name + "?")
+			}
+		}
+	}
+	if m.granted(ctx, profileID, "read_lifestyle") {
+		var sym string
+		if m.DB.Pool.QueryRow(ctx, `SELECT name FROM symptom_entries WHERE profile_id=$1 AND owner_id=$2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`, profileID, owner).Scan(&sym) == nil {
+			add("What might be related to my " + strings.ToLower(sym) + "?")
+		}
+	}
+	httpx.WriteJSON(w, 200, map[string]any{"suggestions": out})
 }

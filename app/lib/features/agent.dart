@@ -6,11 +6,13 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'agent_screens.dart';
 
-const _starters = [
-  'What was my latest HbA1c?',
-  'Which of my results are out of range?',
-  'What should I ask my doctor?',
-];
+final _suggestionsProvider = FutureProvider<List<String>>((ref) async {
+  final id = ref.watch(profileIdProvider);
+  if (id == null) return [];
+  final r = await ref.read(apiProvider).map('/profiles/$id/agent/suggestions');
+  final l = r['suggestions'];
+  return l is List ? [for (final s in l) '$s'] : [];
+});
 
 final _historyProvider = FutureProvider<List<Json>>((ref) {
   final id = ref.watch(profileIdProvider);
@@ -78,17 +80,30 @@ class _AgentState extends ConsumerState<AgentTab> {
                     style: TextStyle(fontSize: 11, color: Pal.mut),
                   ),
                 ),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final s in _starters)
-                      ActionChip(
-                        label: Text(s, style: const TextStyle(fontSize: 11)),
-                        onPressed: () => _ask(s),
-                      ),
-                  ],
-                ),
+                ref
+                    .watch(_suggestionsProvider)
+                    .maybeWhen(
+                      data: (list) => list.isEmpty
+                          ? const Text(
+                              'Upload a report and suggested questions will appear here.',
+                              style: TextStyle(fontSize: 11, color: Pal.mut),
+                            )
+                          : Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final s in list)
+                                  ActionChip(
+                                    label: Text(
+                                      s,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    onPressed: () => _ask(s),
+                                  ),
+                              ],
+                            ),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
               ],
               if (_busy)
                 const Padding(

@@ -164,3 +164,20 @@ func TestBriefingAndVisitPrepRestateTheRecord(t *testing.T) {
 		t.Fatalf("labs must be hidden without permission: %s", body)
 	}
 }
+
+func TestSuggestionsComeFromTheRecord(t *testing.T) {
+	f := newFixture(t)
+	_, out := f.do("GET", "/agent/suggestions", "")
+	if s, _ := data(out)["suggestions"].([]any); len(s) != 0 {
+		t.Fatalf("empty record should give no suggestions: %v", out)
+	}
+	f.seedHighGlucose()
+	_, out = f.do("GET", "/agent/suggestions", "")
+	s, _ := data(out)["suggestions"].([]any)
+	if len(s) == 0 || !strings.Contains(s[0].(string), "Glucose") {
+		t.Fatalf("suggestions: %v", out)
+	}
+	if code, _ := f.do("GET", "/agent/suggestions", "", "owner-b"); code != 404 {
+		t.Fatalf("other owner: %d", code)
+	}
+}
