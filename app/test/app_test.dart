@@ -11,6 +11,7 @@ import 'package:sehat/core/api.dart';
 import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
+import 'package:sehat/features/environment.dart';
 import 'package:sehat/features/health.dart';
 import 'package:sehat/features/lookup.dart';
 import 'package:sehat/features/more.dart';
@@ -349,10 +350,32 @@ void main() {
           'air_category': 'Unhealthy',
           'air_advice': 'Reduce prolonged outdoor exertion.',
           'air': {
-            'current': {'us_aqi': 160, 'pm2_5': 40},
+            'current': {'us_aqi': 160, 'pm2_5': 40, 'uv_index': 7},
+            'hourly': {
+              'time': [
+                for (var h = 0; h < 24; h++)
+                  '2026-11-04T${h.toString().padLeft(2, '0')}:00',
+              ],
+              'us_aqi': [for (var h = 0; h < 24; h++) 100 + h * 3],
+            },
           },
+          'uv_category': 'High',
           'weather': {
-            'current': {'temperature_2m': 31},
+            'current': {'temperature_2m': 31, 'weather_code': 3, 'is_day': 1},
+            'daily': {
+              'temperature_2m_max': [33],
+              'temperature_2m_min': [24],
+              'sunrise': ['2026-11-04T06:30'],
+              'sunset': ['2026-11-04T17:40'],
+            },
+            'hourly': {
+              'time': [
+                for (var h = 0; h < 24; h++)
+                  '2026-11-04T${h.toString().padLeft(2, '0')}:00',
+              ],
+              'temperature_2m': [for (var h = 0; h < 24; h++) 24 + h % 9],
+              'precipitation_probability': [for (var h = 0; h < 24; h++) h * 4],
+            },
           },
         });
       }
@@ -363,6 +386,8 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Unhealthy'), findsOneWidget);
     expect(find.text('160'), findsOneWidget);
+    expect(find.text('Next 24 hours · air quality'), findsOneWidget);
+    expect(find.text('Pollutants (µg/m³)'), findsOneWidget);
     expect(find.textContaining('Reduce prolonged'), findsOneWidget);
   });
 

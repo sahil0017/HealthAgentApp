@@ -83,6 +83,21 @@ func aqiBand(aqi float64) (string, string) {
 	return "Hazardous", "Avoid all outdoor exertion."
 }
 
+// uvBand follows the WHO global solar UV index categories.
+func uvBand(uv float64) (string, string) {
+	switch {
+	case uv < 3:
+		return "Low", "No protection needed for most people."
+	case uv < 6:
+		return "Moderate", "Wear sunscreen and sunglasses; seek shade around midday."
+	case uv < 8:
+		return "High", "Cover up, use SPF 30+ and avoid the sun around midday."
+	case uv < 11:
+		return "Very high", "Extra protection needed; limit time in the midday sun."
+	}
+	return "Extreme", "Avoid the sun around midday and cover up fully."
+}
+
 func (m *Module) sources(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, 200, map[string]any{"sources": []map[string]any{
 		{"category": "air_quality", "name": "Open-Meteo Air Quality", "scope": "global", "available": true},
@@ -136,8 +151,20 @@ func (m *Module) now(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ll := url.Values{"latitude": {fmt.Sprintf("%.2f", lat)}, "longitude": {fmt.Sprintf("%.2f", lng)}}
-	wq := url.Values{"current": {"temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code"}}
-	aq := url.Values{"current": {"us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,uv_index"}}
+	wq := url.Values{
+		"current":        {"temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,weather_code,precipitation,cloud_cover,pressure_msl,is_day"},
+		"daily":          {"temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max"},
+		"hourly":         {"temperature_2m,precipitation_probability,weather_code"},
+		"forecast_hours": {"24"},
+		"forecast_days":  {"1"},
+		"timezone":       {"auto"},
+	}
+	aq := url.Values{
+		"current":        {"us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,uv_index"},
+		"hourly":         {"us_aqi"},
+		"forecast_hours": {"24"},
+		"timezone":       {"auto"},
+	}
 	for k, v := range ll {
 		wq[k], aq[k] = v, v
 	}
@@ -150,7 +177,10 @@ func (m *Module) now(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"source": "Open-Meteo", "lat": lat, "lng": lng}
 	if airErr == nil {
 		cur, _ := air["current"].(map[string]any)
-		out["air"] = map[string]any{"current": cur, "units": air["current_units"]}
+		out["air"] = map[string]any{"current": cur, "units": air["current_units"], "hourly": air["hourly"]}
+		if v, ok := cur["uv_index"].(float64); ok {
+			out["uv_category"], out["uv_advice"] = uvBand(v)
+		}
 		if v, ok := cur["us_aqi"].(float64); ok {
 			cat, adv := aqiBand(v)
 			out["air_category"], out["air_advice"] = cat, adv
@@ -158,7 +188,7 @@ func (m *Module) now(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if wxErr == nil {
-		out["weather"] = map[string]any{"current": wx["current"], "units": wx["current_units"]}
+		out["weather"] = map[string]any{"current": wx["current"], "units": wx["current_units"], "daily": wx["daily"], "hourly": wx["hourly"], "timezone": wx["timezone"]}
 	}
 	if m.OpenAQKey != "" {
 		if st := m.station(r.Context(), lat, lng); st != nil {
