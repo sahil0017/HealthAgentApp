@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiError implements Exception {
   ApiError(this.status, this.code, this.message, [this.fields]);
@@ -29,6 +30,19 @@ class SecureTokenStore implements TokenStore {
   @override
   Future<void> write(String? token) =>
       token == null ? _s.delete(key: _key) : _s.write(key: _key, value: token);
+}
+
+/// Web builds: flutter_secure_storage needs WebCrypto, which browsers only allow on HTTPS or localhost.
+class WebTokenStore implements TokenStore {
+  static const _key = 'sehat.access_token';
+  @override
+  Future<String?> read() async =>
+      (await SharedPreferences.getInstance()).getString(_key);
+  @override
+  Future<void> write(String? token) async {
+    final p = await SharedPreferences.getInstance();
+    token == null ? await p.remove(_key) : await p.setString(_key, token);
+  }
 }
 
 class MemoryTokenStore implements TokenStore {

@@ -25,7 +25,7 @@ String clientLabel() => kIsWeb
 
 ApiClient buildApi() => ApiClient(
   baseUrl: baseUrl,
-  tokens: SecureTokenStore(),
+  tokens: kIsWeb ? WebTokenStore() : SecureTokenStore(),
   clientLabel: clientLabel(),
 );
 
