@@ -546,6 +546,124 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Unknown metric, or no laboratory equivalent }
+  /profiles/{profileID}/investigations:
+    get:
+      summary: List saved research investigations
+      description: Query `status` (open, archived). `data.investigations` holds each investigation with `source_count` and `note_count`.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid status filter }
+    post:
+      summary: Save a research investigation (a question to follow over time)
+      description: Body `question` (2-500 characters) and optional `title`. At most 100 per profile.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid question }
+        '409': { description: Investigation limit reached }
+  /profiles/{profileID}/investigations/{investigationID}:
+    parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      summary: An investigation with its approved sources (identifier, title, URL, excerpt) and notes
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      summary: Rename, change the question, or archive/reopen (`status`)
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid change }
+    delete:
+      summary: Delete an investigation and its items
+      responses:
+        '204': { description: Deleted }
+  /profiles/{profileID}/investigations/{investigationID}/items:
+    post:
+      summary: Attach an approved research source (`source_id`) or a personal note (`note`)
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Send exactly one of source_id or note }
+        '404': { description: Source is not approved or does not exist }
+        '409': { description: Source already attached, or the investigation is full }
+  /profiles/{profileID}/investigations/{investigationID}/items/{itemID}:
+    delete:
+      summary: Remove a source or note
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }, { name: itemID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Removed }
+  /profiles/{profileID}/investigations/{investigationID}/refresh:
+    post:
+      summary: Attach newly matching approved sources
+      description: Searches only human-approved research for the question. Never the open web and never the profile's own records. `data.added` is the number of new sources.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/retention:
+    get:
+      summary: Retention policy (null means keep indefinitely)
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    put:
+      summary: Set how long AI answer history and device readings are kept
+      description: Body `ai_history_days` and `device_readings_days` (1-3650 or null). Replaces the policy. The worker applies it hourly; audit events are never purged.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid number of days }
+  /profiles/{profileID}/retention/apply:
+    post:
+      summary: Apply the retention policy now; returns counts removed
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/shares:
+    get:
+      summary: Family shares for a profile (status pending, active, expired, revoked)
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Create a read-only share and a one-time invite code
+      description: Body `label`, `scopes` (summary, labs, history, follow_ups) and `expires_in_days` (1-365, default 30). The code is returned once and stored only as a hash. At most 10 active shares.
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid share }
+        '409': { description: Share limit reached }
+  /profiles/{profileID}/shares/{shareID}:
+    delete:
+      summary: Revoke a share
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: shareID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Revoked }
+  /shares/accept:
+    post:
+      summary: Redeem an invite code
+      description: Body `code`. Single use; fails if used, revoked or expired, or if it is the caller's own profile.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Missing code or own profile }
+        '404': { description: Invalid, used, revoked or expired code }
+  /shared-with-me:
+    get:
+      summary: Profiles shared with the caller
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /shared-with-me/{shareID}:
+    parameters: [{ name: shareID, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      summary: Read-only view limited to the share's scopes
+      description: Labs are the latest verified value per biomarker. Each view appears in the owner's access history.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: Leave a share
+      responses:
+        '204': { description: Left }
   /knowledge/entries:
     get:
       summary: List learned knowledge proposals (administrators only)

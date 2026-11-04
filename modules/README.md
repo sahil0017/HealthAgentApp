@@ -14,11 +14,11 @@ Status: ✅ done · 🟡 partial · ⬜ not started
 | 05 | Connected Diagnostics | 🟢 | [05-connected-diagnostics.md](05-connected-diagnostics.md) |
 | 06 | Medical Imaging | ⬜ | [06-medical-imaging.md](06-medical-imaging.md) |
 | 07 | CORTEX Personal Health AI | 🟢 | [07-health-ai.md](07-health-ai.md) |
-| 08 | Agentic Health Research | 🟡 | [08-health-research.md](08-health-research.md) |
+| 08 | Agentic Health Research | 🟢 | [08-health-research.md](08-health-research.md) |
 | 09 | Lifestyle & Symptom | ⬜ | [09-lifestyle-symptoms.md](09-lifestyle-symptoms.md) |
 | 10 | Environmental Health | ⬜ | [10-environmental.md](10-environmental.md) |
 | 11 | Care Navigation | ⬜ | [11-care-navigation.md](11-care-navigation.md) |
-| 12 | Personal Data Governance | 🟡 | [12-data-governance.md](12-data-governance.md) |
+| 12 | Personal Data Governance | 🟢 | [12-data-governance.md](12-data-governance.md) |
 
 ## Code layout (backend)
 

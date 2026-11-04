@@ -106,20 +106,20 @@ func TestSyncIsIdempotentAndReportsRejectedReadings(t *testing.T) {
 	id := f.device(watch)
 	path := "/profiles/" + f.profile + "/devices/" + id + "/readings"
 	body := batch(
-		reading("heart_rate", 72, "bpm", at(0, 8), "a1"),
-		reading("body_temperature", 98.6, "°F", at(0, 9), "a2"),
-		reading("heart_rate", 900, "bpm", at(0, 10), "a3"),
-		reading("heart_rate", 70, "mmHg", at(0, 11), "a4"),
-		reading("mystery", 1, "x", at(0, 12), "a5"),
+		reading("heart_rate", 72, "bpm", at(1, 8), "a1"),
+		reading("body_temperature", 98.6, "°F", at(1, 9), "a2"),
+		reading("heart_rate", 900, "bpm", at(1, 10), "a3"),
+		reading("heart_rate", 70, "mmHg", at(1, 11), "a4"),
+		reading("mystery", 1, "x", at(1, 12), "a5"),
 		reading("heart_rate", 70, "bpm", time.Now().UTC().Add(2*time.Hour).Format(time.RFC3339), "a6"),
-		`{"metric":"heart_rate","unit":"bpm","measured_at":"`+at(0, 7)+`"}`,
+		`{"metric":"heart_rate","unit":"bpm","measured_at":"`+at(1, 7)+`"}`,
 	)
 	code, out := f.do("POST", path, body)
 	res := data(out)
 	if code != 200 || res["accepted"].(float64) != 2 || res["rejected"].(float64) != 5 || len(res["errors"].([]any)) != 5 {
 		t.Fatalf("first sync: %d %v", code, out)
 	}
-	code, out = f.do("POST", path, batch(reading("heart_rate", 72, "bpm", at(0, 8), "a1"), reading("heart_rate", 80, "bpm", at(0, 13), "a7")))
+	code, out = f.do("POST", path, batch(reading("heart_rate", 72, "bpm", at(1, 8), "a1"), reading("heart_rate", 80, "bpm", at(1, 13), "a7")))
 	if res = data(out); code != 200 || res["accepted"].(float64) != 1 || res["duplicates"].(float64) != 1 {
 		t.Fatalf("re-sync: %d %v", code, out)
 	}
@@ -231,7 +231,7 @@ func TestSummaryDailySeriesAndListing(t *testing.T) {
 	f := newFixture(t, true)
 	id := f.device(watch)
 	var rs []string
-	for d := 0; d < 5; d++ {
+	for d := 1; d <= 5; d++ {
 		rs = append(rs, reading("resting_heart_rate", 64, "bpm", at(d, 8), fmt.Sprint("n", d)), reading("steps", 4000, "count", at(d, 10), fmt.Sprint("s", d)), reading("steps", 3000, "count", at(d, 16), fmt.Sprint("t", d)))
 	}
 	for d := 0; d < 5; d++ {

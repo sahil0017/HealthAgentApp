@@ -13,6 +13,7 @@ The full contract is `backend/openapi.yaml`. Routes are grouped by module.
 | Command centre | `/profiles/{id}/overview`, `/timeline`, `/history`, `/goals`, `/follow-ups` |
 | Devices | `/profiles/{id}/devices`, `/device-readings`, `.../lab-comparison` |
 | Knowledge (admin) | `/knowledge/entries`, `/knowledge/research`, `.../approve`, `.../reject` |
-| Governance | `/profiles/{id}/export`, `/access-history`, `DELETE /profiles/{id}` |
+| Research | `/profiles/{id}/investigations`, `.../items`, `.../refresh` |
+| Governance | `/profiles/{id}/export`, `/access-history`, `/retention`, `/shares`, `/shared-with-me`, `DELETE /profiles/{id}` |
 
 Notes: document search needs a `q` of 2 to 200 characters; observations are created and then verified; list endpoints return plain arrays except questions.
