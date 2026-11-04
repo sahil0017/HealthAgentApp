@@ -1,5 +1,7 @@
-import 'dart:io' show Platform;
 import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -107,7 +109,8 @@ const _types = <HealthDataType, (String, String)>{
 class PhoneHealth implements HealthSource {
   final _h = Health();
   @override
-  String get sourceName => Platform.isIOS ? 'healthkit' : 'import';
+  String get sourceName =>
+      defaultTargetPlatform == TargetPlatform.iOS ? 'healthkit' : 'import';
 
   @override
   Future<bool> authorize() async {

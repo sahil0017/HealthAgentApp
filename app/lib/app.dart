@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +18,9 @@ const baseUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:8080',
 );
 
-String clientLabel() => kIsWeb ? 'web' : (Platform.isIOS ? 'ios' : 'android');
+String clientLabel() => kIsWeb
+    ? 'web'
+    : (defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android');
 
 ApiClient buildApi() => ApiClient(
   baseUrl: baseUrl,

@@ -11,6 +11,8 @@ import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
 import 'package:sehat/features/more.dart';
+import 'package:sehat/features/places.dart';
+import 'package:sehat/features/plan.dart';
 
 class _FakeLocation implements LocationSource {
   @override
@@ -140,5 +142,62 @@ void main() {
     await t.pumpAndSettle();
     expect(approved, isTrue);
     expect(find.text('Nothing to approve'), findsOneWidget);
+  });
+
+  testWidgets('a goal is created for a chosen biomarker', (t) async {
+    Map? body;
+    final api = _api((r) {
+      if (r.url.path.endsWith('/biomarkers/summary')) {
+        return _json([
+          {'biomarker_code': 'HBA1C', 'display_name': 'HbA1c', 'unit': '%'},
+        ]);
+      }
+      if (r.url.path.endsWith('/goals') && r.method == 'POST') {
+        body = jsonDecode(r.body) as Map;
+        return _json({'id': 'g1'}, 201);
+      }
+      return _json([]);
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const GoalForm()));
+    await t.pumpAndSettle();
+    await t.tap(find.byType(DropdownButtonFormField<Json>));
+    await t.pumpAndSettle();
+    await t.tap(find.text('HbA1c (%)').last);
+    await t.pumpAndSettle();
+    await t.enterText(find.widgetWithText(TextField, 'At most'), '5.7');
+    await t.tap(find.text('Save goal'));
+    await t.pumpAndSettle();
+    expect(body?['biomarker_code'], 'HBA1C');
+    expect(body?['target_max'], 5.7);
+    expect(body?.containsKey('target_min'), isFalse);
+  });
+
+  testWidgets('emergency shows the local number and medical id', (t) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/history')) {
+        return _json([
+          {'kind': 'allergy', 'title': 'Penicillin', 'status': 'active'},
+        ]);
+      }
+      if (r.url.path.endsWith('/nearby/hospitals')) {
+        return _json({
+          'hospitals': [
+            {
+              'name': 'City ER',
+              'distance_km': 2.4,
+              'emergency': true,
+              'lat': 1,
+              'lng': 1,
+            },
+          ],
+        });
+      }
+      return _json({'blood_group': 'O+'});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const EmergencyScreen()));
+    await t.pumpAndSettle();
+    expect(find.textContaining('Call ambulance (112)'), findsOneWidget);
+    expect(find.textContaining('Penicillin'), findsOneWidget);
+    expect(find.textContaining('O+'), findsOneWidget);
   });
 }

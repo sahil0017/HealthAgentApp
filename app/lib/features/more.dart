@@ -6,6 +6,8 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'nearby.dart';
+import 'places.dart';
+import 'plan.dart';
 import 'records.dart';
 
 class MoreTab extends ConsumerWidget {
@@ -21,6 +23,36 @@ class MoreTab extends ConsumerWidget {
         'Nearby care',
         'Your area, doctors, alerts',
         const NearbyScreen(),
+      ),
+      (
+        Icons.newspaper,
+        'Health news',
+        'Official outbreak alerts',
+        const HealthNewsScreen(),
+      ),
+      (
+        Icons.medical_services_outlined,
+        'Doctors',
+        'Registry-verified, when connected',
+        const DoctorsScreen(),
+      ),
+      (
+        Icons.map_outlined,
+        'Area map',
+        'Hospitals and alerts around you',
+        const AreaMapScreen(),
+      ),
+      (
+        Icons.emergency_outlined,
+        'Emergency',
+        'Call, nearest ER, medical ID',
+        const EmergencyScreen(),
+      ),
+      (
+        Icons.checklist,
+        'Care plan',
+        'Goals and follow-ups together',
+        const CarePlanScreen(),
       ),
       (
         Icons.self_improvement,
@@ -566,115 +598,6 @@ class TimelineScreen extends ConsumerWidget {
                           '${i['detail']}',
                           style: const TextStyle(fontSize: 11, color: Pal.mut),
                         ),
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class GoalsScreen extends ConsumerWidget {
-  const GoalsScreen({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final g = ref.watch(profileListProvider('/goals'));
-    return _Page(
-      'Goals',
-      AsyncBody<List<Json>>(
-        g,
-        onRetry: () => ref.invalidate(profileListProvider('/goals')),
-        builder: (list) {
-          if (list.isEmpty)
-            return const Empty(
-              Icons.flag_outlined,
-              'No goals yet',
-              body: 'Goals set from your records will show here.',
-            );
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              for (final x in list)
-                SCard(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${x['title']}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              'Target ${fmtNum(numOf(x['target_min']))}–${fmtNum(numOf(x['target_max']))} ${x['unit'] ?? ''}',
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: Pal.mut,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Pill('${x['status']}'),
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class InvestigationsScreen extends ConsumerWidget {
-  const InvestigationsScreen({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final g = ref.watch(profileListProvider('/investigations'));
-    return _Page(
-      'Investigations',
-      AsyncBody<List<Json>>(
-        g,
-        onRetry: () => ref.invalidate(profileListProvider('/investigations')),
-        builder: (list) {
-          if (list.isEmpty)
-            return const Empty(
-              Icons.travel_explore,
-              'No investigations',
-              body: 'Track a health question and its sources over time.',
-            );
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              for (final x in list)
-                SCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${x['title']}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${x['question']}',
-                        style: const TextStyle(fontSize: 11, color: Pal.mut),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${x['source_count']} sources · ${x['note_count']} notes',
-                        style: const TextStyle(fontSize: 10, color: Pal.mut),
-                      ),
                     ],
                   ),
                 ),

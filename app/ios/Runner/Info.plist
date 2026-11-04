@@ -66,5 +66,22 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Sehat uses the camera to scan medical reports.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sehat reads photos you choose to add reports to your vault.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sehat uses your approximate location to show alerts and hospitals near you. Your exact position is never sent.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Sehat uses Face ID to keep your health records locked.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Sehat reads steps, heart rate, sleep and weight from Health to show your trends.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Sehat does not write to Health.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>https</string>
+	</array>
 </dict>
 </plist>

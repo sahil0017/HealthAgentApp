@@ -7,7 +7,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 
-final _alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
+final alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
   (ref, country) => ref
       .read(apiProvider)
       .list(
@@ -16,7 +16,7 @@ final _alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
       ),
 );
 
-final _hospitalsProvider = FutureProvider.autoDispose.family<List<Json>, Area>(
+final hospitalsProvider = FutureProvider.autoDispose.family<List<Json>, Area>(
   (ref, a) => ref
       .read(apiProvider)
       .list(
@@ -36,15 +36,15 @@ class NearbyResults extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final country = area.country ?? '';
-    final alerts = ref.watch(_alertsProvider(country));
-    final hospitals = ref.watch(_hospitalsProvider(area));
+    final alerts = ref.watch(alertsProvider(country));
+    final hospitals = ref.watch(hospitalsProvider(area));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionTitle('Outbreak alerts'),
         _Section<List<Json>>(
           alerts,
-          () => ref.invalidate(_alertsProvider(country)),
+          () => ref.invalidate(alertsProvider(country)),
           (l) => l.isEmpty
               ? const Text('No alerts right now.', style: _small)
               : Column(
@@ -88,7 +88,7 @@ class NearbyResults extends ConsumerWidget {
         const SectionTitle('Hospitals near you'),
         _Section<List<Json>>(
           hospitals,
-          () => ref.invalidate(_hospitalsProvider(area)),
+          () => ref.invalidate(hospitalsProvider(area)),
           (l) => l.isEmpty
               ? const Text(
                   'No hospitals found within 15 km in OpenStreetMap.',
