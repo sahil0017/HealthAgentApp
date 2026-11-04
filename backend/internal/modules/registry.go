@@ -7,6 +7,7 @@ import (
 	"cortex/backend/internal/modules/biomarkers"
 	"cortex/backend/internal/modules/commandcentre"
 	"cortex/backend/internal/modules/devices"
+	"cortex/backend/internal/modules/environment"
 	"cortex/backend/internal/modules/governance"
 	"cortex/backend/internal/modules/healthai"
 	"cortex/backend/internal/modules/identity"
@@ -32,5 +33,6 @@ func All(c *core.Core) []module.Module {
 		lifestyle.New(c),
 		nearby.New(c),
 		agent.New(c),
+		environment.New(c),
 	}
 }

@@ -783,6 +783,19 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid parameter }
+  /environment/now:
+    get:
+      summary: Live air quality and weather for an area from Open-Meteo, with the nearest OpenAQ station when configured
+      description: Query `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored). Returns current US AQI, PM2.5, PM10, ozone, NO2, UV, temperature, humidity and wind, an AQI category with general advice, and `station` readings if `CORTEX_OPENAQ_API_KEY` is set. Either upstream may be missing from the answer if it fails.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid area }
+        '502': { description: Both sources unavailable }
+  /environment/sources:
+    get:
+      summary: Data sources behind the environment screens and whether each is available
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /nearby/places:
     get:
       summary: Doctors, clinics, pharmacies or labs near an area from OpenStreetMap, nearest first

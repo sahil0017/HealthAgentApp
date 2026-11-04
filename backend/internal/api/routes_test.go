@@ -37,6 +37,8 @@ var expectedRoutes = []string{
 	"GET /documents/{documentID}/extraction/pages",
 	"GET /documents/{documentID}/history",
 	"GET /documents/{documentID}/versions",
+	"GET /environment/now",
+	"GET /environment/sources",
 	"GET /knowledge/entries",
 	"GET /lifestyle-categories",
 	"GET /nearby/alerts",
