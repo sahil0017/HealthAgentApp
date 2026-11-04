@@ -84,7 +84,7 @@ Screen plan: [`design/screens.html`](../design/screens.html) (46 dark-theme scre
 - [ ] Loading, empty and offline states on every screen
 - [ ] Phone hardware behind interfaces: camera, files, location, HealthKit and Health Connect, biometrics
 - [ ] Widget tests and `flutter analyze` in CI; `integration_test` on a real phone
-- [ ] Remove `web/` and `ios/` once the Flutter app reaches parity
+- [x] Removed `web/` and `ios/`; CI now runs the Flutter analyze and test job
 
 ## M9a. Intelligence UX
 
@@ -202,7 +202,7 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 - [x] Vitest and Testing Library tests, `web-test` CI job, Dockerfile and `web` compose profile
 - [ ] Goals, history entries, biomarker compare and manual entry screens
 - [ ] Knowledge review queue (admin)
-- [ ] Add the web app to the e2e workflow (Playwright against the compose stack)
+- [x] Superseded: the web app was removed
 
 ## M19. Agent experience
 

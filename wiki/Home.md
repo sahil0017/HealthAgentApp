@@ -11,7 +11,6 @@ Sehat is a direct-to-consumer personal health records platform. People upload th
 - [Modules and Status](Modules-and-Status): what each module does and how complete it is
 - [Authentication](Authentication): Google and Apple sign-in, sessions and devices
 - [API Overview](API-Overview): endpoint groups
-- [Web App](Web-App): the React app and its UI test suite
 - [Security and Privacy](Security-and-Privacy)
 - [Testing and CI](Testing-and-CI): the single `ci.yml` pipeline
 - [Configuration](Configuration): environment variables
@@ -22,4 +21,4 @@ Sehat is a direct-to-consumer personal health records platform. People upload th
 - The Go API is the only authorization and data boundary. The Python AI service never touches the health database.
 - Extracted values are candidates until a person approves them.
 - No clinical data is hard-coded; reference knowledge is learned, reviewed and approved.
-- Web and iOS behave the same.
+- One Flutter app serves iPhone and Android.

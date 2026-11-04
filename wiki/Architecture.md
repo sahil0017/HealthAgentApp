@@ -7,8 +7,7 @@
 | `cortex-ai/` | Python, FastAPI, LangGraph | Extraction, retrieval, ranking, answer generation, safety checks, research agent |
 | Database | PostgreSQL + pgvector | Records, consents, embeddings, learned knowledge |
 | Object storage | SeaweedFS | Private original documents via short-lived signed URLs |
-| `web/` | React, TypeScript, Vite | Web client |
-| `ios/` | SwiftUI | iOS client |
+| `app/` | Flutter, Dart | iOS and Android client |
 
 ## Flow: report to record
 

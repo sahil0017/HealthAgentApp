@@ -7,7 +7,7 @@
 - cortex-ai/app/ (rag, workflows/health_question.py, safety/policy.py, safety/triage.py, agents, evaluation)
 - backend/internal/modules/healthai/ (ask.go, history.go, records.go, research.go, mcp.go)
 - backend/internal/store/migrations/014_health_questions.sql
-- ios/CortexApp/HealthAI.swift (answer, history, feedback), ask section in CortexApp.swift
+- app/lib/features/agent_screens.dart and the Ask screens (answer, history, feedback)
 
 ## Done
 - [x] Semantic retrieval (BGE) over the profile's verified records, reranking, approved-research retrieval cited as `[R#]` with PubMed ids

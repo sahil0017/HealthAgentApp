@@ -21,7 +21,7 @@ CORTEX is a research-capable personal health platform. It is not designed as an 
 ```mermaid
 flowchart LR
     Person[Person]
-    iOS[CORTEX iOS app<br/>SwiftUI]
+    iOS[Sehat app<br/>Flutter]
     API[Go API<br/>identity, consent, domain policy]
     Worker[Go document worker]
     AI[Python AI service<br/>extraction and workflows]

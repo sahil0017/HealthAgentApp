@@ -6,8 +6,7 @@
 ## Code
 - Backend: `backend/internal/modules/lifestyle/` (symptoms, logs, correlations), pure rules in `backend/internal/domain/lifestyle/`
 - Schema: `backend/internal/store/migrations/018_lifestyle_symptoms.sql` (`symptom_entries`, `lifestyle_logs`)
-- Web: `web/src/screens/Lifestyle.tsx` (Lifestyle tab)
-- iOS: `ios/CortexApp/LifestyleSymptoms.swift` (menu: Lifestyle & symptoms)
+- App: Lifestyle screen with Patterns (correlation, not cause) in `app/lib/features/`
 - Tests: `modules/lifestyle/lifestyle_test.go`, `domain/lifestyle/lifestyle_test.go`, `e2e/test_lifestyle.py`, module 09 step in `scripts/ci-smoke.py`
 
 ## Done

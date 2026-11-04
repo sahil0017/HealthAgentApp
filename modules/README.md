@@ -16,9 +16,13 @@ Status: ✅ done · 🟡 partial · ⬜ not started
 | 07 | CORTEX Personal Health AI | 🟢 | [07-health-ai.md](07-health-ai.md) |
 | 08 | Agentic Health Research | 🟢 | [08-health-research.md](08-health-research.md) |
 | 09 | Lifestyle & Symptom | 🟢 | [09-lifestyle-symptoms.md](09-lifestyle-symptoms.md) |
-| 10 | Environmental Health | ⬜ | [10-environmental.md](10-environmental.md) |
-| 11 | Care Navigation | ⬜ | [11-care-navigation.md](11-care-navigation.md) |
+| 10 | Environmental Health | 🟢 | [10-environmental.md](10-environmental.md) |
+| 11 | Care Navigation | 🟡 | [11-care-navigation.md](11-care-navigation.md) |
 | 12 | Personal Data Governance | 🟢 | [12-data-governance.md](12-data-governance.md) |
+| 19 | Agent (care plan, visit prep) | 🟢 | backend `modules/agent` |
+| 20 | Nearby (WHO alerts, places) | 🟢 | backend `modules/nearby` |
+| 21 | Environment (Open-Meteo, OpenAQ) | 🟢 | backend `modules/environment` |
+| 22 | Medications (RxNorm, openFDA; US catalogue) | 🟢 | backend `modules/medications` |
 
 ## Code layout (backend)
 
@@ -44,6 +48,10 @@ backend/internal/
 | `modules/governance` | 12 (consent, export, delete, access history) |
 | `modules/devices` | 05 |
 | `modules/lifestyle` | 09 (symptom journal, lifestyle logs, correlations) |
+| `modules/agent` | 19 |
+| `modules/nearby` | 20 (also 11) |
+| `modules/environment` | 21 (also 10) |
+| `modules/medications` | 22 |
 
 Rules, enforced by `internal/archtest`:
 - A module imports only `platform`, `domain` and `repo`, never another module or `api`.

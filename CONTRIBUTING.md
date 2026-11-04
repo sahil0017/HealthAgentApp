@@ -16,10 +16,10 @@ Run the relevant checks for the areas you changed:
 ```sh
 (cd backend && go test ./...)
 (cd cortex-ai && python -m pytest)
-(cd web && npm ci && npm test && npm run build)
+(cd app && flutter analyze && flutter test)
 ```
 
-The GitHub Actions workflows also run end-to-end Docker tests and an iOS simulator build. See [`.github/workflows/`](./.github/workflows/) for the full check set.
+The GitHub Actions workflows also run end-to-end Docker tests and a Flutter analyze and test job. See [`.github/workflows/`](./.github/workflows/) for the full check set.
 
 ## Pull requests
 

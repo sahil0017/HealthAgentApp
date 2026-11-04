@@ -61,12 +61,6 @@ services:
       postgres: { condition: service_healthy }
       objectstore: { condition: service_started }
 
-  web:
-    build: ./web
-    profiles: ["web"]
-    depends_on: [api]
-    ports: ["5173:80"]
-
   cortex-ai:
     build:
       context: ./cortex-ai

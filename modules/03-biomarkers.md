@@ -8,7 +8,7 @@
 - backend/internal/domain/biomarker/ (trend, ranges, units, cadence, panels: pure logic)
 - backend/internal/repo/observations/ (shared reads), backend/internal/modules/research/knowledge.go (review of learned entries)
 - backend/internal/knowledge/, migrations 011-013
-- ios/CortexApp/BiomarkerInsights.swift
+- app/lib/features/health.dart
 
 ## Done
 - [x] Observations: manual entry, list, verify, correct (revision history)

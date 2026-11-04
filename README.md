@@ -1,18 +1,12 @@
-<p align="center">
-  <img src="./docs/assets/cortex-app-preview.svg" width="100%" alt="Sehat dark product showcase with a preview of the iOS app for consent, report review, approved health values, and questions." />
-</p>
-
 <div align="center">
 
 ![CI](https://github.com/sahil0017/HealthAgentApp/actions/workflows/ci.yml/badge.svg?branch=main)
-![SwiftUI](https://img.shields.io/badge/iOS-SwiftUI-147EFB?logo=swift&logoColor=white)
+![Flutter](https://img.shields.io/badge/App-Flutter-02569B?logo=flutter&logoColor=white)
 ![Go](https://img.shields.io/badge/API-Go-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/AI-FastAPI-009688?logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/Data-PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
 
 </div>
-
-<p align="center"><sub>Illustrative interface preview · not a screenshot of a released app</sub></p>
 
 > **Prototype:** Sehat is a local-development project, not a production medical product. It does not diagnose or prescribe, and its development authentication is not suitable for shared or production deployments.
 
@@ -25,25 +19,13 @@
 | **Understand** | Ask questions using approved records and retrieved research sources. |
 | **Stay in control** | Manage data permissions; keep original reports in private object storage. |
 
-### Complete architecture, modules 01–12
+### Architecture, modules 01–22
 
-<p align="center">
-  <img src="./docs/assets/cortex-architecture-12-modules.svg" alt="Animated Sehat architecture: iOS app, Go API with modules 01 to 12 and shared platform, PostgreSQL with pgvector, object storage, Go worker, Python AI service, external sources and CI" width="100%">
-</p>
-
-Solid green modules are shipped (01, 02, 03, 05, 07, 08, 12) and dashed are planned (04, 06, 09, 10, 11). Status lives in [`modules/README.md`](./modules/README.md).
-
-### The report-to-record flow
-
-<p align="center">
-  <img src="./docs/assets/cortex-workflow.svg" alt="Animated Sehat technical workflow: report upload to reviewed record, and question to cited answer with emergency triage" width="100%">
-</p>
-
-Text version of the same flow:
+Status per module lives in [`modules/README.md`](./modules/README.md).
 
 ```mermaid
 flowchart LR
-    A["iOS app"] -->|"consent + signed upload"| B["Go API"]
+    A["Flutter app (iOS + Android)"] -->|"consent + signed upload"| B["Go API"]
     B --> C[("PostgreSQL + pgvector")]
     B --> D[("Private object storage")]
     C --> E["Go worker"]
@@ -64,21 +46,14 @@ The Go service is the authorization and data-access boundary. Python receives on
 
 ## Features in this build
 
-### Web app (React + TypeScript)
+### Flutter app (iOS + Android)
 
-- `web/` is a Vite app that mirrors the iOS screens: Today, Vault, Biomarkers (with trend chart), Ask AI, Timeline and the Privacy centre.
-- The same screens and design tokens serve desktop and mobile; only the navigation placement changes (sidebar at 900px and wider, bottom tab bar below).
-- Run it with `cd web && npm install && npm run dev` (proxies `/api` to `http://localhost:8080`; override with `CORTEX_API_URL`), test with `npm test`.
-- `docker compose --profile web up -d --build web` serves the production build on <http://localhost:5173>.
-
-### iOS app
-
-- SwiftUI profile setup and local API connection.
-- Separate permissions for report storage and document processing.
-- PDF, JPEG, and PNG uploads through short-lived signed URLs.
-- Report list, preview, candidate editing, and explicit approval.
-- Approved health-value list and question interface with confidence badges, suggested follow-ups, emergency banner, past questions, and helpful/not-helpful feedback.
-- Session token stored in Keychain; uploaded files are SHA-256 hashed.
+- `app/` is one Flutter codebase for iPhone and Android, covering the 46-screen design in `design/screens.html`.
+- Real Google / Apple sign-in, Face ID / biometric app lock, skeleton loading and an offline banner.
+- Today, Vault (scan or upload, review with evidence, approve), Health (biomarkers, Vitals, phone health data), Ask AI with cited answers, Lifestyle with patterns (correlation, not cause), care plan, visit prep and summary (PDF export), Privacy centre.
+- Nearby care and alerts using GPS (approximate by default; precise only for directions and sharing, never sent to Sehat), emergency contacts and offline Medical ID.
+- Air and weather, and medicine look-up screens.
+- Run it with `cd app && flutter pub get && flutter run` on a connected phone; test with `flutter analyze && flutter test`.
 
 ### API and data services
 
@@ -90,6 +65,18 @@ The Go service is the authorization and data-access boundary. Python receives on
 - Hybrid record retrieval using PostgreSQL full-text search and pgvector.
 - Read-only MCP tools with short-lived profile-scoped HMAC tokens.
 - OpenAPI contract, request IDs, bounded requests, and health/readiness endpoints.
+
+### Live data and third-party sources
+
+| Source | Used for | Notes |
+|---|---|---|
+| WHO, Overpass (OSM) | Nearby alerts, hospitals and pharmacies | Public, no key |
+| Open-Meteo | Air quality and weather | Public, no key |
+| OpenAQ | Nearest air-quality station | Needs `CORTEX_OPENAQ_API_KEY` |
+| RxNorm (RxNav), openFDA | Medicine search and label text | US catalogue, not an Indian brand list; answers say so |
+| PubMed, Europe PMC, ClinicalTrials.gov | Research agent | Proposals wait for admin approval |
+
+Wearables (Oura, Withings, Google Health), ABDM and FHIR need developer credentials and onboarding and are not connected yet.
 
 ### AI and research
 
@@ -105,7 +92,7 @@ The Go service is the authorization and data-access boundary. Python receives on
 
 | Layer | Technology | Responsibility |
 |---|---|---|
-| Client | Swift, SwiftUI | Consent, reports, review, approved values, questions |
+| Client | Flutter, Dart, Riverpod | iOS and Android app: consent, reports, review, values, questions, nearby care |
 | API | Go, Chi | Identity boundary, authorization, consent, health data |
 | Worker | Go | Queued document processing, retries, research tasks |
 | AI service | Python, FastAPI, LangGraph | Extraction, bounded workflows, embeddings, retrieval |
@@ -119,31 +106,31 @@ The Go service is the authorization and data-access boundary. Python receives on
 - Original reports stay in private object storage. External research lookups use public terms, not uploaded report text.
 - Extracted values require human approval before they become health observations.
 - Local development authentication must be replaced with a verified identity provider before any shared deployment.
-- HealthKit/device sync, camera analysis, medical imaging, and scanned-document OCR are not implemented.
+- Wearable sync, camera analysis, medical imaging, ABDM and FHIR are not connected yet.
 - Sehat is an educational prototype and does not provide diagnosis or treatment advice.
 
 ## Run locally
 
-**Requirements:** Docker Compose, Go 1.22+, Python 3.11+, and Xcode 15+ for the iOS app.
+**Requirements:** Docker Compose, Go 1.22+, Python 3.11+, and Flutter 3.x (with Xcode for iPhone or the Android SDK for Android).
 
 1. Generate local secrets: `scripts/bootstrap-env`
 2. Start the services: `docker compose up --build`
 3. Check `http://localhost:8080/healthz` and `http://localhost:8080/readyz`.
-4. Open [`ios/CortexApp.xcodeproj`](./ios/CortexApp.xcodeproj) in Xcode and run the `CortexApp` scheme in a simulator.
+4. Run the app: `cd app && flutter run` on a connected phone.
 5. Set `CORTEX_GOOGLE_CLIENT_IDS` / `CORTEX_APPLE_CLIENT_IDS` in `.env`, then sign in with Google or Apple (see `backend/README.md`, Authentication).
 6. Create a profile, grant report-storage and processing consent, upload a text-based PDF, review its candidates, and ask a question.
 
-For a physical iOS device, set `S3_PUBLIC_ENDPOINT` to an address reachable from the device. Do not expose the development stack as a production service.
+For a physical phone, set `S3_PUBLIC_ENDPOINT` to an address reachable from the device. Do not expose the development stack as a production service.
 
 ## Project structure
 
 - [`backend/`](./backend/) — Go API, worker, OpenAPI contract, and migrations.
 - [`cortex-ai/`](./cortex-ai/) — FastAPI service, workflows, retrieval, safety checks, and tests.
-- [`ios/`](./ios/) — SwiftUI iOS client.
-- [`docs/assets/cortex-architecture-12-modules.svg`](./docs/assets/cortex-architecture-12-modules.svg) — animated architecture for all 12 modules.
+- [`app/`](./app/) — Flutter client for iOS and Android.
+- [`design/screens.html`](./design/screens.html) — the 46-screen design.
 - [`e2e/`](./e2e/) — end-to-end tests against the Docker stack.
 - [`docs/assets/cortex-workflow.svg`](./docs/assets/cortex-workflow.svg) — animated technical workflow.
-- [`.github/workflows/`](./.github/workflows/) — parallel CI (Go matrix, Python, Docker builds, integration, iOS build) and nightly regression.
+- [`.github/workflows/`](./.github/workflows/) — parallel CI (Go matrix, Python, Docker builds, Flutter analyze and tests, end-to-end) and nightly regression.
 - [`infra/`](./infra/) — local database initialization.
 - [`architecture/full-architecture.md`](./architecture/full-architecture.md) — system architecture, boundaries, and roadmap.
 - [`architecture/milestones.md`](./architecture/milestones.md) — end-to-end milestone checklist and current status.

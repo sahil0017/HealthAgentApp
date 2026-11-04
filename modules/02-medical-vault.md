@@ -17,7 +17,7 @@
 - [x] Document change history — `GET /documents/{id}/history`, `api/document_history.go`
 - [x] Type-suggestion audit event; edits audit old and new values
 - [x] OpenAPI contract updated
-- [x] iOS: search all reports, document detail (edit, versions, pages, history) — `ios/CortexApp/DocumentVault.swift`
+- [x] App: search, document detail, review with evidence — `app/lib/features/vault.dart`
 - [x] Derived embeddings are deleted with their document (tested)
 
 ## Remaining gaps (verification, not features)

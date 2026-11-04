@@ -7,14 +7,12 @@ All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run in paralle
 | backend-static | gofmt, `go mod tidy`, vet, build, architecture rules |
 | backend-test | Go tests, one job per module, each with its own Postgres |
 | ai-test | Python tests for `cortex-ai` |
-| web-test | Typecheck, unit tests, production build |
+| app-test | Flutter format, analyze and widget tests |
 | docker-build | api, worker and cortex-ai images build |
 | docker-integration | Full-stack smoke test |
-| e2e | Pytest end-to-end suite with 90% coverage thresholds, then the Playwright browser suite |
-| ios-build | Unsigned simulator build |
+| e2e | Pytest end-to-end suite with 90% coverage thresholds,  |
 | flaky-check | Nightly or `full=true`: repeated shuffled Go runs |
 | gate | Green only if all of the above pass |
-| ios-publish | On `main`: publishes the simulator build to Appetize |
 | wiki-sync | On `main`: publishes the `wiki/` folder to the GitHub wiki |
 
 Nightly (02:00 IST) and `workflow_dispatch` with `full=true` add the race detector and the real embedding model. Dispatch also accepts `go_min` and `py_min` coverage thresholds.

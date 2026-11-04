@@ -1,12 +1,12 @@
-# The single pipeline. Static, unit, package, e2e and iOS jobs all start at once and run in parallel;
+# The single pipeline. Static, unit, package and e2e jobs all start at once and run in parallel;
 # only real dependencies are chained (e2e reuses the images built once by docker-build, deploy waits for the gate).
 # A new push cancels the superseded run, and the `gate` job is the one required check.
 # Every pull request must pass the `gate` job before merging:
-#   static checks, Go tests per module, Python tests, web unit tests, Docker image builds, a full-stack smoke test,
-#   the end-to-end suite with enforced 90% coverage plus the browser UI suite (desktop and phone sizes), and the iOS build.
+#   static checks, Go tests per module, Python tests, Flutter analyze and tests, Docker image builds, a full-stack smoke test,
+#   and the end-to-end suite with enforced coverage.
 # Every job always runs (no path filtering) and runs in parallel.
 # Nightly (and on demand with full=true) it also runs the race detector, the real embedding model and a flaky-test check.
-# On main it publishes the iOS simulator build to Appetize.
+# On main it also publishes wiki/ to the GitHub wiki.
 name: ci
 
 on:
@@ -120,21 +120,20 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pytest -q
 
-  web-test:
-    name: unit · web (typecheck, test, build)
+  app-test:
+    name: unit · Flutter app (analyze, test)
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: web } }
+    defaults: { run: { working-directory: app } }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
 
   # Each image is built once here (instrumented for coverage, which is harmless at runtime) and handed to the e2e job as an
   # artifact, so nothing downstream rebuilds it. A failed build cancels the run immediately.
@@ -191,21 +190,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
-  ios-build:
-    name: integrate · swift-build / iOS app
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build unsigned simulator app
-        working-directory: ios
-        run: |
-          xcodebuild -project CortexApp.xcodeproj -target CortexApp \
-            -sdk iphonesimulator -configuration Debug \
-            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build" build
-
   e2e:
-    name: integrate · e2e / full stack, browser UI and coverage
+    name: integrate · e2e / full stack and coverage
     needs: [docker-build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -224,11 +210,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       - name: Generate local secrets
         run: |
@@ -270,14 +251,6 @@ jobs:
           set -a; . ./.env; set +a
           cd e2e && python -m pytest -v --junitxml=../.cover/e2e-junit.xml
 
-      - name: Run the web UI suite in a browser (desktop and phone sizes)
-        working-directory: web
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-          npm run build
-          npx playwright test
-
       - name: Stop containers so coverage is flushed
         if: always()
         run: $COMPOSE stop -t 40 api worker cortex-ai
@@ -296,7 +269,6 @@ jobs:
           path: |
             .cover/out
             .cover/e2e-junit.xml
-            web/test-results
           if-no-files-found: ignore
 
       - name: Tear down
@@ -333,7 +305,7 @@ jobs:
   gate:
     name: gate · required check
     if: always()
-    needs: [backend-static, backend-test, ai-test, web-test, docker-build, e2e, ios-build]
+    needs: [backend-static, backend-test, ai-test, app-test, docker-build, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Summarize and require every job to succeed
@@ -343,10 +315,9 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
-          labels = {"backend-static": "Go static checks", "backend-test": "Go tests (all modules)", "ai-test": "Python tests", "web-test": "React web app",
+          labels = {"backend-static": "Go static checks", "backend-test": "Go tests (all modules)", "ai-test": "Python tests", "app-test": "Flutter app (analyze, tests)",
                     "docker-build": "Docker images (api, worker, cortex-ai)",
-                    "e2e": "End-to-end suite, browser UI and 90% coverage",
-                    "ios-build": "Swift iOS build"}
+                    "e2e": "End-to-end suite and coverage"}
           rows = ["| Check | Result |", "|---|---|"]
           bad = False
           for k, v in needs.items():
@@ -358,40 +329,6 @@ jobs:
           open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(out + "\n")
           sys.exit(1 if bad else 0)
           PY
-
-  ios-publish:
-    name: deploy · publish iOS simulator build to Appetize
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [gate]
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build unsigned simulator app
-        working-directory: ios
-        run: |
-          xcodebuild -project CortexApp.xcodeproj -target CortexApp \
-            -sdk iphonesimulator -configuration Debug \
-            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO SYMROOT="$PWD/build" build
-          cd build/Debug-iphonesimulator && zip -qr ../../CortexApp-simulator.zip CortexApp.app
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: CortexApp-simulator
-          path: ios/CortexApp-simulator.zip
-
-      - name: Upload to Appetize
-        env:
-          APPETIZE_TOKEN: ${{ secrets.APPETIZE_TOKEN }}
-          APPETIZE_PUBLIC_KEY: ${{ vars.APPETIZE_PUBLIC_KEY }}
-        run: |
-          if [ -z "$APPETIZE_TOKEN" ]; then echo "APPETIZE_TOKEN not set; skipping"; exit 0; fi
-          url="https://api.appetize.io/v1/apps"
-          [ -n "$APPETIZE_PUBLIC_KEY" ] && url="$url/$APPETIZE_PUBLIC_KEY"
-          curl -sS --fail -u "$APPETIZE_TOKEN:" -F "file=@ios/CortexApp-simulator.zip" \
-            -F "platform=ios" "$url" | tee appetize.json
-          echo
-          echo "Set repo variable APPETIZE_PUBLIC_KEY to the publicKey above to reuse the same link."
 
   wiki-sync:
     name: wiki / publish wiki/ to the GitHub wiki

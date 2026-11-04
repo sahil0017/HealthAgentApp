@@ -6,7 +6,7 @@ Companion to [requirements.md](./requirements.md) and [full-architecture.md](./f
 
 ```mermaid
 flowchart TB
-    subgraph Client[iOS app: SwiftUI]
+    subgraph Client[Mobile app: Flutter]
         UI[Feature modules]
         HK[HealthKit]
         Vision[Vision / VisionKit on-device]
@@ -122,7 +122,7 @@ Capture is a persistent "+" action (scan, upload, add reading, log symptom, take
 
 | Layer | Technology |
 |---|---|
-| Mobile | Swift, SwiftUI |
+| Mobile | Flutter, Dart |
 | API and workers | Go 1.2x, chi router, pgx |
 | Database | PostgreSQL with pgvector (HNSW) and full-text (GIN) |
 | Object storage | SeaweedFS (S3-compatible) |

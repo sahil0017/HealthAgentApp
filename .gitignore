@@ -10,18 +10,19 @@
 .env
 .pytest_cache/
 .venv/
-DerivedData/
 __pycache__/
 models/
-ios/build/
-ios/*.zip
 .env.*
 !.env.example
 
 .cover/
 .coverage
-node_modules/
-web/dist/
 .idp/
-web/test-results/
-web/playwright-report/
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins*
+app/ios/Pods/
+app/android/.gradle/
+app/android/local.properties

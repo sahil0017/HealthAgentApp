@@ -14,15 +14,19 @@ Estimates are judgement from code size, endpoints and tests (see `architecture/m
 | governance | 8 | 80% | Consents, access history, export, profile delete |
 | commandcentre | 14 | 80% | Overview, timeline, history, goals, follow-ups |
 | devices | 11 | 65% | Devices, readings, sync log, daily aggregates, lab comparison |
+| lifestyle | n/a | 80% | Symptom journal, lifestyle logs, correlations |
+| agent | n/a | 70% | Care plan, visit prep and summary |
+| nearby | n/a | 75% | WHO alerts, hospitals and pharmacies from GPS |
+| environment | 2 | 80% | Live air quality and weather (Open-Meteo, OpenAQ) |
+| medications | 2 | 70% | RxNorm search and openFDA labels; US catalogue only |
 
 ## Clients and services
 
 | Area | Est. done |
 |---|---|
 | AI service (`cortex-ai`) | ~70% |
-| Web app | ~70% |
-| iOS app | ~45% (not compiled in CI-less environments; no unit tests) |
+| Flutter app (iOS + Android) | ~80% (12 widget tests; not yet run on a phone against the live backend) |
 
 ## Not started
 
-Imaging, lifestyle and symptoms, environmental context, care navigation, and most of observability.
+Imaging, wearable connectors, ABDM and FHIR, and most of observability.

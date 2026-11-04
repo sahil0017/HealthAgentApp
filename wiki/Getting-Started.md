@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Docker with Compose, Go (version in `backend/go.mod`), Node 22, Python 3.12. Xcode is needed only for the iOS app.
+Docker with Compose, Go (version in `backend/go.mod`), Python 3.12 and Flutter 3.x. Xcode (iPhone) or the Android SDK (Android) is needed to run the app on a phone.
 
 ## Run the stack
 
@@ -16,21 +16,20 @@ docker compose up -d --build --wait
 
 The API listens on `http://localhost:8080`.
 
-## Run the web app
+## Run the app
 
 ```bash
-cd web
-npm ci
-npm run dev        # http://localhost:5174, proxies /api to the API
+cd app
+flutter pub get
+flutter run        # on a connected iPhone or Android phone
 ```
 
-For real Google sign-in set `CORTEX_GOOGLE_CLIENT_IDS` in `.env` and add the dev origin under authorized JavaScript origins in Google Cloud.
+For real Google or Apple sign-in set `CORTEX_GOOGLE_CLIENT_IDS` / `CORTEX_APPLE_CLIENT_IDS` in `.env`.
 
 ## Run the tests
 
 ```bash
 ./scripts/verify                                   # gofmt, vet, Go and Python tests
-cd web && npm run typecheck && npm test            # web unit tests
-cd web && npx playwright test                      # browser UI suite (needs the stack)
+cd app && flutter analyze && flutter test          # app checks
 cd e2e && python -m pytest -q                      # full-stack end-to-end suite
 ```

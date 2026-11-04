@@ -7,7 +7,7 @@
 - `backend/internal/domain/device/` — 14 metrics, unit conversion, plausibility bounds, typical ranges, 7/30-day summaries and trend
 - `backend/internal/modules/devices/` — devices, batch sync, readings, daily series, summary, lab comparison
 - `backend/internal/store/migrations/016_connected_devices.sql` — `devices`, `device_readings`, `device_syncs`
-- `ios/CortexApp/ConnectedDevices.swift` — Apple Health connect and sync, summaries, lab-vs-device view
+- `app/lib/features/health.dart` — phone health data, summaries, lab-vs-device view
 - Tests: `domain/device`, `modules/devices`, `api/devices_flow_test.go`, `e2e/test_devices.py`, smoke step in `scripts/ci-smoke.py`
 
 ## Done

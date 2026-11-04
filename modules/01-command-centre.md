@@ -2,7 +2,7 @@
 
 ## Code
 - backend/internal/modules/commandcentre/, backend/internal/domain/health/, backend/internal/modules/identity/profiles.go
-- ios/CortexApp/CommandCentre.swift
+- app/lib/features/today.dart
 
 ## Done
 - [x] Unified overview: summary, changes, attention items, next follow-up, suggested follow-ups — `GET /profiles/{id}/overview`
