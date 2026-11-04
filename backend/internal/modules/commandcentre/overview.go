@@ -227,7 +227,7 @@ type TimelineItem struct {
 	OccurredAt time.Time `json:"occurred_at"`
 }
 
-var timelineKinds = []string{"document", "observation", "history", "follow_up", "goal"}
+var timelineKinds = []string{"document", "observation", "history", "follow_up", "goal", "device"}
 
 const timelineSQL = `
 WITH items AS (
@@ -236,6 +236,7 @@ WITH items AS (
   UNION ALL SELECT 'history',id::text,title,replace(kind,'_',' ')||' · '||status,COALESCE(started_on::timestamptz,created_at) FROM history_entries WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'follow_up',id::text,title,kind||' · '||status,COALESCE(due_on::timestamptz,created_at) FROM follow_ups WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'goal',id::text,title,status,created_at FROM goals WHERE profile_id=$1 AND owner_id=$2
+  UNION ALL SELECT 'device','sync-'||s.id::text,d.name,s.accepted||' readings synced',COALESCE(s.last_measured_at,s.created_at) FROM device_syncs s JOIN devices d ON d.id=s.device_id WHERE s.profile_id=$1 AND s.owner_id=$2 AND s.accepted>0
 )
 SELECT kind,id,title,detail,at FROM items WHERE (cardinality($3::text[])=0 OR kind=ANY($3)) AND ($6::text::date IS NULL OR at >= $6::text::date) AND ($7::text::date IS NULL OR at < $7::text::date + 1) ORDER BY at DESC,id LIMIT $4 OFFSET $5`
 

@@ -20,9 +20,11 @@
 - [x] Audit events carry counts only, never values; export includes devices; profile delete cascades
 - [x] iOS: HealthKit authorisation, 30-day read, batched upload, summaries, comparison
 
+- [x] Device syncs appear in the command-centre timeline (`kind=device`, counts only, never values)
+
 ## Not done
 - [ ] iOS HealthKit code is compiled by CI only and not yet run on a device
 - [ ] Bluetooth and vendor cloud APIs (Fitbit, Oura, Garmin); only Apple Health is wired
 - [ ] Background and automatic sync; sync is manual
 - [ ] Sleep and blood-pressure correlation reading in HealthKit
-- [ ] Device data in the command-centre timeline, goals and AI retrieval
+- [ ] Goals and AI retrieval stay lab-only by design: device values are unverified, so they are not mixed into verified-only goals or AI answers

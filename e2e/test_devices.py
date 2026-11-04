@@ -40,6 +40,9 @@ def test_device_lifecycle_sync_and_summary(api, profile):
     assert len(daily["days"]) >= 10
     assert api.get(f"/profiles/{profile}/device-readings/heart_rate/lab-comparison").status_code == 400
 
+    events = api.ok(api.get(f"/profiles/{profile}/timeline", params={"kind": "device"}), 200)
+    assert len(events) == 1 and events[0]["title"] == "Apple Health" and events[0]["detail"] == "12 readings synced"
+
     export = api.ok(api.get(f"/profiles/{profile}/export"), 200)
     assert len(export["device_readings"]) == 12
 
