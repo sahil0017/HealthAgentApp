@@ -28,6 +28,7 @@ func main() {
 	}
 	go knowledge.NewService(db).Run(ctx)
 	go runRetention(ctx, db)
+	go worker.NewHistoryWorker(db).Run(ctx)
 	log.Printf("CORTEX document worker started")
 	worker.NewDocumentWorker(db, objectStore).Run(ctx)
 }

@@ -25,14 +25,15 @@ type HistoryEntry struct {
 	StartedOn *string   `json:"started_on"`
 	EndedOn   *string   `json:"ended_on"`
 	Status    string    `json:"status"`
+	Source    string    `json:"source"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-const historyColumns = `id::text,kind,title,notes,started_on::text,ended_on::text,status,created_at`
+const historyColumns = `id::text,kind,title,notes,started_on::text,ended_on::text,status,source,created_at`
 
 func scanHistory(row pgx.Row) (HistoryEntry, error) {
 	var e HistoryEntry
-	err := row.Scan(&e.ID, &e.Kind, &e.Title, &e.Notes, &e.StartedOn, &e.EndedOn, &e.Status, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.Kind, &e.Title, &e.Notes, &e.StartedOn, &e.EndedOn, &e.Status, &e.Source, &e.CreatedAt)
 	return e, err
 }
 
@@ -117,7 +118,7 @@ func (m *Module) createHistory(w http.ResponseWriter, r *http.Request) {
 		status = *in.Status
 	}
 	profileID := chi.URLParam(r, "profileID")
-	e, err := scanHistory(m.DB.Pool.QueryRow(r.Context(), `INSERT INTO history_entries(owner_id,profile_id,kind,title,notes,started_on,ended_on,status) VALUES($1,$2,$3,$4,$5,$6::text::date,$7::text::date,$8) RETURNING `+historyColumns, httpx.Owner(r), profileID, *in.Kind, *in.Title, notes, started, ended, status))
+	e, err := scanHistory(m.DB.Pool.QueryRow(r.Context(), `INSERT INTO history_entries(owner_id,profile_id,kind,title,notes,started_on,ended_on,status) VALUES($1,$2,$3,$4,$5,$6::text::date,$7::text::date,$8) ON CONFLICT (profile_id, kind, (btrim(regexp_replace(lower(title),'[^a-z0-9]+',' ','g')))) DO UPDATE SET updated_at=now() RETURNING `+historyColumns, httpx.Owner(r), profileID, *in.Kind, *in.Title, notes, started, ended, status))
 	if err != nil {
 		httpx.WriteError(w, 500, "HISTORY_FAILED", "The history entry could not be saved.", nil)
 		return

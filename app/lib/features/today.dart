@@ -211,107 +211,120 @@ class _Body extends ConsumerWidget {
         const MedicinesTodayCard(),
         const HabitTrends(),
         const _KeyResults(),
-        const SectionTitle('Health record'),
-        SCard(
+        const SizedBox(height: 4),
+        IntrinsicHeight(
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Ring(value: score / 100, label: '${score.round()}%', size: 56),
-              const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${sum['documents'] ?? 0} reports · ${sum['biomarkers_tracked'] ?? 0} biomarkers tracked',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                child: SCard(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Ring(
+                            value: score / 100,
+                            label: '${score.round()}%',
+                            size: 44,
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Health record',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      missing.isEmpty
-                          ? 'Your health record is complete.'
-                          : 'Complete your record: ${missing.first['label']}',
-                      style: const TextStyle(fontSize: 11, color: Pal.mut),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        SCard(
-          onTap: () => _go(context, const CarePlanScreen()),
-          child: Row(
-            children: [
-              const Icon(Icons.checklist, color: Pal.pri, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Care plan',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      [
-                        if (goals.isEmpty)
-                          'No treatment goals yet'
-                        else
-                          '$onTrack of ${goals.length} goals on target',
-                        '${open?.length ?? sum['open_follow_ups'] ?? 0} follow-ups pending',
-                      ].join(' · '),
-                      style: const TextStyle(fontSize: 11, color: Pal.mut),
-                    ),
-                    if (next.isNotEmpty)
+                      const SizedBox(height: 6),
                       Text(
-                        'Next follow-up: ${next.first['title']} · ${next.first['due_on']}',
+                        '${sum['documents'] ?? 0} reports · ${sum['biomarkers_tracked'] ?? 0} biomarkers',
                         style: const TextStyle(fontSize: 11, color: Pal.mut),
                       ),
-                  ],
+                      Text(
+                        missing.isEmpty
+                            ? 'Record complete'
+                            : 'Next: ${missing.first['label']}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Pal.mut),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SCard(
+                  padding: const EdgeInsets.all(10),
+                  onTap: () => _go(context, const CarePlanScreen()),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.checklist, color: Pal.pri, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Care plan',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: Pal.mut, size: 18),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        goals.isEmpty
+                            ? 'No goals yet'
+                            : '$onTrack of ${goals.length} goals on target',
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                      Text(
+                        next.isNotEmpty
+                            ? 'Next: ${next.first['title']}'
+                            : '${open?.length ?? sum['open_follow_ups'] ?? 0} follow-ups pending',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         const SectionTitle('Care services'),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1.55,
+        Row(
           children: [
             _Service(
               Icons.description_outlined,
-              'Consultation Summary',
-              'Results and questions, ready for your doctor',
+              'Visit summary',
               () => _go(context, const VisitPrepScreen()),
             ),
             _Service(
               Icons.medication_outlined,
-              'Medications',
-              'Dose schedule, reminders and drug information',
+              'Medicines',
               () => _go(context, const PrescriptionsScreen()),
             ),
             _Service(
               Icons.local_hospital_outlined,
-              'Care Locator',
-              'Hospitals, doctors and emergency care near you',
+              'Care locator',
               () => _go(context, const FindCareScreen()),
             ),
             _Service(
               Icons.family_restroom,
-              'Family Profiles',
-              'Manage health for parents and children',
+              'Family',
               () => _go(context, const FamilyScreen()),
             ),
           ],
@@ -322,37 +335,40 @@ class _Body extends ConsumerWidget {
 }
 
 class _Service extends StatelessWidget {
-  const _Service(this.icon, this.title, this.body, this.onTap);
+  const _Service(this.icon, this.title, this.onTap);
   final IconData icon;
-  final String title, body;
+  final String title;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => InkWell(
-    borderRadius: BorderRadius.circular(12),
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Pal.card,
+  Widget build(BuildContext context) => Expanded(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: Pal.pri, size: 20),
-          const Spacer(),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          decoration: BoxDecoration(
+            color: Pal.card,
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(height: 2),
-          Text(
-            body,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 10.5, color: Pal.mut),
+          child: Column(
+            children: [
+              Icon(icon, color: Pal.pri, size: 22),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     ),
   );

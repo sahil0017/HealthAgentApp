@@ -279,6 +279,7 @@ async def read_prescription(image: bytes, mime: str) -> dict:
 class LabName(BaseModel):
     label: str = Field(description="The test name exactly as given in the input.")
     name: str = Field(description="Standard clinical name, e.g. 'Total Cholesterol', 'Platelet Count', 'Vitamin B12', 'ESR'.")
+    is_test: bool = Field(description="False when the label is not a measured test: reference-range wording (More than 40, Optimal, Desirable), a heading, a note or a fragment. True otherwise.")
     panel: str = Field(description="Standard panel: Complete Blood Count, Lipid Profile, Liver Function, Kidney Function, Thyroid Profile, Glycaemic Control, Vitamins, Electrolytes, Iron Studies, Hormones, Inflammation, Urine, Other.")
 
 
@@ -290,11 +291,12 @@ _STANDARDISE_SYSTEM = (
     "You map laboratory test labels printed on lab reports to their standard clinical names and panels. "
     "You receive only the labels, never values or identity. Keep abbreviations only when they are the standard name (ESR, TSH, HbA1c). "
     "Do not invent tests, do not merge different tests, and return one entry per input label. "
+    "Each label may come with the report line it was read from; use it to expand abbreviations and to spot labels that are really reference-range wording or headings (set is_test false for those). "
     "Call the submit_names tool exactly once."
 )
 
 
-async def standardise_labs(labels: list[str]) -> dict:
+async def standardise_labs(labels: list[str], context: dict[str, str] | None = None) -> dict:
     """Map raw lab-report labels to standard names and panels. Labels only; no values or identity."""
     if not configured():
         raise CopilotUnavailable("model_not_configured")
@@ -319,7 +321,9 @@ async def standardise_labs(labels: list[str]) -> dict:
     except Exception as exc:
         raise CopilotUnavailable("session_failed") from exc
     try:
-        await _send(session, "Labels:\n" + "\n".join(f"- {label}" for label in labels))
+        context = context or {}
+        lines = [f"- {label}" + (f"   [report line: {context[label][:120]}]" if context.get(label) else "") for label in labels]
+        await _send(session, "Labels:\n" + "\n".join(lines))
     finally:
         try:
             await session.disconnect()
@@ -430,7 +434,14 @@ _INSIGHT_PROMPTS = {
     ),
     "history": (
         "You read a person's lab results and list what they say about the person's medical history: conditions or risks "
-        "the results point to, and what is stable. Each item is one finding with the tests behind it. Say 'points to' or 'consistent with', never diagnose."
+        "the results point to, and what is stable. Each item is one finding with the tests behind it. Say 'points to' or 'consistent with', never diagnose. "
+        "If the facts list 'Known history', do not repeat anything already there, even worded differently, and never list the same finding twice."
+    ),
+    "visit": (
+        "You prepare a person with no medical background for a doctor visit, from their own record. The headline is one plain sentence on what "
+        "the doctor most needs to know. Give 4 to 6 items, each a plain-language point: say what a test measures in a few words instead of using jargon, "
+        "cite their own number, and say why it is worth mentioning. Use tone act for the most important, watch for things to keep an eye on, good for reassuring facts. "
+        "Never diagnose or suggest treatment."
     ),
     "upload": (
         "You summarise one uploaded medical report. The headline gives the overall picture. Items cover the weak spots "

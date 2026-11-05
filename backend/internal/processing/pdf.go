@@ -169,6 +169,12 @@ func (ix index) exact(label string) (CatalogEntry, bool) {
 
 var footnote = regexp.MustCompile(`(?i)\b(individuals|up to|certain|rhythm|usually|approximately)\b`)
 
+// rangeText matches labels that are really reference-range wording ("More than 40", "Less than 100", "Optimal"), not tests.
+var rangeText = regexp.MustCompile(`(?i)^\s*((more|less|greater|lower|higher|fewer)\s+than|above|below|up\s?to|at\s+(least|most)|optimal|desirable|borderline|ideal)\b`)
+
+// IsRangeText reports whether a label is reference-range wording rather than a test name.
+func IsRangeText(label string) bool { return rangeText.MatchString(label) }
+
 func plausibleUnit(unit string, known map[string]bool) bool {
 	return strings.ContainsAny(unit, "/%") || known[strings.ToLower(unit)]
 }
@@ -204,7 +210,7 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 			}
 			label, raw := strings.TrimSpace(match[1]), strings.TrimSpace(match[2])
 			unit := strings.ReplaceAll(strings.TrimSpace(match[3]), "μ", "µ")
-			if strings.ContainsAny(raw, "<>≤≥") || len(normalizeTerm(label)) < 2 || !plausibleUnit(unit, ix.units) {
+			if strings.ContainsAny(raw, "<>≤≥") || len(normalizeTerm(label)) < 2 || IsRangeText(label) || !plausibleUnit(unit, ix.units) {
 				continue
 			}
 			value, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
@@ -267,7 +273,7 @@ func tableRow(lines []string, i int, ix index) (Candidate, bool) {
 			break
 		}
 	}
-	if unit == "" || len(normalizeTerm(label)) < 2 || len(strings.Fields(label)) > 8 || footnote.MatchString(label) {
+	if unit == "" || len(normalizeTerm(label)) < 2 || len(strings.Fields(label)) > 8 || footnote.MatchString(label) || IsRangeText(label) {
 		return Candidate{}, false
 	}
 	if wrapped != "" {

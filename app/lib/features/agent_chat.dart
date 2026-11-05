@@ -39,8 +39,9 @@ const _modes = [
 
 class _Msg {
   _Msg.user(this.text) : user = true;
-  _Msg.agent() : user = false;
+  _Msg.agent([this.mode = 'explain']) : user = false;
   final bool user;
+  String mode = 'explain';
   String text = '';
   List<Json> steps = [];
   List<Json> actions = [];
@@ -116,7 +117,7 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
               .reversed)
         {'role': m.user ? 'user' : 'assistant', 'content': m.text},
     ];
-    final reply = _Msg.agent()..thinking = true;
+    final reply = _Msg.agent(_mode)..thinking = true;
     setState(() {
       _msgs
         ..add(_Msg.user(q))
@@ -213,6 +214,19 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
         if (r.finalResult && mounted) setState(() => _listening = false);
       },
     );
+  }
+
+  Future<void> _addStep(String step) async {
+    try {
+      await ref.read(apiProvider).post(
+        '/profiles/${ref.read(profileIdProvider)}/follow-ups',
+        {'kind': 'other', 'title': step},
+      );
+      ref.invalidate(profileMapProvider('/overview'));
+      if (mounted) toast(context, 'Added to your care plan');
+    } catch (e) {
+      if (mounted) toast(context, friendly(e));
+    }
   }
 
   Future<void> _act(Json a) async {
@@ -416,7 +430,7 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
           ),
           Expanded(
             child: _msgs.isEmpty
-                ? _Intro(onPick: _send)
+                ? _Intro(mode: _mode, onPick: _send)
                 : ListView.builder(
                     controller: _scroll,
                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
@@ -424,6 +438,7 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                     itemBuilder: (_, i) => _Bubble(
                       _msgs[i],
                       onAction: _act,
+                      onAddStep: _addStep,
                       onPermissions: () {
                         Navigator.push(
                           context,
@@ -459,7 +474,11 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                         isDense: true,
                         hintText: _listening
                             ? 'Listening…'
-                            : 'Ask Sehat about your health',
+                            : switch (_mode) {
+                                'plan' => 'What do you want a plan for?',
+                                'visit' => 'Which visit are you preparing for?',
+                                _ => 'Ask what a result or term means',
+                              },
                         suffixIcon: IconButton(
                           tooltip: 'Speak',
                           icon: Icon(
@@ -489,8 +508,45 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
 }
 
 class _Intro extends ConsumerWidget {
-  const _Intro({required this.onPick});
+  const _Intro({required this.onPick, required this.mode});
   final void Function(String) onPick;
+  final String mode;
+
+  static const _planCards = [
+    (
+      Icons.monitor_heart_outlined,
+      'Bring a result back in range',
+      'Steps tied to your latest numbers',
+      'Make me a plan to bring my out-of-range results back to normal',
+    ),
+    (
+      Icons.restaurant_outlined,
+      'Eat and sleep better',
+      'Small daily habits that fit your results',
+      'Plan the next 2 weeks of food, sleep and activity for my results',
+    ),
+    (
+      Icons.event_repeat,
+      'Retest schedule',
+      'What to repeat and when',
+      'Which tests should I repeat, and when?',
+    ),
+  ];
+
+  static const _visitCards = [
+    (
+      Icons.event_note_outlined,
+      'Prepare for my next visit',
+      'What changed, what to raise, what to ask',
+      'Prepare me for my next doctor visit',
+    ),
+    (
+      Icons.compare_arrows,
+      'Since my last report',
+      'Only what moved since the previous one',
+      'What should I tell my doctor changed since my previous report?',
+    ),
+  ];
 
   static const _cards = [
     (
@@ -557,7 +613,11 @@ class _Intro extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 16),
-        for (final c in _cards)
+        for (final c in switch (mode) {
+          'plan' => _planCards,
+          'visit' => _visitCards,
+          _ => _cards,
+        })
           SCard(
             onTap: () => onPick(c.$4),
             child: Row(
@@ -613,8 +673,14 @@ class _Intro extends ConsumerWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble(this.m, {required this.onAction, required this.onPermissions});
+  const _Bubble(
+    this.m, {
+    required this.onAction,
+    required this.onAddStep,
+    required this.onPermissions,
+  });
   final _Msg m;
+  final void Function(String) onAddStep;
   final void Function(Json) onAction;
   final VoidCallback onPermissions;
   @override
@@ -730,7 +796,7 @@ class _Bubble extends StatelessWidget {
               ),
             if (m.text.isNotEmpty) ...[
               if (m.stepsShown > 0) const SizedBox(height: 6),
-              Text(m.text, style: const TextStyle(fontSize: 13, height: 1.4)),
+              _body(),
             ],
             if (m.error != null) ...[
               Text(
@@ -919,6 +985,123 @@ class _WhatIfState extends ConsumerState<_WhatIfSheet> {
           ],
         ],
       ),
+    );
+  }
+}
+
+extension on _Bubble {
+  static final _num = RegExp(r'^\s*(?:\d+[.)]|[-*•])\s+');
+
+  Widget _plain(String t) =>
+      Text(t, style: const TextStyle(fontSize: 13, height: 1.4));
+
+  Widget _body() {
+    if (m.mode == 'plan' && m.done) {
+      final steps = [
+        for (final l in m.text.split('\n'))
+          if (_num.hasMatch(l)) l.replaceFirst(_num, '').trim(),
+      ];
+      if (steps.length >= 2) return _planBody(steps);
+    }
+    if (m.mode == 'visit' && m.done) {
+      final parts = _sections(m.text);
+      if (parts.isNotEmpty) return _visitBody(parts);
+    }
+    return _plain(m.text);
+  }
+
+  Widget _planBody(List<String> steps) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (var i = 0; i < steps.length; i++)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 11,
+                backgroundColor: Pal.priBg,
+                child: Text(
+                  '${i + 1}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Pal.pri,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  steps[i],
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Add to care plan',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add_task, size: 18, color: Pal.pri),
+                onPressed: () => onAddStep(steps[i]),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
+
+  List<(String, List<String>)> _sections(String t) {
+    final out = <(String, List<String>)>[];
+    for (final raw in t.split('\n')) {
+      final l = raw.trim();
+      if (l.isEmpty) continue;
+      if (l.endsWith(':') && !_num.hasMatch(l)) {
+        out.add((l.substring(0, l.length - 1), []));
+      } else if (out.isNotEmpty) {
+        out.last.$2.add(l.replaceFirst(_num, ''));
+      }
+    }
+    return [
+      for (final s in out)
+        if (s.$2.isNotEmpty) s,
+    ];
+  }
+
+  Widget _visitBody(List<(String, List<String>)> parts) {
+    IconData icon(String h) => switch (h.toLowerCase()) {
+      final x when x.contains('changed') => Icons.trending_up,
+      final x when x.contains('raising') => Icons.flag_outlined,
+      _ => Icons.help_outline,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final (h, items) in parts) ...[
+          Row(
+            children: [
+              Icon(icon(h), size: 16, color: Pal.pri),
+              const SizedBox(width: 6),
+              Text(
+                h,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (final i in items)
+            Padding(
+              padding: const EdgeInsets.only(left: 22, bottom: 4),
+              child: Text(
+                '• $i',
+                style: const TextStyle(fontSize: 12.5, height: 1.35),
+              ),
+            ),
+          const SizedBox(height: 6),
+        ],
+      ],
     );
   }
 }

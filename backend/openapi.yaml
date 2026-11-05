@@ -924,9 +924,9 @@ paths:
         '400': { description: Unknown permission }
   /profiles/{profileID}/agent/insights/{kind}:
     get:
-      summary: Written insights (research, lifestyle, history, labs) from the person's own records
+      summary: Written insights (research, lifestyle, history, labs, visit) from the person's own records
       description: Uses the cloud model only with AI consent and the cloud_model permission, and falls back to a summary built from the records. Cached for six hours.
-      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: kind, in: path, required: true, schema: { type: string, enum: [research, lifestyle, history, labs] } }]
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: kind, in: path, required: true, schema: { type: string, enum: [research, lifestyle, history, labs, visit] } }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/agent/wellbeing:

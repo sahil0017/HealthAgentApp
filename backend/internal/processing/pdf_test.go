@@ -121,3 +121,16 @@ func TestParseCandidatesReadsTableRowsWithUnitOnNextLine(t *testing.T) {
 		t.Fatalf("day-first date not read: %v", got[0].ObservedAt)
 	}
 }
+
+func TestRangeWordingIsNotATest(t *testing.T) {
+	for _, l := range []string{"More than", "Less than", "Optimal", "Desirable", "Up to", "Above"} {
+		if !IsRangeText(l) {
+			t.Errorf("%q should be range wording", l)
+		}
+	}
+	for _, l := range []string{"High Sensitivity CRP", "Low Density Lipoprotein", "Normal Cells", "Total Cholesterol", "Higher Glucose"} {
+		if IsRangeText(l) {
+			t.Errorf("%q is a test name", l)
+		}
+	}
+}

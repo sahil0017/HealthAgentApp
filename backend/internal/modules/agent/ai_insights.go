@@ -46,7 +46,7 @@ type cachedInsight struct {
 var (
 	insightCache   sync.Map
 	insightTTL     = 6 * time.Hour
-	insightKinds   = map[string]bool{"research": true, "lifestyle": true, "history": true, "labs": true}
+	insightKinds   = map[string]bool{"research": true, "lifestyle": true, "history": true, "labs": true, "visit": true}
 	insightTimeout = 90 * time.Second
 )
 
@@ -321,6 +321,10 @@ func (m *Module) insights(w http.ResponseWriter, r *http.Request) {
 			facts += "Active symptoms: " + strings.Join(s, "; ") + "\n"
 		}
 		fallback = labFallback(ls)
+		if kind == "visit" {
+			facts += m.visitFacts(ctx, owner, profileID)
+			fallback = visitFallback(ls)
+		}
 		if kind == "research" {
 			fallback.Items = nil
 			for _, l := range ls {
@@ -480,4 +484,55 @@ func (m *Module) biomarkerInsight(w http.ResponseWriter, r *http.Request) {
 		fb.Items = append(fb.Items, insightItem{Title: "Since last time", Detail: fmt.Sprintf("%g before, %g now across %d results.", t.Points[n-2].Value, last.Value, n), Tone: "info"})
 	}
 	httpx.WriteJSON(w, 200, m.insight(ctx, profileID, "biomarker", b.String(), fb))
+}
+
+// visitFacts adds the medicines and open follow-ups a doctor would ask about.
+func (m *Module) visitFacts(ctx context.Context, owner, profileID string) string {
+	var b strings.Builder
+	if meds := m.medicationFactsFor(ctx, owner, profileID); meds != "" {
+		b.WriteString(meds + "\n")
+	}
+	rows, err := m.DB.Pool.Query(ctx, `SELECT title FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 10`, profileID, owner)
+	if err == nil {
+		defer rows.Close()
+		var open []string
+		for rows.Next() {
+			var t string
+			if rows.Scan(&t) == nil {
+				open = append(open, t)
+			}
+		}
+		if len(open) > 0 {
+			b.WriteString("Open follow-ups: " + strings.Join(open, "; ") + "\n")
+		}
+	}
+	return b.String()
+}
+
+func (m *Module) medicationFactsFor(ctx context.Context, owner, profileID string) string {
+	l := &labs{m: m, ctx: ctx, owner: owner, profile: profileID}
+	if s := l.medicationFacts(); !strings.HasPrefix(s, "No medicines") {
+		return s
+	}
+	return ""
+}
+
+// visitFallback is the plain summary used when the model is off: counts first, then the outside-range tests.
+func visitFallback(ls []labLine) insightSet {
+	out := labFallback(ls)
+	n := 0
+	for _, l := range ls {
+		if isOut(l.Flag) {
+			n++
+		}
+	}
+	switch {
+	case n == 0:
+		out.Headline = "All your results are within their reference ranges."
+	case n == 1:
+		out.Headline = "One result is outside its reference range."
+	default:
+		out.Headline = fmt.Sprintf("%d results are outside their reference ranges.", n)
+	}
+	return out
 }

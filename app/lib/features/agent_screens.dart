@@ -8,6 +8,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'agent_chat.dart' show AgentChatScreen;
+import 'insights.dart' show InsightPanel;
 
 String _base(WidgetRef ref) => '/profiles/${ref.read(profileIdProvider)}/agent';
 
@@ -732,26 +733,103 @@ class VisitPrepScreen extends ConsumerWidget {
     AsyncBody<Json>(
       ref.watch(_visitPrepProvider),
       onRetry: () => ref.invalidate(_visitPrepProvider),
-      builder: (v) => ListView(
-        padding: const EdgeInsets.all(14),
-        children: [
-          for (final (title, items) in _sections(v))
-            if (items.isNotEmpty) ...[
-              SectionTitle(title),
-              for (final i in items)
-                SCard(child: Text(i, style: const TextStyle(fontSize: 12))),
+      builder: (v) {
+        final sections = _sections(v);
+        List<String> items(String t) =>
+            sections.firstWhere((s) => s.$1 == t).$2;
+        final questions = items('Questions to ask');
+        final details = [
+          for (final s in sections)
+            if (s.$2.isNotEmpty && s.$1 != 'Questions to ask') s,
+        ];
+        return ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+            const InsightPanel(
+              path: '/agent/insights/visit',
+              title: 'In plain words',
+              icon: Icons.record_voice_over_outlined,
+              maxItems: 6,
+            ),
+            if (questions.isNotEmpty) ...[
+              const SectionTitle('Questions to ask your doctor'),
+              for (final q in questions)
+                SCard(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.help_outline, size: 16, color: Pal.pri),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(q, style: const TextStyle(fontSize: 12.5)),
+                      ),
+                    ],
+                  ),
+                ),
             ],
-          FilledButton.icon(
-            onPressed: () => _export(context, v),
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('Export PDF / share'),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text('${v['note'] ?? ''}', style: _note),
-          ),
-        ],
-      ),
+            if (details.isNotEmpty) ...[
+              const SectionTitle('Details to bring'),
+              SCard(
+                padding: EdgeInsets.zero,
+                child: Theme(
+                  data: Theme.of(context)
+                      .copyWith(dividerColor: Colors.transparent),
+                  child: Column(
+                    children: [
+                      for (final (title, list) in details)
+                        ExpansionTile(
+                          dense: true,
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                          ),
+                          childrenPadding: const EdgeInsets.fromLTRB(
+                            14,
+                            0,
+                            14,
+                            10,
+                          ),
+                          title: Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          trailing: Pill('${list.length}'),
+                          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final i in list)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  '• $i',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Pal.mut,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: () => _export(context, v),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('Export PDF / share'),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text('${v['note'] ?? ''}', style: _note),
+            ),
+          ],
+        );
+      },
     ),
   );
 }

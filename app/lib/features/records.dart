@@ -8,7 +8,6 @@ import 'package:share_plus/share_plus.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
-import 'insights.dart';
 
 Widget _page(String title, Widget body, {List<Widget>? actions}) => Scaffold(
   appBar: AppBar(title: Text(title), actions: actions),
@@ -765,64 +764,86 @@ class HistoryScreen extends ConsumerWidget {
       body: AsyncBody<List<Json>>(
         h,
         onRetry: () => ref.invalidate(profileListProvider('/history')),
-        builder: (l) => ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-            InsightPanel(
-              path: '/agent/insights/history',
-              title: 'Found in your reports',
-              icon: Icons.fact_check_outlined,
-              itemLabel: 'Add to my history',
-              onItem: (it) async {
-                try {
-                  await ref.read(apiProvider).post(
-                    '/profiles/${_pid(ref)}/history',
-                    {'kind': 'condition', 'title': '${it['title']}'},
-                  );
-                  ref.invalidate(profileListProvider('/history'));
-                  if (context.mounted) toast(context, 'Added to your history');
-                } catch (e) {
-                  if (context.mounted) toast(context, friendly(e));
-                }
-              },
-            ),
-            if (l.isEmpty)
-              const Empty(
-                Icons.medical_information_outlined,
-                'Nothing saved yet',
-                body: 'Add what Sehat found in your reports, or add conditions, allergies and surgeries yourself.',
-              ),
+        builder: (l) {
+          final fromReports = [
             for (final e in l)
-              SCard(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${e['title']}', style: _bold),
-                          Text(
-                            _kinds['${e['kind']}'] ?? '${e['kind']}',
-                            style: _small,
-                          ),
-                        ],
+              if (e['source'] == 'report') e,
+          ];
+          final byYou = [
+            for (final e in l)
+              if (e['source'] != 'report') e,
+          ];
+          Widget row(Json e) => SCard(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${e['title']}', style: _bold),
+                      Text(
+                        _kinds['${e['kind']}'] ?? '${e['kind']}',
+                        style: _small,
                       ),
-                    ),
-                    Pill('${e['status']}'),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      onPressed: () async {
-                        await ref
-                            .read(apiProvider)
-                            .delete('/history/${e['id']}');
-                        ref.invalidate(profileListProvider('/history'));
-                      },
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-          ],
-        ),
+                Pill('${e['status']}'),
+                IconButton(
+                  tooltip: 'Remove',
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  onPressed: () async {
+                    await ref.read(apiProvider).delete('/history/${e['id']}');
+                    ref.invalidate(profileListProvider('/history'));
+                  },
+                ),
+              ],
+            ),
+          );
+          return RefreshIndicator(
+            onRefresh: () async {
+              ref.invalidate(profileListProvider('/history'));
+              await ref.read(profileListProvider('/history').future);
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                const SCard(
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome, size: 18, color: Pal.pri),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Each time you verify a report, Sehat reads it in the background and adds new conditions here. Pull down to refresh.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Pal.mut,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (l.isEmpty)
+                  const Empty(
+                    Icons.medical_information_outlined,
+                    'Nothing saved yet',
+                    body: 'Verify a report and Sehat fills this in, or add conditions, allergies and surgeries yourself.',
+                  ),
+                if (fromReports.isNotEmpty) ...[
+                  const SectionTitle('From your reports'),
+                  for (final e in fromReports) row(e),
+                ],
+                if (byYou.isNotEmpty) ...[
+                  const SectionTitle('Added by you'),
+                  for (final e in byYou) row(e),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }

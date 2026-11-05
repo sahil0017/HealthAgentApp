@@ -256,6 +256,7 @@ async def prescription_read(request: Request) -> JSONResponse:
 
 class StandardiseRequest(BaseModel):
     labels: list[str] = Field(min_length=1, max_length=60)
+    context: dict[str, str] = Field(default_factory=dict)
 
 
 @app.post("/v1/labs/standardise")
@@ -263,7 +264,7 @@ async def labs_standardise(req: StandardiseRequest) -> JSONResponse:
     """Standard names and panels for lab-report labels. Only the labels are sent to the model."""
     labels = [label.strip()[:80] for label in req.labels if label.strip()]
     try:
-        result = await copilot_agent.standardise_labs(labels)
+        result = await copilot_agent.standardise_labs(labels, req.context)
     except copilot_agent.CopilotUnavailable as exc:
         return JSONResponse(status_code=503, content={"error": "standardiser_unavailable", "reason": str(exc)})
     return JSONResponse(result)
@@ -284,7 +285,7 @@ async def documents_extract(req: ExtractRequest) -> JSONResponse:
 
 
 class InsightRequest(BaseModel):
-    kind: str = Field(pattern="^(research|lifestyle|history|upload|labs|biomarker)$")
+    kind: str = Field(pattern="^(research|lifestyle|history|upload|labs|biomarker|visit)$")
     facts: str = Field(min_length=10, max_length=20000)
 
 

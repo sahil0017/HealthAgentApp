@@ -18,6 +18,8 @@ type stdName struct {
 	Label string `json:"label"`
 	Name  string `json:"name"`
 	Panel string `json:"panel"`
+	// IsTest is false when the label is reference-range wording or a heading rather than a measured test.
+	IsTest *bool `json:"is_test"`
 }
 
 // cloudAllowed is true only when the person consented to AI processing and allowed the cloud model.
@@ -45,7 +47,13 @@ func (w *DocumentWorker) standardise(ctx context.Context, d documentInput, res *
 	if len(labels) == 0 || !w.cloudAllowed(ctx, d.ProfileID) {
 		return
 	}
-	body, _ := json.Marshal(map[string]any{"labels": labels})
+	lines := map[string]string{}
+	for _, c := range res.Candidates {
+		if c.BiomarkerCode == "" && lines[c.Name] == "" {
+			lines[c.Name] = strings.Join(strings.Fields(c.Evidence), " ")
+		}
+	}
+	body, _ := json.Marshal(map[string]any{"labels": labels, "context": lines})
 	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodPost, embedding.ServiceURL()+"/v1/labs/standardise", bytes.NewReader(body))
@@ -78,10 +86,15 @@ func (w *DocumentWorker) standardise(ctx context.Context, d documentInput, res *
 			known[key(t)] = e
 		}
 	}
+	kept := res.Candidates[:0]
 	for i := range res.Candidates {
 		c := &res.Candidates[i]
 		t, ok := byLabel[c.Name]
 		if c.BiomarkerCode != "" || !ok {
+			kept = append(kept, *c)
+			continue
+		}
+		if t.IsTest != nil && !*t.IsTest {
 			continue
 		}
 		c.Panel = strings.TrimSpace(t.Panel)
@@ -89,5 +102,15 @@ func (w *DocumentWorker) standardise(ctx context.Context, d documentInput, res *
 		if e, found := known[key(c.Name)]; found {
 			c.BiomarkerCode, c.Name = e.Code, e.Name
 		}
+		kept = append(kept, *c)
 	}
+	res.Candidates = kept
+	var unknown []string
+	for _, n := range res.UnknownNames {
+		if t, ok := byLabel[n]; ok && t.IsTest != nil && !*t.IsTest {
+			continue
+		}
+		unknown = append(unknown, n)
+	}
+	res.UnknownNames = unknown
 }

@@ -31,10 +31,10 @@ const (
 var emergency = regexp.MustCompile(`(?i)\b(chest (pain|pressure|tightness)|crushing pain|can'?t breathe|cannot breathe|trouble breathing|difficulty breathing|shortness of breath|face (is )?droop\w*|slurred speech|stroke|heart attack|severe bleeding|coughing (up )?blood|vomiting blood|anaphyla\w*|overdos\w*|took too many|passed out|unconscious|seizure|suicid\w*)\b`)
 
 var modes = map[string]string{
-	"explain":  "Explain the person's lab results in plain language.",
-	"plan":     "Suggest simple, non-medical next steps such as questions to ask, tests to track or records to upload. Do not recommend treatment or medication.",
+	"explain":  "Explain the person's lab results in plain language for someone with no medical background: lead with the one-sentence takeaway, then two or three short sentences.",
+	"plan":     "Suggest simple, non-medical next steps such as questions to ask, tests to track or records to upload. Do not recommend treatment or medication. Reply ONLY as a numbered list of 3 to 5 short steps, one per line, each starting with a verb.",
 	"briefing": "Write a short daily briefing: what needs attention first, any follow-ups that are due, and which medicines are scheduled today. Call the tools for every part and keep it to a few sentences.",
-	"visit":    "Prepare the person for a doctor visit: what changed, what is outside range, and questions to ask.",
+	"visit":    "Prepare the person for a doctor visit, in words a non-medical person understands. Reply with exactly three headed parts, each header on its own line ending with a colon: 'What changed:', 'Worth raising:' and 'Questions for your doctor:'. Under each header give one to three lines that start with '- '.",
 }
 
 type chatTurn struct {
@@ -240,7 +240,7 @@ func systemPrompt(mode string) string {
 		"Use the tools to read the person's record and use only numbers and facts the tools return. " +
 		"Never diagnose, name conditions, or recommend medication, doses or treatment. " +
 		"If the record does not contain the answer, say so and suggest what to upload. " +
-		"Answer in under 120 words, plain language, no markdown tables."
+		"Answer in under 150 words, plain language, no markdown tables."
 }
 
 var directive = regexp.MustCompile(`(?i)\b(you have|you are diagnosed|diagnos(is|es|ed|e)|you should (take|stop|start|increase|reduce)|prescri\w*|take \d+\s*(mg|mcg|g|ml)|dosage|dose of|cure|treatment plan)\b`)

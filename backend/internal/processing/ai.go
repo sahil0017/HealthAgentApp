@@ -124,7 +124,7 @@ func MergeAI(r *Result, pageIdx int, pageText string, ai AIReading, catalog []Ca
 		name := strings.TrimSpace(t.Name)
 		val, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(t.Value), ",", "."), 64)
 		unit := strings.ReplaceAll(strings.TrimSpace(t.Unit), "μ", "µ")
-		if name == "" || len(name) > 100 || err != nil || math.IsNaN(val) || math.IsInf(val, 0) {
+		if name == "" || len(name) > 100 || IsRangeText(name) || err != nil || math.IsNaN(val) || math.IsInf(val, 0) {
 			continue
 		}
 		evidence, ok := evidenceFor(lines, name, t.Value)
