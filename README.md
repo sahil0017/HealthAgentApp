@@ -8,7 +8,22 @@
 
 </div>
 
+# Sehat (CORTEX) — your personal health record, explained
+
+Sehat helps people keep their own medical records in one place and understand them. You upload lab reports and prescriptions, review what was read from them, and then ask questions in plain language. Every answer cites your records or a named source, and says how sure it is.
+
+It is built for patients and families, with India in mind: one profile per family member and plain-language explanations. It explains and organizes. It does not diagnose, prescribe or change doses.
+
 > **Prototype:** Sehat is a local-development project, not a production medical product. It does not diagnose or prescribe, and its development authentication is not suitable for shared or production deployments.
+
+## What you can do
+
+- **Keep everything together:** scan or upload reports, review the extracted values with the evidence beside them, then approve.
+- **See your health over time:** biomarker trends against reference ranges, vitals, phone health data, lifestyle and symptom patterns.
+- **Understand your medicines:** save prescriptions, see a daily dose schedule, and look up what a medicine is for.
+- **Ask and get sourced answers:** the AI assistant answers from your approved records and retrieved research, with confidence and limits stated.
+- **Prepare for the doctor:** a care plan, visit prep and a plain-language summary you can export as a PDF.
+- **Stay in control:** consent per purpose, audit history, data export and delete, private storage for original files.
 
 ## Designed around your records
 
@@ -51,6 +66,8 @@ The Go service is the authorization and data-access boundary. Python receives on
 - `app/` is one Flutter codebase for iPhone and Android, covering the 46-screen design in `design/screens.html`.
 - Real Google / Apple sign-in, Face ID / biometric app lock, skeleton loading and an offline banner.
 - Today, Vault (scan or upload, review with evidence, approve), Health (biomarkers, Vitals, phone health data), Ask AI with cited answers, Lifestyle with patterns (correlation, not cause), care plan, visit prep and summary (PDF export), Privacy centre.
+- Agent tab: starter questions built from your own record (flagged labs, latest result, active symptom), not fixed text.
+- Prescriptions: save a prescription, see each medicine's daily schedule and log doses.
 - Nearby care and alerts using GPS (approximate by default; precise only for directions and sharing, never sent to Sehat), emergency contacts and offline Medical ID.
 - Air and weather, and medicine look-up screens.
 - Run it with `cd app && flutter pub get && flutter run` on a connected phone; test with `flutter analyze && flutter test`.
@@ -86,6 +103,7 @@ Wearables (Oura, Withings, Google Health), ABDM and FHIR need developer credenti
 - Emergency and self-harm wording is triaged before any retrieval or model call; answers carry a confidence level and uncertainty note.
 - Profile-scoped record retrieval and curated research retrieval with source metadata and limitations.
 - Optional local explanation generation with safety checks; recorded facts remain separate from generated explanations.
+- Optional agent mode using the GitHub Copilot SDK (`CORTEX_COPILOT_GITHUB_TOKEN`, `CORTEX_COPILOT_MODEL`) or a local Ollama model (`CORTEX_OLLAMA_URL`, `CORTEX_OLLAMA_MODEL`). The Copilot agent can only call read-only record tools.
 - Allowlisted lookups for public sources such as MedlinePlus, LOINC, UCUM, and PubMed. New knowledge remains pending until administrator review.
 
 ## Architecture
@@ -143,6 +161,19 @@ Python tests: `cd cortex-ai && python -m pytest`
 ## Contributing and support
 
 Contributions are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local checks and pull request guidance. Use GitHub Issues for reproducible bugs and feature proposals; do not include real health information, credentials, or private documents. See [`SECURITY.md`](./SECURITY.md) for reporting security concerns privately.
+
+## Roadmap (designed, not built)
+
+These are design proposals. None of them is implemented yet; the mockups are not in the repository.
+
+- **Condition threads:** group labs, reports, prescriptions, symptoms and follow-ups under one condition (existing or new), with user-confirmed links. Allergies, vaccinations and family history stay person-level.
+- **360 dashboard:** one Health-tab view with trends, range bars, a body map, dose adherence, lifestyle and insights that link to the records behind them.
+- **Visual explainers:** what each organ and test does, why a doctor orders it, and how each medicine works, in English and Hindi, with reviewed content.
+- **Analytics and forecasts:** Python trend forecasts of a person's own results with a range and sample size, shown only when there is enough data. No diagnosis prediction.
+- **Evidence-based answers:** live lookups to public sources with citations, a groundedness check on generated text, and a small reviewed set of Indian guidance. No large local corpus.
+- **Model options:** Copilot first with a small open-model fallback (for example MedGemma 4B on CPU), subject to licence and terms checks.
+
+Task breakdown: [`architecture/flutter-technical-tasks.md`](./architecture/flutter-technical-tasks.md).
 
 ## Planned, not shipped
 
