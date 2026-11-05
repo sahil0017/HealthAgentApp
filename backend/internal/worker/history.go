@@ -58,6 +58,7 @@ func (w *HistoryWorker) ProcessOne(ctx context.Context) (bool, error) {
 		WHERE id=(SELECT id FROM history_scans WHERE status IN ('pending','running') AND run_after<=now() ORDER BY run_after LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id::text, profile_id::text, owner_id, attempts`).Scan(&id, &profileID, &owner, &attempts)
 	if err != nil {
+		w.catchUp(ctx)
 		return false, nil
 	}
 	status := "done"
@@ -206,4 +207,26 @@ func (w *HistoryWorker) scan(ctx context.Context, profileID, owner string) (int,
 		}
 	}
 	return added, nil
+}
+
+// catchUp queues the newest verified report of any profile that has never been scanned (reports approved before
+// scanning existed), and queues skipped scans again once the person has turned AI on. Both are cheap no-ops when
+// there is nothing to do.
+func (w *HistoryWorker) catchUp(ctx context.Context) {
+	if _, err := w.DB.Pool.Exec(ctx, `INSERT INTO history_scans(document_id,profile_id,owner_id)
+		SELECT DISTINCT ON (o.profile_id) o.document_id, o.profile_id, d.owner_id
+		FROM observations o JOIN medical_documents d ON d.id=o.document_id
+		WHERE o.verification_status='VERIFIED' AND o.document_id IS NOT NULL
+		AND NOT EXISTS (SELECT 1 FROM history_scans h WHERE h.profile_id=o.profile_id)
+		ORDER BY o.profile_id, d.created_at DESC
+		ON CONFLICT (document_id) DO NOTHING`); err != nil {
+		log.Printf("history catch-up: %v", err)
+	}
+	if _, err := w.DB.Pool.Exec(ctx, `UPDATE history_scans h SET status='pending', attempts=0, run_after=now(), updated_at=now()
+		WHERE h.status='skipped'
+		AND EXISTS(SELECT 1 FROM consents c WHERE c.profile_id=h.profile_id AND c.purpose='ai_processing' AND c.granted AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at>now()))
+		AND COALESCE((SELECT granted FROM agent_permissions p WHERE p.profile_id=h.profile_id AND p.permission='cloud_model'), false)
+		AND COALESCE((SELECT granted FROM agent_permissions p WHERE p.profile_id=h.profile_id AND p.permission='read_labs'), false)`); err != nil {
+		log.Printf("history re-queue: %v", err)
+	}
 }
