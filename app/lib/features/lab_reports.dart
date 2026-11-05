@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent_chat.dart';
 import 'insights.dart';
 import 'vault.dart';
 
@@ -48,6 +49,15 @@ class LabReportsView extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Opens the assistant limited to one report.
+void openReportChat(BuildContext context, String id, String title) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => AgentChatScreen(report: {'id': id, 'title': title}),
+    ),
+  );
 }
 
 class _ReportCard extends StatelessWidget {
@@ -158,6 +168,15 @@ class _ReportCard extends StatelessWidget {
                   )
                 else
                   const Spacer(),
+                TextButton.icon(
+                  onPressed: () => openReportChat(
+                    context,
+                    '${g['document_id']}',
+                    '${g['title']} · ${shortDate('${g['report_date']}')}',
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                  label: const Text('Ask Sehat'),
+                ),
                 TextButton.icon(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(

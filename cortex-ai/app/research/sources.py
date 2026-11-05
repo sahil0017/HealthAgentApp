@@ -19,6 +19,7 @@ ALLOWED_HOSTS = {
     "www.ebi.ac.uk",
     "clinicaltrials.gov",
     "medlineplus.gov",
+    "wsearch.nlm.nih.gov",
 }
 USER_AGENT = "cortex-research-agent/1.0 (personal health app; non-commercial lookups)"
 
@@ -139,6 +140,26 @@ def medlineplus_summary(fetcher: Fetcher, url: str) -> str:
     page = fetcher.get(url).text
     m = re.search(r'<meta name="description" content="([^"]+)"', page)
     return html.unescape(m.group(1)).strip() if m else ""
+
+
+@dataclass
+class Topic:
+    title: str
+    url: str
+    summary: str
+
+
+def search_medlineplus_topics(fetcher: Fetcher, query: str, limit: int = 3) -> list[Topic]:
+    """Plain-language health topic pages from MedlinePlus (National Library of Medicine)."""
+    xml = fetcher.get(f"https://wsearch.nlm.nih.gov/ws/query?db=healthTopics&retmax={limit}&term={quote(query)}").text
+    out: list[Topic] = []
+    for doc in ET.fromstring(xml).iter("document"):
+        fields = {c.get("name"): "".join(c.itertext()) for c in doc.iter("content")}
+        url = doc.get("url") or ""
+        if url.startswith("https://medlineplus.gov/") and fields.get("title"):
+            summary = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", fields.get("FullSummary", "")))).strip()
+            out.append(Topic(re.sub(r"<[^>]+>", "", html.unescape(fields["title"])).strip(), url, summary[:1500]))
+    return out[:limit]
 
 
 @dataclass

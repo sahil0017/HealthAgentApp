@@ -5,6 +5,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'health.dart';
+import 'lab_reports.dart' show labReportsProvider;
 import 'more.dart';
 import 'plan.dart';
 import 'prescriptions.dart';
@@ -20,12 +21,20 @@ class Notice {
     required this.detail,
     required this.open,
     this.actionLabel,
+    this.source,
+    this.tag,
   });
   final String id;
   final bool urgent;
   final IconData icon;
   final String title, detail;
   final String? actionLabel;
+
+  /// The report a lab alert comes from, e.g. "Orange Health · 12 Mar 2026".
+  final String? source;
+
+  /// A small label that says what kind of item this is.
+  final String? tag;
   final void Function(BuildContext context, WidgetRef ref) open;
 }
 
@@ -54,7 +63,7 @@ List<Json> _maps(Object? v) => (v as List? ?? [])
     .map((e) => e.cast<String, dynamic>())
     .toList();
 
-Notice _fromAttention(Json a) {
+Notice _fromAttention(Json a, Map<String, String> sources) {
   final kind = '${a['kind']}';
   final urgent = a['severity'] == 'action';
   void Function(BuildContext, WidgetRef) open = switch (kind) {
@@ -86,6 +95,7 @@ Notice _fromAttention(Json a) {
     },
     title: '${a['title']}',
     detail: '${a['detail'] ?? ''}',
+    source: a['ref_type'] == 'biomarker' ? sources['${a['ref_id']}'] : null,
     open: open,
   );
 }
@@ -95,7 +105,19 @@ final noticesProvider = Provider<List<Notice>>((ref) {
   final ov = ref.watch(profileMapProvider('/overview')).asData?.value;
   final sched = ref.watch(doseScheduleProvider).asData?.value;
   final gone = ref.watch(_dismissedProvider);
+  final reports = ref.watch(labReportsProvider).asData?.value ?? [];
   final out = <Notice>[];
+
+  // The newest report that holds each test, so an alert can say where it came from.
+  final sources = <String, String>{};
+  for (final g in reports) {
+    for (final r in _maps(g['results'])) {
+      sources.putIfAbsent(
+        '${r['biomarker_code']}',
+        () => '${g['title']} · ${shortDate('${g['report_date']}')}',
+      );
+    }
+  }
 
   var due = 0;
   for (final s in _maps(sched?['slots'])) {
@@ -121,7 +143,7 @@ final noticesProvider = Provider<List<Notice>>((ref) {
   }
 
   for (final a in _maps(ov?['attention'])) {
-    out.add(_fromAttention(a));
+    out.add(_fromAttention(a, sources));
   }
 
   for (final s in _maps(ov?['suggested_follow_ups']).take(3)) {
@@ -132,6 +154,7 @@ final noticesProvider = Provider<List<Notice>>((ref) {
         icon: Icons.lightbulb_outline,
         title: '${s['title']}',
         detail: '${s['reason'] ?? ''}',
+        tag: 'Suggested follow-up',
         actionLabel: 'Add to care plan',
         open: (c, r) async {
           try {
@@ -247,6 +270,11 @@ class NotificationsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (n.tag != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Pill(n.tag!, fg: Pal.pri, bg: Pal.priBg),
+                  ),
                 Text(
                   n.title,
                   style: const TextStyle(
@@ -264,6 +292,29 @@ class NotificationsScreen extends ConsumerWidget {
                         color: Pal.mut,
                         height: 1.3,
                       ),
+                    ),
+                  ),
+                if (n.source != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 12,
+                          color: Pal.mut,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'From ${n.source}',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Pal.mut,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 if (n.actionLabel != null)
@@ -320,7 +371,7 @@ class NotificationsScreen extends ConsumerWidget {
                   for (final n in urgent) tile(n),
                 ],
                 if (other.isNotEmpty) ...[
-                  const SectionTitle('Suggestions'),
+                  const SectionTitle('Worth a look'),
                   for (final n in other) tile(n),
                 ],
               ],

@@ -160,3 +160,17 @@ func TestInvestigationsAreErasedWithTheProfile(t *testing.T) {
 		t.Fatalf("investigations left behind: %d", n)
 	}
 }
+
+func TestFollowingTheSameQuestionTwiceKeepsOneInvestigation(t *testing.T) {
+	f := newInvFixture(t)
+	base := "/profiles/" + f.profile + "/investigations"
+	_, first := f.do("owner-a", "POST", base, `{"question":"Does ferritin affect fatigue?"}`)
+	code, second := f.do("owner-a", "POST", base, `{"question":"  does FERRITIN affect fatigue? "}`)
+	if code != 200 || second["id"] != first["id"] {
+		t.Fatalf("expected the existing investigation back, got %d %v vs %v", code, second["id"], first["id"])
+	}
+	_, list := f.do("owner-a", "GET", base, "")
+	if items, _ := list["investigations"].([]any); len(items) != 1 {
+		t.Fatalf("expected one investigation, got %v", list)
+	}
+}

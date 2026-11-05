@@ -8,6 +8,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'insights.dart';
+import 'lab_reports.dart' show openReportChat;
 import 'prescriptions.dart' show PrescriptionReview;
 
 const _status = {
@@ -532,6 +533,18 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
           '${_doc?['file_name'] ?? 'Document'}',
           style: const TextStyle(fontSize: 14),
         ),
+        actions: [
+          if (approved)
+            IconButton(
+              tooltip: 'Ask Sehat about this report',
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: () => openReportChat(
+                context,
+                widget.id,
+                '${_doc?['file_name'] ?? 'Report'}',
+              ),
+            ),
+        ],
       ),
       body: _error != null
           ? ErrorView(_error!, onRetry: _load)

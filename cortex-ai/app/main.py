@@ -298,6 +298,18 @@ async def insights(req: InsightRequest) -> JSONResponse:
     return JSONResponse(result)
 
 
+class DiscoverRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+
+
+@app.post("/v1/research/discover")
+async def research_discover(req: DiscoverRequest) -> JSONResponse:
+    """Find current papers and plain-language guides for a followed question."""
+    from app.research import discover
+
+    return JSONResponse({"sources": await discover.discover(_fetcher, req.question)})
+
+
 @app.post("/v1/agent/step")
 def agent_step(step: AgentStep) -> JSONResponse:
     """One model turn of the agent loop: either tool calls to run or a final answer."""

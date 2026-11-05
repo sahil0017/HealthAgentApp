@@ -67,14 +67,24 @@ class InvestigationsScreen extends ConsumerWidget {
     final api = ref.read(apiProvider);
     try {
       final r = await api.post('/profiles/$id/investigations', {'question': q});
-      final newId = r is Map ? (r['investigation'] ?? r)['id'] : null;
-      if (newId != null) {
-        try {
-          await api.post('/profiles/$id/investigations/$newId/refresh', {});
-        } catch (_) {}
-      }
+      final map = r is Map ? (r['investigation'] ?? r) as Map : const {};
+      final newId = map['id'];
+      final known = ((map['source_count'] as num?) ?? 0) > 0;
       ref.invalidate(investigationsProvider);
-      if (context.mounted) toast(context, 'Saved. Sources are being gathered.');
+      if (context.mounted) {
+        toast(
+          context,
+          known
+              ? 'You already follow this question.'
+              : 'Saved. Sehat is finding research and guides for it.',
+        );
+      }
+      if (newId != null && !known) {
+        api
+            .post('/profiles/$id/investigations/$newId/refresh', {})
+            .then((_) => ref.invalidate(investigationsProvider))
+            .catchError((_) {});
+      }
     } catch (e) {
       if (context.mounted) toast(context, friendly(e));
     }
@@ -392,7 +402,7 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
                 SectionTitle('Sources · ${sources.length}'),
                 if (sources.isEmpty)
                   const Text(
-                    'No sources yet. Tap “Find new research” to search approved research.',
+                    'No sources yet. Tap “Find new research” and Sehat will look for papers and health guides.',
                     style: _note,
                   ),
                 for (final s in sources)
@@ -420,11 +430,25 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
                               ),
                             ),
                           ),
-                        if (s['identifier'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text('${s['identifier']}', style: _note),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            [
+                                  switch (s['web_kind']) {
+                                    'paper' => 'Research paper',
+                                    'trial' => 'Clinical trial',
+                                    'guide' => 'Health guide',
+                                    _ => null,
+                                  },
+                                  s['publisher'],
+                                  s['year'],
+                                  s['identifier'],
+                                ]
+                                .where((e) => e != null && '$e'.isNotEmpty)
+                                .join(' · '),
+                            style: _note,
                           ),
+                        ),
                       ],
                     ),
                   ),

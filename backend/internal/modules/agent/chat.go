@@ -46,6 +46,8 @@ type chatRequest struct {
 	Message string     `json:"message"`
 	Mode    string     `json:"mode"`
 	History []chatTurn `json:"history"`
+	// ReportID limits the chat to one uploaded report.
+	ReportID string `json:"report_id"`
 }
 
 // step is one visible stage of the agent's work.
@@ -72,6 +74,8 @@ type labs struct {
 	repo    *observations.Repo
 	trends  map[string]biomarker.Trend
 	touched map[string]bool
+	reports []*report
+	scope   *report
 }
 
 func (l *labs) load() error {
@@ -92,6 +96,7 @@ func (l *labs) load() error {
 			l.trends[code] = t
 		}
 	}
+	l.loadReports()
 	return nil
 }
 
@@ -194,6 +199,22 @@ func (l *labs) run(name string, args map[string]any) (st step, out string) {
 		l.touched[t.BiomarkerCode] = true
 		last := t.Points[len(t.Points)-1]
 		return step{name, "Read your " + t.DisplayName + " history", fmt.Sprintf("%d readings, latest %v %s", len(t.Points), last.Value, t.CanonicalUnit)}, trendFacts(t)
+	case "list_reports":
+		return step{name, "Looked through your reports", fmt.Sprintf("%d reports on file", len(l.reports))}, l.listReportsText()
+	case "get_report":
+		q, _ := args["name"].(string)
+		r, ok := l.findReport(q)
+		if !ok {
+			return step{name, "Looked up a report", "Not in your record"}, fmt.Sprintf("There is no report matching %q. %s", q, l.listReportsText())
+		}
+		for _, ln := range r.Lines {
+			for c, t := range l.trends {
+				if t.DisplayName == ln.Name {
+					l.touched[c] = true
+				}
+			}
+		}
+		return step{name, "Read your " + r.Title + " report", fmt.Sprintf("%s · %d results", r.Date, len(r.Lines))}, reportText(r)
 	}
 	return step{name, "Unknown tool", "skipped"}, "Unknown tool."
 }
@@ -208,6 +229,8 @@ func toolSchemas() []map[string]any {
 	return []map[string]any{
 		fn("list_biomarkers", "List the names of the biomarkers in the person's record.", obj(map[string]any{})),
 		fn("list_flagged_labs", "List the latest results that are outside their reference range, with recent readings.", obj(map[string]any{})),
+		fn("list_reports", "List the uploaded lab reports with their lab, date and how many results are outside range.", obj(map[string]any{})),
+		fn("get_report", "Get every result in one report, with the previous value of each test from an earlier report. Name can be a report id, the lab name, a date, 'latest' or 'previous'.", obj(map[string]any{"name": map[string]any{"type": "string", "description": "Report id, lab name, date, latest or previous"}}, "name")),
 		fn("get_trend", "Get the latest value, reference range and recent readings for one biomarker.", obj(map[string]any{"name": map[string]any{"type": "string", "description": "Biomarker name, e.g. HbA1c"}}, "name")),
 	}
 }
@@ -341,6 +364,8 @@ func (l *labs) snapshot() map[string]any {
 	}
 	return map[string]any{
 		"list_biomarkers":   "Biomarkers on file: " + strings.Join(names, ", ") + ".",
+		"list_reports":      l.listReportsText(),
+		"reports":           l.reportSnapshot(),
 		"list_flagged_labs": flaggedText,
 		"trends":            trends,
 		"list_medications":  l.medicationFacts(),
@@ -358,7 +383,7 @@ func (m *Module) copilotStep(l *labs, in chatRequest) (answer, model string, ste
 		}
 	}
 	snap := l.snapshot()
-	body, _ := json.Marshal(map[string]any{"message": in.Message, "system": systemPrompt(in.Mode), "history": hist, "snapshot": snap})
+	body, _ := json.Marshal(map[string]any{"message": in.Message, "system": systemPrompt(in.Mode) + l.reportScope(), "history": hist, "snapshot": snap})
 	req, err := http.NewRequestWithContext(l.ctx, http.MethodPost, embedding.ServiceURL()+"/v1/agent/copilot", bytes.NewReader(body))
 	if err != nil {
 		return
@@ -406,6 +431,22 @@ func (l *labs) recordAnswer(message, mode string) ([]step, string) {
 	}
 	matched := false
 	low := strings.ToLower(message)
+	if l.scope != nil {
+		add("get_report", map[string]any{"name": l.scope.ID})
+		matched = true
+	} else if strings.Contains(low, "report") {
+		add("list_reports", nil)
+		for _, key := range []string{"latest", "previous"} {
+			if strings.Contains(low, key) || strings.Contains(low, "last") && key == "latest" {
+				add("get_report", map[string]any{"name": key})
+				matched = true
+			}
+		}
+		if r, ok := l.findReport(low); ok {
+			add("get_report", map[string]any{"name": r.ID})
+			matched = true
+		}
+	}
 	for _, c := range l.codes() {
 		if n := strings.ToLower(l.trends[c].DisplayName); n != "" && strings.Contains(low, n) {
 			add("get_trend", map[string]any{"name": l.trends[c].DisplayName})
@@ -484,6 +525,11 @@ func (m *Module) chat(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "RECORD_UNAVAILABLE", "Your record could not be read right now.", nil)
 		return
 	}
+	if in.ReportID != "" {
+		if r, ok := l.findReport(in.ReportID); ok {
+			l.scope = r
+		}
+	}
 	steps := []step{}
 	answer, source, model := "", "records", ""
 	cloud := m.granted(ctx, profileID, "cloud_model")
@@ -493,7 +539,7 @@ func (m *Module) chat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cloud && answer == "" {
-		msgs := []map[string]any{{"role": "system", "content": systemPrompt(in.Mode)}}
+		msgs := []map[string]any{{"role": "system", "content": systemPrompt(in.Mode) + l.reportScope()}}
 		for _, h := range in.History[max(0, len(in.History)-6):] {
 			if h.Role == "user" || h.Role == "assistant" {
 				msgs = append(msgs, map[string]any{"role": h.Role, "content": truncate(h.Content, 1200)})

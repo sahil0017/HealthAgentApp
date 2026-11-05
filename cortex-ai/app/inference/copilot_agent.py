@@ -80,6 +80,23 @@ def _find_trend(snapshot: dict, query: str) -> str:
     return f'There is no verified result named "{query}" in the record.'
 
 
+def _find_report(snapshot: dict, query: str) -> str:
+    q = query.strip().lower()
+    reports = snapshot.get("reports") or []
+    if q in ("latest", "newest", "last", "most recent", "recent") and reports:
+        return reports[0].get("out", "")
+    if q in ("previous", "earlier", "older", "before") and len(reports) > 1:
+        return reports[1].get("out", "")
+    for r in reports:
+        if q == str(r.get("id", "")).lower():
+            return r.get("out", "")
+    for r in reports:
+        title = str(r.get("title", "")).lower()
+        if q and ((title and (q in title or title in q)) or q in str(r.get("date", ""))):
+            return r.get("out", "")
+    return f'There is no report matching "{query}". ' + str(snapshot.get("list_reports", ""))
+
+
 def _record_tools(snapshot: dict, calls: list[dict]):
     from copilot import define_tool
 
@@ -124,7 +141,25 @@ def _record_tools(snapshot: dict, calls: list[dict]):
         calls.append({"tool": "get_care_plan", "args": {}})
         return snapshot.get("get_care_plan", "")
 
-    return [list_biomarkers, list_flagged_labs, get_trend, list_medications, get_care_plan]
+    @define_tool(
+        name="list_reports",
+        description="List the uploaded lab reports with lab, date and how many results are outside range.",
+        skip_permission=True,
+    )
+    async def list_reports(params: _NoArgs) -> str:
+        calls.append({"tool": "list_reports", "args": {}})
+        return snapshot.get("list_reports", "")
+
+    @define_tool(
+        name="get_report",
+        description="Get every result in one report with the previous value of each test. Name can be a report id, lab name, date, 'latest' or 'previous'.",
+        skip_permission=True,
+    )
+    async def get_report(params: _NameArgs) -> str:
+        calls.append({"tool": "get_report", "args": {"name": params.name}})
+        return _find_report(snapshot, params.name)
+
+    return [list_biomarkers, list_flagged_labs, get_trend, list_medications, get_care_plan, list_reports, get_report]
 
 
 async def _send(session, prompt: str, attachments: list[dict] | None = None) -> str:
@@ -158,7 +193,7 @@ async def run_agent(message: str, system: str, history: list[dict], snapshot: di
             on_permission_request=_reject_everything_else,
             model=config.COPILOT_MODEL,
             tools=_record_tools(snapshot, calls),
-            available_tools=["list_biomarkers", "list_flagged_labs", "get_trend", "list_medications", "get_care_plan"],
+            available_tools=["list_biomarkers", "list_flagged_labs", "get_trend", "list_medications", "get_care_plan", "list_reports", "get_report"],
             system_message={"mode": "replace", "content": system},
         )
     except Exception as exc:
@@ -460,3 +495,70 @@ async def build_insights(kind: str, facts: str) -> dict:
         if i.get("tone") not in tones:
             i["tone"] = "info"
     return {"headline": captured.get("headline", ""), "items": items[:8], "model": config.COPILOT_MODEL}
+
+
+class _Queries(BaseModel):
+    queries: list[str] = Field(description="Two or three short literature search queries (3 to 8 words each) using medical terms.")
+
+
+class _Verdict(BaseModel):
+    index: int = Field(description="Index of the candidate.")
+    relevant: bool = Field(description="True only if the candidate directly helps answer the question.")
+    summary: str = Field(description="One or two plain-language sentences on what this source says about the question, using only its text.")
+
+
+class _Verdicts(BaseModel):
+    verdicts: list[_Verdict]
+
+
+async def _submit(system: str, prompt: str, model_cls, tool_name: str) -> dict:
+    if not configured():
+        raise CopilotUnavailable("model_not_configured")
+    client = await _get_client()
+    from copilot import define_tool
+
+    captured: dict[str, Any] = {}
+
+    @define_tool(name=tool_name, description="Submit the result.", skip_permission=True)
+    async def submit(params: model_cls) -> str:
+        captured.update(params.model_dump())
+        return "Received."
+
+    try:
+        session = await client.create_session(
+            on_permission_request=_reject_everything_else,
+            model=config.COPILOT_MODEL,
+            tools=[submit],
+            available_tools=[tool_name],
+            system_message={"mode": "replace", "content": system},
+        )
+    except Exception as exc:
+        raise CopilotUnavailable("session_failed") from exc
+    try:
+        await _send(session, prompt)
+    finally:
+        try:
+            await session.disconnect()
+        except Exception:
+            pass
+    if not captured:
+        raise CopilotUnavailable("no_result")
+    return captured
+
+
+async def plan_queries(question: str) -> list[str]:
+    out = await _submit(
+        "You turn a person's health question into literature search queries. Call submit_queries exactly once.",
+        f"Question: {question}", _Queries, "submit_queries",
+    )
+    return [q.strip() for q in out.get("queries", []) if q.strip()][:3]
+
+
+async def judge_sources(question: str, candidates: list[dict]) -> list[dict]:
+    listing = "\n\n".join(f"[{i}] {c['title']} ({c['publisher']})\n{c['text'][:900]}" for i, c in enumerate(candidates))
+    out = await _submit(
+        "You pick the sources that help answer a person's health question and explain each in plain language, "
+        "using only the text given. Never add facts, numbers or advice that are not in the text. Call submit_verdicts exactly once.",
+        f"Question: {question}\n\nCandidates:\n{listing}", _Verdicts, "submit_verdicts",
+    )
+    return out.get("verdicts", [])

@@ -1,10 +1,15 @@
 package research
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"cortex/backend/internal/platform/embedding"
 	"cortex/backend/internal/platform/httpx"
 
 	"github.com/go-chi/chi/v5"
@@ -36,13 +41,16 @@ type investigationItem struct {
 	Identifier *string   `json:"identifier,omitempty"`
 	Title      *string   `json:"title,omitempty"`
 	URL        *string   `json:"url,omitempty"`
+	Publisher  *string   `json:"publisher,omitempty"`
+	Year       *int      `json:"year,omitempty"`
+	WebKind    *string   `json:"web_kind,omitempty"`
 	Excerpt    *string   `json:"excerpt,omitempty"`
 	Note       *string   `json:"note,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
 const investigationColumns = `i.id::text,i.title,i.question,i.status,
-	(SELECT count(*) FROM research_investigation_items t WHERE t.investigation_id=i.id AND t.kind='source'),
+	(SELECT count(*) FROM research_investigation_items t WHERE t.investigation_id=i.id AND t.kind IN ('source','web')),
 	(SELECT count(*) FROM research_investigation_items t WHERE t.investigation_id=i.id AND t.kind='note'),
 	i.created_at,i.updated_at,i.last_refreshed_at`
 
@@ -93,6 +101,10 @@ func (m *Module) createInvestigation(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(in.Question) < 2 || len(in.Question) > 500 || len(in.Title) > 200 {
 		httpx.WriteError(w, 400, "INVALID_INVESTIGATION", "A question of 2-500 characters is required.", nil)
+		return
+	}
+	if v, err := scanInvestigation(m.DB.Pool.QueryRow(r.Context(), `SELECT `+investigationColumns+` FROM research_investigations i WHERE i.profile_id=$1 AND i.status='open' AND lower(btrim(i.question))=lower($2) ORDER BY i.created_at LIMIT 1`, profileID, in.Question)); err == nil {
+		httpx.WriteJSON(w, http.StatusOK, v)
 		return
 	}
 	var count int
@@ -157,7 +169,7 @@ func (m *Module) getInvestigation(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "INVESTIGATION_READ_FAILED", "The investigation could not be read.", nil)
 		return
 	}
-	rows, err := m.DB.Pool.Query(r.Context(), `SELECT t.id::text,t.kind,t.source_id::text,s.identifier,s.title,s.url,t.excerpt,t.note,t.created_at
+	rows, err := m.DB.Pool.Query(r.Context(), `SELECT t.id::text,t.kind,t.source_id::text,s.identifier,COALESCE(s.title,t.web_title),COALESCE(s.url,t.web_url),t.web_publisher,t.web_year,t.web_kind,t.excerpt,t.note,t.created_at
 		FROM research_investigation_items t LEFT JOIN research_sources s ON s.id=t.source_id WHERE t.investigation_id=$1 ORDER BY t.created_at,t.id`, id)
 	if err != nil {
 		httpx.WriteError(w, 500, "INVESTIGATION_READ_FAILED", "The investigation could not be read.", nil)
@@ -167,7 +179,7 @@ func (m *Module) getInvestigation(w http.ResponseWriter, r *http.Request) {
 	items := []investigationItem{}
 	for rows.Next() {
 		var it investigationItem
-		if err := rows.Scan(&it.ID, &it.Kind, &it.SourceID, &it.Identifier, &it.Title, &it.URL, &it.Excerpt, &it.Note, &it.CreatedAt); err != nil {
+		if err := rows.Scan(&it.ID, &it.Kind, &it.SourceID, &it.Identifier, &it.Title, &it.URL, &it.Publisher, &it.Year, &it.WebKind, &it.Excerpt, &it.Note, &it.CreatedAt); err != nil {
 			httpx.WriteError(w, 500, "INVESTIGATION_READ_FAILED", "The investigation could not be read.", nil)
 			return
 		}
@@ -341,7 +353,57 @@ ON CONFLICT DO NOTHING RETURNING id::text`, id, refreshSourceLimit, maxItemsPerI
 		added++
 	}
 	rows.Close()
+	added += m.discoverWeb(r.Context(), id)
 	_, _ = m.DB.Pool.Exec(r.Context(), `UPDATE research_investigations SET last_refreshed_at=now(),updated_at=now() WHERE id=$1`, id)
 	m.audit(r, "research.investigation_refreshed", id)
 	httpx.WriteJSON(w, 200, map[string]int{"added": added})
+}
+
+type webSource struct {
+	Title, URL, Publisher, Kind, Summary string
+	Year                                 *int
+}
+
+// discoverWeb asks the AI service for current papers and plain-language guides for the question and keeps the
+// ones it returns. It needs no personal data: only the question text is sent. Failure never fails a refresh.
+func (m *Module) discoverWeb(ctx context.Context, id string) int {
+	var question string
+	if m.DB.Pool.QueryRow(ctx, `SELECT question FROM research_investigations WHERE id=$1`, id).Scan(&question) != nil {
+		return 0
+	}
+	body, _ := json.Marshal(map[string]string{"question": question})
+	cctx, cancel := context.WithTimeout(ctx, 70*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodPost, embedding.ServiceURL()+"/v1/research/discover", bytes.NewReader(body))
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return 0
+	}
+	var out struct {
+		Sources []webSource `json:"sources"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil {
+		return 0
+	}
+	added := 0
+	for _, s := range out.Sources {
+		if !strings.HasPrefix(s.URL, "https://") || s.Title == "" {
+			continue
+		}
+		tag, err := m.DB.Pool.Exec(ctx, `INSERT INTO research_investigation_items(investigation_id,kind,web_title,web_url,web_publisher,web_year,web_kind,excerpt)
+			SELECT $1,'web',$2,$3,$4,$5,$6,$7 WHERE (SELECT count(*) FROM research_investigation_items WHERE investigation_id=$1) < $8
+			ON CONFLICT DO NOTHING`, id, truncate(s.Title, 300), s.URL, truncate(s.Publisher, 120), s.Year, s.Kind, truncate(s.Summary, 1800), maxItemsPerInvestigation)
+		if err == nil {
+			added += int(tag.RowsAffected())
+		}
+	}
+	return added
 }

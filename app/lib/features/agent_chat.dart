@@ -56,7 +56,10 @@ class _Msg {
 
 /// A chat with the agent: it reads the record with tools, shows each step, and offers actions to tap.
 class AgentChatScreen extends ConsumerStatefulWidget {
-  const AgentChatScreen({super.key, this.embedded = false});
+  const AgentChatScreen({super.key, this.embedded = false, this.report});
+
+  /// A report (`id`, `title`) the chat is limited to, set by "Ask Sehat about this report".
+  final Map<String, String>? report;
 
   /// True when shown as the Agent tab: no app bar, tools sit in a slim toolbar.
   final bool embedded;
@@ -65,11 +68,18 @@ class AgentChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatState extends ConsumerState<AgentChatScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _report = widget.report;
+  }
+
   final _text = TextEditingController();
   final _scroll = ScrollController();
   final _speech = SpeechToText();
   final _msgs = <_Msg>[];
   String _mode = 'explain';
+  Map<String, String>? _report;
   bool _busy = false;
   bool _listening = false;
 
@@ -118,7 +128,12 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
     try {
       final r = await ref.read(apiProvider).post(
         '/profiles/${ref.read(profileIdProvider)}/agent/chat',
-        {'message': q, 'mode': _mode, 'history': history},
+        {
+          'message': q,
+          'mode': _mode,
+          'history': history,
+          if (_report != null) 'report_id': _report!['id'],
+        },
       );
       final d = r is Map ? r.cast<String, dynamic>() : <String, dynamic>{};
       reply
@@ -325,6 +340,18 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
           : AppBar(title: const Text('Sehat'), actions: tools),
       body: Column(
         children: [
+          if (_report != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  avatar: const Icon(Icons.description_outlined, size: 16),
+                  label: Text('Report: ${_report!['title']}'),
+                  onDeleted: () => setState(() => _report = null),
+                ),
+              ),
+            ),
           if (widget.embedded)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 4, 4, 0),
