@@ -916,6 +916,12 @@ class _PrivacyState extends ConsumerState<PrivacyScreen> {
         'granted': on,
         'policy_version': '1.0',
       });
+      if (purpose == 'ai_processing') {
+        await ref.read(apiProvider).put(
+          '/profiles/$id/agent/permissions/cloud_model',
+          {'granted': on},
+        );
+      }
       ref.invalidate(profileListProvider('/consents'));
     } catch (e) {
       if (mounted) toast(context, friendly(e));

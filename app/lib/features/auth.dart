@@ -294,6 +294,11 @@ class _ConsentState extends ConsumerState<ConsentScreen> {
           'policy_version': '1.0',
         });
       }
+      // AI answers use the cloud model, so agreeing to them also allows it.
+      await ref.read(apiProvider).put(
+        '/profiles/$id/agent/permissions/cloud_model',
+        {'granted': _on['ai_processing'] == true},
+      );
       ref.invalidate(profileListProvider('/consents'));
     } catch (e) {
       if (mounted) setState(() => _error = friendly(e));
