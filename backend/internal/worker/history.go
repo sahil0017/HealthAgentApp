@@ -64,6 +64,7 @@ func (w *HistoryWorker) ProcessOne(ctx context.Context) (bool, error) {
 	status := "done"
 	switch n, err := w.scan(ctx, profileID, owner); {
 	case err == errNoAI:
+		log.Printf("history scan %s: skipped, AI answers are not enabled for this profile", id)
 		status = "skipped"
 	case err != nil:
 		log.Printf("history scan %s: %v", id, err)
