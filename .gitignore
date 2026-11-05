@@ -26,3 +26,4 @@ app/.flutter-plugins*
 app/ios/Pods/
 app/android/.gradle/
 app/android/local.properties
+infra/railway/web/site/
