@@ -11,6 +11,7 @@ import 'lookup.dart';
 import 'nearby.dart';
 import 'places.dart';
 import 'plan.dart';
+import 'prescriptions.dart';
 import 'records.dart';
 
 class MoreTab extends ConsumerWidget {
@@ -56,6 +57,12 @@ class MoreTab extends ConsumerWidget {
         'Medicine lookup',
         'Names, uses and warnings',
         const MedicineScreen(),
+      ),
+      (
+        Icons.receipt_long_outlined,
+        'Prescriptions',
+        'Read a prescription, daily schedule',
+        const PrescriptionsScreen(),
       ),
       (
         Icons.emergency_outlined,

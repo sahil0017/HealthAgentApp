@@ -30,6 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
       uv pip install --system --no-compile-bytecode torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu \
       && uv pip install --system --no-compile-bytecode -r requirements-inference.txt; \
     fi
+# The Copilot SDK needs its runtime on disk; stage it at build time so the non-root user never downloads it.
+ENV COPILOT_CLI_EXTRACT_DIR=/opt/copilot COPILOT_SKIP_CLI_DOWNLOAD=1
+RUN COPILOT_SKIP_CLI_DOWNLOAD=0 python -m copilot download-runtime && chmod -R a+rX /opt/copilot
 ARG COVERAGE=0
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     if [ "$COVERAGE" = "1" ]; then uv pip install --system --no-compile-bytecode coverage; fi

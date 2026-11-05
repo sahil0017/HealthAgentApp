@@ -272,6 +272,123 @@ func (m *Module) modelStep(ctx context.Context, msgs []map[string]any) (*agentRe
 	return &out, true
 }
 
+type copilotResult struct {
+	Answer string `json:"answer"`
+	Model  string `json:"model"`
+	Calls  []struct {
+		Tool string         `json:"tool"`
+		Args map[string]any `json:"args"`
+	} `json:"calls"`
+}
+
+// medicationFacts lists the person's active saved prescriptions as plain text for the agent.
+func (l *labs) medicationFacts() string {
+	rows, err := l.m.DB.Pool.Query(l.ctx, `SELECT i.name,i.strength,i.frequency_text,i.timing_text,i.duration_text,i.slots,i.as_needed
+		FROM prescription_items i JOIN prescriptions p ON p.id=i.prescription_id
+		WHERE i.profile_id=$1 AND i.active AND p.owner_id=$2 ORDER BY i.name LIMIT 40`, l.profile, l.owner)
+	if err != nil {
+		return "No medicines are saved in the record."
+	}
+	defer rows.Close()
+	lines := []string{}
+	for rows.Next() {
+		var name, strength, freq, timing, dur string
+		var slots []string
+		var prn bool
+		if rows.Scan(&name, &strength, &freq, &timing, &dur, &slots, &prn) != nil {
+			continue
+		}
+		s := strings.TrimSpace(name + " " + strength)
+		if freq != "" {
+			s += ", " + freq
+		}
+		if timing != "" {
+			s += ", " + timing
+		}
+		if len(slots) > 0 {
+			s += ", daily slots: " + strings.Join(slots, "/")
+		}
+		if prn {
+			s += ", as needed"
+		}
+		if dur != "" {
+			s += ", for " + dur
+		}
+		lines = append(lines, s)
+	}
+	if len(lines) == 0 {
+		return "No medicines are saved in the record."
+	}
+	return "Medicines saved from prescriptions: " + strings.Join(lines, "; ") + "."
+}
+
+func (l *labs) snapshot() map[string]any {
+	var flagged []string
+	trends := []map[string]string{}
+	names := []string{}
+	for _, c := range l.codes() {
+		t := l.trends[c]
+		names = append(names, t.DisplayName)
+		trends = append(trends, map[string]string{"code": c, "name": t.DisplayName, "out": trendFacts(t)})
+		if f := t.Points[len(t.Points)-1].Flag; f == "above_range" || f == "below_range" {
+			flagged = append(flagged, trendFacts(t))
+		}
+	}
+	flaggedText := "No latest result is outside its reference range."
+	if len(flagged) > 0 {
+		flaggedText = strings.Join(flagged, "\n")
+	}
+	return map[string]any{
+		"list_biomarkers":   "Biomarkers on file: " + strings.Join(names, ", ") + ".",
+		"list_flagged_labs": flaggedText,
+		"trends":            trends,
+		"list_medications":  l.medicationFacts(),
+	}
+}
+
+// copilotStep runs one agentic turn through the GitHub Copilot SDK service. The model calls record tools that
+// read a snapshot sent with the request; the answer is accepted only if it passes grounded().
+func (m *Module) copilotStep(l *labs, in chatRequest) (answer, model string, steps []step, ok bool) {
+	hist := []map[string]string{}
+	for _, h := range in.History[max(0, len(in.History)-6):] {
+		if h.Role == "user" || h.Role == "assistant" {
+			hist = append(hist, map[string]string{"role": h.Role, "content": truncate(h.Content, 1200)})
+		}
+	}
+	snap := l.snapshot()
+	body, _ := json.Marshal(map[string]any{"message": in.Message, "system": systemPrompt(in.Mode), "history": hist, "snapshot": snap})
+	req, err := http.NewRequestWithContext(l.ctx, http.MethodPost, embedding.ServiceURL()+"/v1/agent/copilot", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 90 * time.Second}).Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var out copilotResult
+	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil {
+		return
+	}
+	var facts strings.Builder
+	for _, c := range out.Calls {
+		if c.Tool == "list_medications" {
+			text := snap["list_medications"].(string)
+			steps = append(steps, step{c.Tool, "Checked your saved medicines", truncate(text, 90)})
+			facts.WriteString(text + "\n")
+			continue
+		}
+		st, text := l.run(c.Tool, c.Args)
+		steps = append(steps, st)
+		facts.WriteString(text + "\n")
+	}
+	if out.Answer == "" || !grounded(out.Answer, facts.String()+" "+in.Message) {
+		return
+	}
+	return out.Answer, out.Model, steps, true
+}
+
 // recordAnswer is the answer used when no model is allowed or reachable: only facts from the record.
 func (l *labs) recordAnswer(message, mode string) ([]step, string) {
 	steps := []step{}
@@ -363,7 +480,13 @@ func (m *Module) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	steps := []step{}
 	answer, source, model := "", "records", ""
-	if m.granted(ctx, profileID, "cloud_model") {
+	cloud := m.granted(ctx, profileID, "cloud_model")
+	if cloud {
+		if a, mod, st, ok := m.copilotStep(l, in); ok {
+			answer, source, model, steps = a, "copilot", mod, st
+		}
+	}
+	if cloud && answer == "" {
 		msgs := []map[string]any{{"role": "system", "content": systemPrompt(in.Mode)}}
 		for _, h := range in.History[max(0, len(in.History)-6):] {
 			if h.Role == "user" || h.Role == "assistant" {

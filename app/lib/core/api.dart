@@ -101,11 +101,23 @@ class ApiClient {
     String path, {
     Object? body,
     List<http.MultipartFile>? files,
+    List<int>? bytes,
+    String? contentType,
     bool expectSession = true,
   }) async {
     http.Response res;
     try {
-      if (files != null) {
+      if (bytes != null) {
+        final req = http.Request(method, _uri(path))
+          ..headers.addAll({
+            ..._headers,
+            'Content-Type': contentType ?? 'application/octet-stream',
+          })
+          ..bodyBytes = bytes;
+        res = await http.Response.fromStream(
+          await _http.send(req).timeout(const Duration(seconds: 150)),
+        );
+      } else if (files != null) {
         final req = http.MultipartRequest(method, _uri(path))
           ..headers.addAll(_headers)
           ..files.addAll(files);
@@ -164,6 +176,9 @@ class ApiClient {
     return payload;
   }
 
+  /// Sends raw bytes (a photo) as the request body.
+  Future<dynamic> postBytes(String p, List<int> bytes, String contentType) =>
+      request('POST', p, bytes: bytes, contentType: contentType);
   Future<dynamic> get(String p) => request('GET', p);
   Future<dynamic> post(String p, [Object? b]) =>
       request('POST', p, body: b ?? {});

@@ -14,6 +14,7 @@ import (
 	"cortex/backend/internal/modules/lifestyle"
 	"cortex/backend/internal/modules/medications"
 	"cortex/backend/internal/modules/nearby"
+	"cortex/backend/internal/modules/prescriptions"
 	"cortex/backend/internal/modules/research"
 	"cortex/backend/internal/modules/vault"
 	"cortex/backend/internal/platform/core"
@@ -36,5 +37,6 @@ func All(c *core.Core) []module.Module {
 		agent.New(c),
 		environment.New(c),
 		medications.New(c),
+		prescriptions.New(c),
 	}
 }

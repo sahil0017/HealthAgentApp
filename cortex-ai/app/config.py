@@ -31,6 +31,11 @@ HF_TOKEN = os.getenv("CORTEX_HF_TOKEN", "").strip()
 HF_API_URL = os.getenv("CORTEX_HF_API_URL", "https://router.huggingface.co/v1").strip().rstrip("/")
 HF_AGENT_MODEL = os.getenv("CORTEX_HF_AGENT_MODEL", "Qwen/Qwen2.5-7B-Instruct").strip()
 HF_TIMEOUT_SECONDS = float(os.getenv("CORTEX_HF_TIMEOUT_SECONDS", "45"))
+# GitHub Copilot SDK: signs in with this GitHub token (needs Copilot access). Empty disables it.
+COPILOT_TOKEN = os.getenv("CORTEX_COPILOT_GITHUB_TOKEN", "").strip()
+COPILOT_MODEL = os.getenv("CORTEX_COPILOT_MODEL", "auto").strip()
+COPILOT_VISION_MODEL = os.getenv("CORTEX_COPILOT_VISION_MODEL", "").strip() or COPILOT_MODEL
+COPILOT_TIMEOUT_SECONDS = float(os.getenv("CORTEX_COPILOT_TIMEOUT_SECONDS", "90"))
 
 INFERENCE_STATUS = "ollama" if OLLAMA_MODEL else ("enabled" if INFERENCE_ENABLED and MODEL_ID else "disabled")
 

@@ -99,7 +99,14 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
     if (q.isEmpty || _busy) return;
     FocusScope.of(context).unfocus();
     final history = [
-      for (final m in _msgs.where((m) => m.text.isNotEmpty).toList().reversed.take(6).toList().reversed)
+      for (final m
+          in _msgs
+              .where((m) => m.text.isNotEmpty)
+              .toList()
+              .reversed
+              .take(6)
+              .toList()
+              .reversed)
         {'role': m.user ? 'user' : 'assistant', 'content': m.text},
     ];
     final reply = _Msg.agent()..thinking = true;
@@ -118,8 +125,14 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
       );
       final d = r is Map ? r.cast<String, dynamic>() : <String, dynamic>{};
       reply
-        ..steps = [for (final s in (d['steps'] as List? ?? [])) (s as Map).cast<String, dynamic>()]
-        ..actions = [for (final s in (d['actions'] as List? ?? [])) (s as Map).cast<String, dynamic>()]
+        ..steps = [
+          for (final s in (d['steps'] as List? ?? []))
+            (s as Map).cast<String, dynamic>(),
+        ]
+        ..actions = [
+          for (final s in (d['actions'] as List? ?? []))
+            (s as Map).cast<String, dynamic>(),
+        ]
         ..source = '${d['source'] ?? 'records'}'
         ..model = '${d['model'] ?? ''}'
         ..urgent = d['urgent'] == true
@@ -134,7 +147,9 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
       final full = '${d['answer'] ?? ''}';
       for (var i = 0; i < full.length; i += 3) {
         if (!mounted) return;
-        setState(() => reply.text = full.substring(0, (i + 3).clamp(0, full.length)));
+        setState(
+          () => reply.text = full.substring(0, (i + 3).clamp(0, full.length)),
+        );
         _toBottom();
         await Future<void>.delayed(const Duration(milliseconds: 12));
       }
@@ -171,7 +186,11 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
       },
     );
     if (!ok) {
-      if (mounted) toast(context, 'Voice input is not available here. Type your question instead.');
+      if (mounted)
+        toast(
+          context,
+          'Voice input is not available here. Type your question instead.',
+        );
       return;
     }
     setState(() => _listening = true);
@@ -187,7 +206,8 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
   Future<void> _act(Json a) async {
     final id = ref.read(profileIdProvider);
     final code = '${a['biomarker_code'] ?? ''}', name = '${a['name'] ?? ''}';
-    void open(Widget w) => Navigator.push(context, MaterialPageRoute(builder: (_) => w));
+    void open(Widget w) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => w));
     switch (a['kind']) {
       case 'open_trend':
         open(BiomarkerScreen(code, name));
@@ -222,7 +242,10 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Cloud AI model', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const Text(
+              'Cloud AI model',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
             const Text(
               'Off: answers are built only from your record on our server.\n\n'
@@ -270,7 +293,9 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
   @override
   Widget build(BuildContext context) {
     final perms = ref.watch(_permsProvider).asData?.value ?? [];
-    final cloud = perms.any((p) => p['permission'] == 'cloud_model' && p['granted'] == true);
+    final cloud = perms.any(
+      (p) => p['permission'] == 'cloud_model' && p['granted'] == true,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Agent chat'),
@@ -303,9 +328,14 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                             padding: const EdgeInsets.only(right: 6),
                             child: ChoiceChip(
                               avatar: Icon(m.$3, size: 14),
-                              label: Text(m.$2, style: const TextStyle(fontSize: 11)),
+                              label: Text(
+                                m.$2,
+                                style: const TextStyle(fontSize: 11),
+                              ),
                               selected: _mode == m.$1,
-                              onSelected: _busy ? null : (_) => setState(() => _mode = m.$1),
+                              onSelected: _busy
+                                  ? null
+                                  : (_) => setState(() => _mode = m.$1),
                             ),
                           ),
                       ],
@@ -313,8 +343,14 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                   ),
                 ),
                 ActionChip(
-                  avatar: Icon(cloud ? Icons.cloud_done_outlined : Icons.shield_outlined, size: 14),
-                  label: Text(cloud ? 'Cloud AI' : 'Records only', style: const TextStyle(fontSize: 11)),
+                  avatar: Icon(
+                    cloud ? Icons.cloud_done_outlined : Icons.shield_outlined,
+                    size: 14,
+                  ),
+                  label: Text(
+                    cloud ? 'Cloud AI' : 'Records only',
+                    style: const TextStyle(fontSize: 11),
+                  ),
                   onPressed: () => _cloudSheet(cloud),
                 ),
               ],
@@ -327,9 +363,18 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                     controller: _scroll,
                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
                     itemCount: _msgs.length,
-                    itemBuilder: (_, i) => _Bubble(_msgs[i], onAction: _act, onPermissions: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const PermissionsScreen()));
-                    }),
+                    itemBuilder: (_, i) => _Bubble(
+                      _msgs[i],
+                      onAction: _act,
+                      onPermissions: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PermissionsScreen(),
+                          ),
+                        );
+                      },
+                    ),
                   ),
           ),
           SafeArea(
@@ -344,15 +389,27 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                       minLines: 1,
                       maxLines: 3,
                       maxLength: 1000,
-                      buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                      buildCounter: (
+                        _, {
+                        required currentLength,
+                        required isFocused,
+                        maxLength,
+                      }) => null,
                       textInputAction: TextInputAction.send,
                       onSubmitted: _busy ? null : _send,
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: _listening ? 'Listening…' : 'Ask about your results',
+                        hintText: _listening
+                            ? 'Listening…'
+                            : 'Ask about your results',
                         suffixIcon: IconButton(
                           tooltip: 'Speak',
-                          icon: Icon(_listening ? Icons.stop_circle_outlined : Icons.mic_none, color: _listening ? Pal.bad : Pal.mut),
+                          icon: Icon(
+                            _listening
+                                ? Icons.stop_circle_outlined
+                                : Icons.mic_none,
+                            color: _listening ? Pal.bad : Pal.mut,
+                          ),
                           onPressed: _busy ? null : _mic,
                         ),
                       ),
@@ -403,7 +460,10 @@ class _Intro extends ConsumerWidget {
           runSpacing: 8,
           children: [
             for (final s in [..._starters, ...extra.take(3)])
-              ActionChip(label: Text(s, style: const TextStyle(fontSize: 12)), onPressed: () => onPick(s)),
+              ActionChip(
+                label: Text(s, style: const TextStyle(fontSize: 12)),
+                onPressed: () => onPick(s),
+              ),
           ],
         ),
       ],
@@ -424,7 +484,10 @@ class _Bubble extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.only(bottom: 10, left: 40),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(color: Pal.priBg, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(
+            color: Pal.priBg,
+            borderRadius: BorderRadius.circular(14),
+          ),
           child: Text(m.text, style: const TextStyle(fontSize: 13)),
         ),
       );
@@ -445,7 +508,11 @@ class _Bubble extends StatelessWidget {
             if (m.thinking)
               const Row(
                 children: [
-                  SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                   SizedBox(width: 8),
                   Text('Reading your record…', style: _note),
                 ],
@@ -463,7 +530,12 @@ class _Bubble extends StatelessWidget {
                         TextSpan(
                           text: '${m.steps[i]['label']}',
                           style: const TextStyle(fontSize: 11.5),
-                          children: [TextSpan(text: '  ${m.steps[i]['summary']}', style: _note)],
+                          children: [
+                            TextSpan(
+                              text: '  ${m.steps[i]['summary']}',
+                              style: _note,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -475,17 +547,34 @@ class _Bubble extends StatelessWidget {
               Text(m.text, style: const TextStyle(fontSize: 13, height: 1.4)),
             ],
             if (m.error != null) ...[
-              Text(m.error!, style: const TextStyle(color: Pal.bad, fontSize: 12)),
+              Text(
+                m.error!,
+                style: const TextStyle(color: Pal.bad, fontSize: 12),
+              ),
               if (m.needsPermission)
-                TextButton(onPressed: onPermissions, child: const Text('Open permissions')),
+                TextButton(
+                  onPressed: onPermissions,
+                  child: const Text('Open permissions'),
+                ),
             ],
             if (m.done && m.error == null && !m.urgent) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Pill(m.source == 'model' ? 'AI model${m.model.isEmpty ? '' : ' · ${m.model.split('/').last}'}' : 'From your records'),
+                  Pill(
+                    m.source == 'copilot'
+                        ? 'GitHub Copilot${m.model.isEmpty ? '' : ' · ${m.model}'}'
+                        : m.source == 'model'
+                        ? 'AI model${m.model.isEmpty ? '' : ' · ${m.model.split('/').last}'}'
+                        : 'From your records',
+                  ),
                   const SizedBox(width: 6),
-                  const Expanded(child: Text('Information, not medical advice.', style: _note)),
+                  const Expanded(
+                    child: Text(
+                      'Information, not medical advice.',
+                      style: _note,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -498,7 +587,10 @@ class _Bubble extends StatelessWidget {
                   for (final a in m.actions)
                     ActionChip(
                       avatar: Icon(_icon('${a['kind']}'), size: 14),
-                      label: Text('${a['label']}', style: const TextStyle(fontSize: 11)),
+                      label: Text(
+                        '${a['label']}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
                       onPressed: () => onAction(a),
                     ),
                 ],
@@ -533,16 +625,21 @@ class _WhatIfState extends ConsumerState<_WhatIfSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final list = (ref.watch(profileListProvider('/biomarkers/summary')).asData?.value ?? [])
-        .where((b) => numOf((b['latest'] as Map?)?['value']) != null)
-        .toList();
+    final list =
+        (ref.watch(profileListProvider('/biomarkers/summary')).asData?.value ??
+                [])
+            .where((b) => numOf((b['latest'] as Map?)?['value']) != null)
+            .toList();
     final latest = (_b?['latest'] as Map?)?.cast<String, dynamic>();
     final range = (latest?['range'] as Map?)?.cast<String, dynamic>();
     final cur = numOf(latest?['value'])?.toDouble();
-    final lo = numOf(range?['low'])?.toDouble(), hi = numOf(range?['high'])?.toDouble();
+    final lo = numOf(range?['low'])?.toDouble(),
+        hi = numOf(range?['high'])?.toDouble();
     double min = 0, max = 1;
     if (cur != null) {
-      final span = (lo != null && hi != null && hi > lo) ? hi - lo : cur.abs() * .5 + 1;
+      final span = (lo != null && hi != null && hi > lo)
+          ? hi - lo
+          : cur.abs() * .5 + 1;
       min = ((lo ?? cur) - span).clamp(0, double.infinity).toDouble();
       max = (hi ?? cur) + span;
       if (cur > max) max = cur * 1.2;
@@ -554,23 +651,45 @@ class _WhatIfState extends ConsumerState<_WhatIfSheet> {
         ? ('Below range', Pal.warn)
         : hi != null && v > hi
         ? ('Above range', Pal.bad)
-        : (lo != null || hi != null ? ('In range', Pal.ok) : ('No range on file', Pal.mut));
+        : (lo != null || hi != null
+              ? ('In range', Pal.ok)
+              : ('No range on file', Pal.mut));
     return Padding(
-      padding: EdgeInsets.fromLTRB(18, 0, 18, 18 + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        0,
+        18,
+        18 + MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('What if…', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-          const Text('Move the slider to try a value. Nothing is saved.', style: _note),
+          const Text(
+            'What if…',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const Text(
+            'Move the slider to try a value. Nothing is saved.',
+            style: _note,
+          ),
           const SizedBox(height: 10),
           if (list.isEmpty)
-            const Text('Add a lab result first to try what-if values.', style: TextStyle(fontSize: 12, color: Pal.mut))
+            const Text(
+              'Add a lab result first to try what-if values.',
+              style: TextStyle(fontSize: 12, color: Pal.mut),
+            )
           else ...[
             DropdownButtonFormField<Json>(
               initialValue: _b,
               decoration: const InputDecoration(labelText: 'Biomarker'),
-              items: [for (final b in list) DropdownMenuItem(value: b, child: Text('${b['display_name']}'))],
+              items: [
+                for (final b in list)
+                  DropdownMenuItem(
+                    value: b,
+                    child: Text('${b['display_name']}'),
+                  ),
+              ],
               onChanged: (b) => setState(() {
                 _b = b;
                 _v = null;
@@ -580,14 +699,25 @@ class _WhatIfState extends ConsumerState<_WhatIfSheet> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text(v.toStringAsFixed(v.abs() < 10 ? 1 : 0), style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+                  Text(
+                    v.toStringAsFixed(v.abs() < 10 ? 1 : 0),
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(width: 6),
                   Text(unit, style: _note),
                   const Spacer(),
                   Pill(status.$1, fg: status.$2, bg: Pal.line),
                 ],
               ),
-              Slider(value: v, min: min, max: max, onChanged: (x) => setState(() => _v = x)),
+              Slider(
+                value: v,
+                min: min,
+                max: max,
+                onChanged: (x) => setState(() => _v = x),
+              ),
               RangeBar(value: v, low: lo, high: hi),
               const SizedBox(height: 4),
               Text(

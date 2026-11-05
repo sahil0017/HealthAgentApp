@@ -41,7 +41,9 @@ class _Body extends ConsumerWidget {
     final score = (numOf(comp['score']) ?? 0).toDouble();
     final all = _list(d['attention']);
     all.sort(
-      (a, b) => (b['severity'] == 'action' ? 1 : 0) - (a['severity'] == 'action' ? 1 : 0),
+      (a, b) =>
+          (b['severity'] == 'action' ? 1 : 0) -
+          (a['severity'] == 'action' ? 1 : 0),
     );
     final attention = all.take(2).toList();
     final goals = _list(d['goals']);

@@ -1,14 +1,14 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app import config
 from app.research import agent as research_agent, sources as research_sources
-from app.inference import hf_api
+from app.inference import copilot_agent, hf_api
 from app.inference.generate import generate_explanation
 from app.inference.registry import REGISTRY, ModelRecord
 from app.rag.service import EmbeddingUnavailable, service as embedding_service
@@ -178,6 +178,7 @@ def capabilities() -> dict[str, object]:
         "embeddings": embedding_service.status(),
         "model_inference": config.INFERENCE_STATUS,
         "agent_model": config.HF_AGENT_MODEL if hf_api.configured() else "disabled",
+        "copilot": config.COPILOT_MODEL if copilot_agent.configured() else "disabled",
     }
 
 
@@ -214,6 +215,43 @@ class AgentMessage(BaseModel):
 class AgentStep(BaseModel):
     messages: list[AgentMessage] = Field(min_length=1, max_length=40)
     tools: list[dict] = Field(default_factory=list, max_length=12)
+
+
+class CopilotTurn(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    system: str = Field(min_length=1, max_length=4000)
+    history: list[dict] = Field(default_factory=list, max_length=12)
+    snapshot: dict = Field(default_factory=dict)
+
+
+@app.post("/v1/agent/copilot")
+async def agent_copilot(turn: CopilotTurn) -> JSONResponse:
+    """A tool-using turn through the GitHub Copilot SDK, answered from the record snapshot in the request."""
+    try:
+        result = await copilot_agent.run_agent(turn.message, turn.system, turn.history, turn.snapshot)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "agent_model_unavailable", "reason": str(exc)})
+    return JSONResponse(result)
+
+
+MAX_PRESCRIPTION_BYTES = 8 << 20
+PRESCRIPTION_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+@app.post("/v1/prescription/read")
+async def prescription_read(request: Request) -> JSONResponse:
+    """Transcribe a prescription photo (raw image bytes in the body). Nothing is stored."""
+    mime = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if mime not in PRESCRIPTION_TYPES:
+        return JSONResponse(status_code=415, content={"error": "unsupported_image_type"})
+    body = await request.body()
+    if not body or len(body) > MAX_PRESCRIPTION_BYTES:
+        return JSONResponse(status_code=413, content={"error": "image_size_invalid"})
+    try:
+        result = await copilot_agent.read_prescription(body, mime)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "reader_unavailable", "reason": str(exc)})
+    return JSONResponse(result)
 
 
 @app.post("/v1/agent/step")

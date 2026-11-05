@@ -721,6 +721,43 @@ paths:
         '400': { description: Invalid symptom }
         '403': { description: Consent required }
         '409': { description: Entry limit reached }
+  /profiles/{profileID}/prescriptions:
+    get:
+      summary: Saved prescriptions with their medicines and general daily slots
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+    post:
+      summary: Save a prescription the person has reviewed line by line
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      requestBody: { $ref: '#/components/requestBodies/JSON' }
+      responses:
+        '201': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid prescription }
+        '403': { description: Consent required }
+  /profiles/{profileID}/prescriptions/read:
+    post:
+      summary: Read a prescription photo with AI (raw image body, requires cloud=1 and AI processing consent); returns an unsaved draft
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: cloud, in: query, required: true, schema: { type: string, enum: ['1'] } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Cloud confirmation missing }
+        '403': { description: Consent required }
+        '415': { description: Unsupported image type }
+        '503': { description: Reader unavailable }
+  /profiles/{profileID}/prescriptions/schedule:
+    get:
+      summary: Active medicines grouped into morning, afternoon, evening and night, plus as-needed
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/prescriptions/{rxID}:
+    delete:
+      summary: Delete a prescription
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: rxID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '204': { description: Deleted }
+        '404': { description: Not found }
   /profiles/{profileID}/symptoms/summary:
     get:
       summary: Symptoms grouped by name over the last `days` (default 90) with count, average and maximum severity
