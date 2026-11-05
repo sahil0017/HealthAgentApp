@@ -1,7 +1,7 @@
-fastapi==0.115.8
-uvicorn==0.34.0
-pypdf==5.3.0
-python-multipart==0.0.20
+fastapi==0.162.0
+uvicorn==0.54.0
+pypdf==6.21.4
+python-multipart==0.0.33
 langgraph==1.2.19
 httpx==0.28.1
 github-copilot-sdk==1.0.28
