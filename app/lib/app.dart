@@ -112,7 +112,7 @@ class Shell extends ConsumerStatefulWidget {
 class _ShellState extends ConsumerState<Shell> {
   int _i = 0;
   static const _tabs = [
-    (Icons.today_outlined, Icons.today, 'Today'),
+    (Icons.today_outlined, Icons.today, 'Dashboard'),
     (Icons.folder_outlined, Icons.folder, 'Vault'),
     (Icons.monitor_heart_outlined, Icons.monitor_heart, 'Health'),
     (Icons.auto_awesome_outlined, Icons.auto_awesome, 'Agent'),

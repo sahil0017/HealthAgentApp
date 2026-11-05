@@ -6,7 +6,6 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'agent_screens.dart';
 import 'more.dart';
-import 'vault.dart';
 
 class TodayTab extends ConsumerWidget {
   const TodayTab({super.key});
@@ -40,7 +39,11 @@ class _Body extends ConsumerWidget {
     final sum = (d['summary'] as Map?)?.cast<String, dynamic>() ?? {};
     final comp = (d['completeness'] as Map?)?.cast<String, dynamic>() ?? {};
     final score = (numOf(comp['score']) ?? 0).toDouble();
-    final attention = _list(d['attention']);
+    final all = _list(d['attention']);
+    all.sort(
+      (a, b) => (b['severity'] == 'action' ? 1 : 0) - (a['severity'] == 'action' ? 1 : 0),
+    );
+    final attention = all.take(2).toList();
     final goals = _list(d['goals']);
     final reminders = _list(d['reminders']);
     final changes = _list(d['recent_changes']);
@@ -51,7 +54,6 @@ class _Body extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
       children: [
-        const _ReportReady(),
         const BriefingCard(),
         SCard(
           onTap: () => Navigator.push(
@@ -325,44 +327,4 @@ class _Stat extends StatelessWidget {
       ),
     ),
   );
-}
-
-/// Shown when an uploaded report has been read and is waiting for the user to confirm it.
-class _ReportReady extends ConsumerWidget {
-  const _ReportReady();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final docs = ref.watch(profileListProvider('/documents')).asData?.value;
-    final ready = (docs ?? [])
-        .where(
-          (d) =>
-              d['status'] == 'review_required' ||
-              d['status'] == 'manual_review_required',
-        )
-        .toList();
-    if (ready.isEmpty) return const SizedBox.shrink();
-    final d = ready.first;
-    return SCard(
-      color: Pal.priBg,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute<void>(builder: (_) => DocumentScreen('${d['id']}')),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.description_outlined, color: Pal.pri, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              ready.length == 1
-                  ? '${d['file_name']} is ready. Check the values and confirm.'
-                  : '${ready.length} reports are ready to review.',
-              style: const TextStyle(fontSize: 12, color: Pal.pri),
-            ),
-          ),
-          const Icon(Icons.chevron_right, color: Pal.pri),
-        ],
-      ),
-    );
-  }
 }

@@ -150,6 +150,21 @@ func (ix index) lookup(label string) (CatalogEntry, bool) {
 	return CatalogEntry{}, false
 }
 
+var parenthetical = regexp.MustCompile(`\([^)]*\)?`)
+
+// exact matches the whole label (with or without a bracketed abbreviation). Table rows use it because a
+// partial match would file "Platelet Hematocrit" under Hematocrit; an unmatched row is left for the user to map.
+func (ix index) exact(label string) (CatalogEntry, bool) {
+	for _, l := range []string{label, parenthetical.ReplaceAllString(label, " ")} {
+		if e, ok := ix.terms[normalizeTerm(l)]; ok {
+			return e, true
+		}
+	}
+	return CatalogEntry{}, false
+}
+
+var footnote = regexp.MustCompile(`(?i)\b(individuals|up to|certain|rhythm|usually|approximately)\b`)
+
 func plausibleUnit(unit string, known map[string]bool) bool {
 	return strings.ContainsAny(unit, "/%") || known[strings.ToLower(unit)]
 }
@@ -160,7 +175,19 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 	candidates = make([]Candidate, 0)
 	seen := map[string]bool{}
 	observedAt := ReportDate(text)
-	for _, line := range strings.Split(text, "\n") {
+	lines := strings.Split(text, "\n")
+	for li, line := range lines {
+		if c, ok := tableRow(lines, li, ix); ok {
+			c.Page, c.ObservedAt = page, observedAt
+			if e, found := ix.exact(c.Name); found {
+				c.BiomarkerCode, c.Name = e.Code, e.Name
+			} else if key := normalizeTerm(c.Name); !seen[key] && len(key) <= 60 {
+				seen[key] = true
+				unknown = append(unknown, c.Name)
+			}
+			candidates = append(candidates, c)
+			continue
+		}
 		matches := linePattern.FindAllStringSubmatchIndex(line, -1)
 		for mi, loc := range matches {
 			match := make([]string, 4)
@@ -190,7 +217,64 @@ func ParseCandidates(text string, page int, catalog []CatalogEntry) (candidates 
 			candidates = append(candidates, c)
 		}
 	}
+	// Two different rows claiming one analyte means the catalog match is unreliable; leave both for the user to map.
+	claims := map[string]int{}
+	for _, c := range candidates {
+		if c.BiomarkerCode != "" {
+			claims[c.BiomarkerCode]++
+		}
+	}
+	for i, c := range candidates {
+		if c.BiomarkerCode != "" && claims[c.BiomarkerCode] > 1 {
+			candidates[i].BiomarkerCode = ""
+		}
+	}
 	return candidates, unknown
+}
+
+// rowPattern is a lab-table row: "Name  value  reference range" with the unit printed on a following line.
+var rowPattern = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9 ,'()\-./]{1,70}?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?|[<>≤≥]=?\s*\d+(?:\.\d+)?)\s*$`)
+
+// tableRow reads a row whose unit sits on one of the next two lines, and joins a label wrapped across lines.
+func tableRow(lines []string, i int, ix index) (Candidate, bool) {
+	line := strings.TrimSpace(lines[i])
+	m := rowPattern.FindStringSubmatch(line)
+	if m == nil {
+		return Candidate{}, false
+	}
+	value, err := strconv.ParseFloat(m[2], 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+		return Candidate{}, false
+	}
+	label := strings.TrimSpace(m[1])
+	unit, wrapped := "", ""
+	for j := i + 1; j <= i+2 && j < len(lines); j++ {
+		next := strings.TrimSpace(lines[j])
+		fields := strings.Fields(next)
+		if len(fields) == 0 {
+			continue
+		}
+		last := strings.ReplaceAll(fields[len(fields)-1], "μ", "µ")
+		if plausibleUnit(last, ix.units) && !rowPattern.MatchString(next) {
+			unit = last
+			if j == i+1 {
+				wrapped = strings.Join(fields[:len(fields)-1], " ")
+			}
+			break
+		}
+	}
+	if unit == "" || len(normalizeTerm(label)) < 2 || len(strings.Fields(label)) > 8 || footnote.MatchString(label) {
+		return Candidate{}, false
+	}
+	if wrapped != "" {
+		joined := label + " " + wrapped
+		_, joinedKnown := ix.exact(joined)
+		_, plainKnown := ix.exact(label)
+		if joinedKnown || (!plainKnown && strings.Count(label, "(") > strings.Count(label, ")")) {
+			label = joined
+		}
+	}
+	return Candidate{Name: label, Value: value, Unit: unit, Evidence: line, ReferenceRange: strings.Join(strings.Fields(m[3]), " ")}, true
 }
 
 var rangePattern = regexp.MustCompile(`(\d+(?:[.,]\d+)?\s*(?:-|–|—|to)\s*\d+(?:[.,]\d+)?|[<>≤≥]=?\s*\d+(?:[.,]\d+)?)`)
@@ -204,6 +288,7 @@ func referenceRange(tail string) string {
 var (
 	isoDate       = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
 	monthDate     = regexp.MustCompile(`(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b`)
+	slashDate     = regexp.MustCompile(`\b(\d{1,2})/(\d{1,2})/(\d{4})\b`)
 	dateLabelHint = regexp.MustCompile(`(?i)collect|report|specimen|drawn|sample|received|date of (service|test)`)
 	months        = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 )
@@ -223,6 +308,18 @@ func ReportDate(text string) *string {
 			mo = months[strings.ToLower(m[1])]
 			d, _ = strconv.Atoi(m[2])
 			y, _ = strconv.Atoi(m[3])
+		} else if m := slashDate.FindStringSubmatch(line); m != nil {
+			a, _ := strconv.Atoi(m[1])
+			b, _ := strconv.Atoi(m[2])
+			y, _ = strconv.Atoi(m[3])
+			switch {
+			case a > 12:
+				d, mo = a, b
+			case b > 12:
+				mo, d = a, b
+			default: // 03/04/2026 could be either order, so no date is better than a wrong one
+				continue
+			}
 		} else {
 			continue
 		}

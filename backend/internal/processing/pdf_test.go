@@ -102,3 +102,22 @@ func TestReportDateIgnoresUnlabelledAndImpossibleDates(t *testing.T) {
 		t.Fatalf("month-name date not parsed: %v", d)
 	}
 }
+
+func TestParseCandidatesReadsTableRowsWithUnitOnNextLine(t *testing.T) {
+	cat := append([]CatalogEntry{}, testCatalog...)
+	cat = append(cat, CatalogEntry{Code: "LDL", Name: "LDL Cholesterol", Terms: []string{"Low-Density Lipoprotein (LDL) Cholesterol"}, Units: []string{"mg/dL"}})
+	text := "Collected : 14/09/2026 10:19 AM\nTest Result Biological Reference Interval\nLow-Density Lipoprotein (LDL) 86 < 100\nCholesterol mg/dL\nCalculated\nGlucose 98 70 - 99\nHexokinase mg/dL\nPlatelet Hematocrit 0.315 0.2 - 0.5\nCalculated %\n"
+	got, _ := ParseCandidates(text, 1, cat)
+	if len(got) != 3 {
+		t.Fatalf("want 3 candidates, got %+v", got)
+	}
+	if got[0].BiomarkerCode != "LDL" || got[0].Value != 86 || got[0].Unit != "mg/dL" || got[0].ReferenceRange != "< 100" {
+		t.Fatalf("wrapped LDL row wrong: %+v", got[0])
+	}
+	if got[1].BiomarkerCode != "GLUCOSE" || got[1].ReferenceRange != "70 - 99" {
+		t.Fatalf("glucose row wrong: %+v", got[1])
+	}
+	if got[0].ObservedAt == nil || *got[0].ObservedAt != "2026-09-14" {
+		t.Fatalf("day-first date not read: %v", got[0].ObservedAt)
+	}
+}
