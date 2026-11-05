@@ -327,6 +327,13 @@ paths:
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/biomarkers/by-report:
+    parameters: [{ $ref: '#/components/parameters/profileID' }]
+    get:
+      summary: Every verified result grouped under the report it was read from, newest report first
+      description: 'Each group has the lab, report date, counts (in range, outside range, no range), and its results with the previous value of the same test from an earlier report and the change.'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/biomarkers/summary:
     parameters: [{ $ref: '#/components/parameters/profileID' }]
     get:

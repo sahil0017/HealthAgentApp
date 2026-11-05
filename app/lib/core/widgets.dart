@@ -361,3 +361,32 @@ bool outOfRange(String? flag) => const {
 }.contains(flag);
 
 bool inRange(String? flag) => flag == 'within_range' || flag == 'normal';
+
+String rangeText(Map? r, String unit) {
+  final lo = numOf(r?['low']), hi = numOf(r?['high']);
+  final u = unit.isEmpty ? '' : ' $unit';
+  if (lo != null && hi != null) return '${fmtNum(lo)}–${fmtNum(hi)}$u';
+  if (hi != null) return 'up to ${fmtNum(hi)}$u';
+  if (lo != null) return 'at least ${fmtNum(lo)}$u';
+  return '';
+}
+
+String shortDate(String? iso) {
+  final d = DateTime.tryParse(iso ?? '');
+  if (d == null) return '';
+  const m = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${d.day} ${m[d.month - 1]} ${d.year}';
+}

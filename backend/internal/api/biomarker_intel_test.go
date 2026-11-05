@@ -375,3 +375,34 @@ func TestReviewerCanAssignTheCategoryWhenApproving(t *testing.T) {
 		t.Fatalf("category %q err %v", category, err)
 	}
 }
+
+func TestResultsAreGroupedUnderTheirReportWithChangeSincePrevious(t *testing.T) {
+	e := commandCentre(t, "bm-byreport", storage()...)
+	ctx := context.Background()
+	docs := []string{}
+	for i, day := range []int{40, 5} {
+		var id string
+		err := e.a.DB.Pool.QueryRow(ctx, `INSERT INTO medical_documents(profile_id,owner_id,object_key,file_name,content_type,byte_size,status,document_type,extraction) VALUES($1,$2,$3,$4,'application/pdf',10,'approved','LAB_REPORT',$5::jsonb) RETURNING id::text`,
+			e.profile, e.owner, "k/"+e.profile+"/"+string(rune('a'+i)), "report.pdf", `{"ai":{"provider":"Orange Health","report_date":"`+ago(day)+`"}}`).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs = append(docs, id)
+		_, err = e.a.DB.Pool.Exec(ctx, `INSERT INTO observations(profile_id,owner_id,document_id,biomarker_code,name,value,unit,observed_at,verification_status) VALUES($1,$2,$3,'GLUCOSE','Glucose',$4,'mg/dL',$5::date,'VERIFIED')`, e.profile, e.owner, id, 90+i*20, ago(day))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, env := e.do("GET", "/profiles/"+e.profile+"/biomarkers/by-report", "")
+	if code != 200 {
+		t.Fatalf("by-report %d", code)
+	}
+	groups := data[[]biomarkers.ReportGroup](t, env)
+	if len(groups) != 2 || groups[0].DocumentID != docs[1] || groups[0].Title != "Orange Health" {
+		t.Fatalf("want newest report first, titled by its lab, got %+v", groups)
+	}
+	r := groups[0].Results[0]
+	if r.Change == nil || *r.Change != 20 || groups[1].Results[0].Change != nil {
+		t.Fatalf("the later report should show +20 against the earlier one: %+v / %+v", r, groups[1].Results[0])
+	}
+}

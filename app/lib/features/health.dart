@@ -11,6 +11,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'insights.dart';
+import 'lab_reports.dart';
 
 class HealthTab extends ConsumerStatefulWidget {
   const HealthTab({super.key});
@@ -64,10 +65,53 @@ class _Labs extends ConsumerStatefulWidget {
 
 class _LabsState extends ConsumerState<_Labs> {
   String _show = 'all';
+  String _view = 'report';
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: 'report',
+                  icon: Icon(Icons.description_outlined, size: 16),
+                  label: Text('By report'),
+                ),
+                ButtonSegment(
+                  value: 'test',
+                  icon: Icon(Icons.science_outlined, size: 16),
+                  label: Text('By test'),
+                ),
+              ],
+              selected: {_view},
+              onSelectionChanged: (v) => setState(() => _view = v.first),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _view == 'report' ? const LabReportsView() : _byTest(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _byTest(BuildContext context) {
     final s = ref.watch(profileListProvider('/biomarkers/summary'));
+    final sources = <String, String>{
+      for (final g
+          in ref.watch(labReportsProvider).value ??
+              const <Map<String, dynamic>>[])
+        '${g['document_id']}': [
+          '${g['title']}',
+          shortDate('${g['report_date']}'),
+        ].where((x) => x.isNotEmpty).join(' · '),
+    };
     return RefreshIndicator(
       onRefresh: () async =>
           ref.refresh(profileListProvider('/biomarkers/summary').future),
@@ -241,7 +285,10 @@ class _LabsState extends ConsumerState<_Labs> {
                               '${y['display_name']}',
                             );
                     })))
-                  _BiomarkerTile(b),
+                  _BiomarkerTile(
+                    b,
+                    source: sources['${(b['latest'] as Map?)?['document_id']}'],
+                  ),
               ],
             ],
           );
@@ -251,45 +298,17 @@ class _LabsState extends ConsumerState<_Labs> {
   }
 }
 
-String _rangeText(Map? r, String unit) {
-  final lo = numOf(r?['low']), hi = numOf(r?['high']);
-  final u = unit.isEmpty ? '' : ' $unit';
-  if (lo != null && hi != null) return '${fmtNum(lo)}–${fmtNum(hi)}$u';
-  if (hi != null) return 'up to ${fmtNum(hi)}$u';
-  if (lo != null) return 'at least ${fmtNum(lo)}$u';
-  return '';
-}
-
-String _shortDate(String? iso) {
-  final d = DateTime.tryParse(iso ?? '');
-  if (d == null) return '';
-  const m = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${d.day} ${m[d.month - 1]} ${d.year}';
-}
-
 class _BiomarkerTile extends StatelessWidget {
-  const _BiomarkerTile(this.b);
+  const _BiomarkerTile(this.b, {this.source});
   final Json b;
+  final String? source;
   @override
   Widget build(BuildContext context) {
     final latest = (b['latest'] as Map?)?.cast<String, dynamic>();
     final range = (latest?['range'] as Map?)?.cast<String, dynamic>();
     final v = numOf(latest?['value']);
     final unit = '${b['unit'] ?? ''}';
-    final rt = _rangeText(range, unit);
+    final rt = rangeText(range, unit);
     final dir = '${(b['trend'] as Map?)?['direction'] ?? b['trend'] ?? ''}';
     final trendIcon = switch (dir) {
       'rising' => Icons.trending_up,
@@ -355,11 +374,33 @@ class _BiomarkerTile extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 5),
+          if (source != null && source!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.description_outlined,
+                    size: 12,
+                    color: Pal.pri,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'From $source',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10.5, color: Pal.pri),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Text(
             [
               if (rt.isNotEmpty) 'Reference $rt' else 'No reference range',
-              if (_shortDate(latest?['observed_at'] as String?).isNotEmpty)
-                'Tested ${_shortDate(latest?['observed_at'] as String?)}',
+              if (shortDate(latest?['observed_at'] as String?).isNotEmpty)
+                'Tested ${shortDate(latest?['observed_at'] as String?)}',
             ].join(' · '),
             style: const TextStyle(fontSize: 10, color: Pal.mut),
           ),

@@ -8,7 +8,7 @@ Estimates are judgement from code size, endpoints and tests (see `architecture/m
 |---|---|---|---|
 | identity | 12 | 80% | Google/Apple sign-in, cookie and bearer sessions, refresh, device list and revoke, logout-all, profiles |
 | vault | 16 | 80% | Upload intents, OCR and extraction, review and approve, versions, history, keyword and semantic search |
-| biomarkers | 10 | 85% | Observations, verify and correct, trends, history, coverage, compare |
+| biomarkers | 10 | 85% | Observations, verify and correct, trends, history, coverage, compare, results by report |
 | healthai | 7 | 70% | Cited answers, history, feedback, MCP endpoint and tokens |
 | research | 5 | 70% | Research agent and approval of learned knowledge |
 | governance | 8 | 80% | Consents, access history, export, profile delete |
@@ -38,3 +38,5 @@ The More tab groups screens as: Care and treatment (Medications, Care Plan, Care
 ## Wellbeing score and today's plan
 
 `GET /profiles/{id}/agent/wellbeing` is computed in Go (`domain/wellbeing`) with no population thresholds. Each habit is compared with the person's own 30-day baseline, projected a week ahead with a least-squares trend, and targeted at their own best-quartile days. The score weights lab results in range (40), habits (40) and care plan (20) and renormalises when an area has no data. Tasks come from overdue follow-ups, goals off target, out-of-range results and slipping or unlogged habits.
+
+The Lab Results tab opens on **By report**: one card per uploaded report, titled by its lab and date, with in-range and outside-range counts, each result and how it moved since the same test in the previous report, and a link to that report's summary. **By test** groups the latest value of every test by panel and shows which report it came from.

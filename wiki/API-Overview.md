@@ -8,7 +8,7 @@ The full contract is `backend/openapi.yaml`. Routes are grouped by module.
 | Profiles | `/profiles`, `/profiles/{id}` |
 | Consents | `/profiles/{id}/consents`, `/profiles/{id}/consents/{purpose}` |
 | Documents | `/profiles/{id}/documents`, `.../upload-intents`, `.../search`, `/documents/{id}/approve`, `/versions`, `/history` |
-| Biomarkers | `/profiles/{id}/observations`, `/biomarkers`, `/biomarkers/{code}/trend`, `/observations/{id}/verify` |
+| Biomarkers | `/profiles/{id}/observations`, `/biomarkers`, `/biomarkers/{code}/trend`, `/biomarkers/by-report` (results grouped under the report they came from, with the lab, date and change since the previous report), `/observations/{id}/verify` |
 | Ask AI | `/profiles/{id}/questions` (returns `{questions: [...]}`), `/mcp` |
 | Command centre | `/profiles/{id}/overview`, `/timeline`, `/history`, `/goals`, `/follow-ups` |
 | Agent | `/profiles/{id}/agent/briefing`, `.../briefing/summary`, `.../chat`, `.../wellbeing` (score, habit projections, today's plan) |

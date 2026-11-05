@@ -15,6 +15,7 @@ import 'package:sehat/features/auth.dart';
 import 'package:sehat/features/environment.dart';
 import 'package:sehat/features/find_care.dart';
 import 'package:sehat/features/health.dart';
+import 'package:sehat/features/lab_reports.dart';
 import 'package:sehat/features/lookup.dart';
 import 'package:sehat/features/nearby.dart';
 import 'package:sehat/features/more.dart';
@@ -127,6 +128,65 @@ void main() {
     await t.pump(const Duration(milliseconds: 100));
     expect(posted.single, contains('Asha Rao'));
     expect(find.text('Create your profile'), findsNothing);
+  });
+
+  testWidgets('lab results by report shows the lab, date and change', (
+    t,
+  ) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/biomarkers/by-report')) {
+        return _json([
+          {
+            'document_id': 'd2',
+            'title': 'Orange Health',
+            'file_name': 'oh.pdf',
+            'report_date': '2026-09-14',
+            'total': 2,
+            'outside_range': 1,
+            'in_range': 1,
+            'no_range': 0,
+            'changed_since_previous': 1,
+            'results': [
+              {
+                'display_name': 'LDL Cholesterol',
+                'value': 160,
+                'unit': 'mg/dL',
+                'flag': 'above_range',
+                'change': 20,
+                'previous_observed_at': '2026-05-01',
+              },
+              {
+                'display_name': 'Glucose',
+                'value': 90,
+                'unit': 'mg/dL',
+                'flag': 'within_range',
+              },
+            ],
+          },
+          {
+            'document_id': 'd1',
+            'title': 'Metropolis',
+            'file_name': 'm.pdf',
+            'report_date': '2026-05-01',
+            'total': 1,
+            'outside_range': 0,
+            'in_range': 1,
+            'no_range': 0,
+            'changed_since_previous': 0,
+            'results': [],
+          },
+        ]);
+      }
+      return _json([]);
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const Scaffold(body: LabReportsView())));
+    await t.pumpAndSettle();
+    expect(find.text('Orange Health'), findsOneWidget);
+    expect(find.text('Metropolis'), findsOneWidget);
+    expect(find.textContaining('14 Sep 2026'), findsOneWidget);
+    expect(find.text('LDL Cholesterol'), findsOneWidget);
+    expect(find.textContaining('▲ 20 since 1 May 2026'), findsOneWidget);
+    expect(find.text('Above range'), findsOneWidget);
   });
 
   testWidgets('find care shows emergency, reach and hospital details', (
