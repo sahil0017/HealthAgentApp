@@ -11,6 +11,7 @@ import 'package:sehat/core/api.dart';
 import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
+import 'package:sehat/features/auth.dart';
 import 'package:sehat/features/environment.dart';
 import 'package:sehat/features/find_care.dart';
 import 'package:sehat/features/health.dart';
@@ -98,6 +99,34 @@ void main() {
     await t.pumpWidget(_app(api));
     await t.pumpAndSettle();
     expect(find.text('Create your profile'), findsOneWidget);
+  });
+
+  testWidgets('a name from sign-in creates the profile without asking', (
+    t,
+  ) async {
+    final posted = <String>[];
+    final api = _api((r) {
+      if (r.method == 'POST' && r.url.path.endsWith('/profiles')) {
+        posted.add(r.body);
+        return _json({'id': 'p9', 'display_name': 'Asha Rao'}, 201);
+      }
+      return _json([]);
+    }, token: 'tok');
+    final container = ProviderContainer(
+      overrides: [apiProvider.overrideWithValue(api)],
+    );
+    addTearDown(container.dispose);
+    container.read(identityProvider).name = 'Asha Rao';
+    await t.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: CreateProfileScreen()),
+      ),
+    );
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 100));
+    expect(posted.single, contains('Asha Rao'));
+    expect(find.text('Create your profile'), findsNothing);
   });
 
   testWidgets('find care shows emergency, reach and hospital details', (

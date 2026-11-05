@@ -33,6 +33,9 @@ class IdentityService {
   final ApiClient _api;
   bool _googleReady = false;
 
+  /// The name the sign-in provider gave us, used to create the profile without asking again.
+  String? name;
+
   String _nonce() {
     final r = Random.secure();
     return base64UrlEncode(List.generate(24, (_) => r.nextInt(256)));
@@ -63,6 +66,7 @@ class IdentityService {
     _nonceUsed = nonce;
     if (kIsWeb) return;
     final acct = await GoogleSignIn.instance.authenticate();
+    name = acct.displayName;
     final token = acct.authentication.idToken;
     if (token == null)
       throw ApiError(401, 'no_token', 'Google did not return an ID token.');
@@ -75,6 +79,7 @@ class IdentityService {
   Future<void> prepareWebGoogle() => google();
 
   Future<void> completeGoogle(GoogleSignInAccount acct) async {
+    name = acct.displayName;
     final token = acct.authentication.idToken;
     if (token == null) {
       throw ApiError(401, 'no_token', 'Google did not return an ID token.');
@@ -93,7 +98,10 @@ class IdentityService {
     final nonce = _nonce();
     final hashed = sha256.convert(utf8.encode(nonce)).toString();
     final cred = await SignInWithApple.getAppleIDCredential(
-      scopes: [AppleIDAuthorizationScopes.email],
+      scopes: [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
       nonce: hashed,
     );
     final token = cred.identityToken;
@@ -103,6 +111,10 @@ class IdentityService {
         'no_token',
         'Apple did not return an identity token.',
       );
+    name = [
+      cred.givenName,
+      cred.familyName,
+    ].whereType<String>().where((p) => p.isNotEmpty).join(' ');
     await _api.signIn('apple', token, nonce);
   }
 

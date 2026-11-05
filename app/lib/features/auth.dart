@@ -154,7 +154,19 @@ class _CreateProfileState extends ConsumerState<CreateProfileScreen> {
   final _name = TextEditingController();
   DateTime? _dob;
   bool _busy = false;
+  bool _auto = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final known = ref.read(identityProvider).name?.trim() ?? '';
+    if (known.isNotEmpty) {
+      _name.text = known;
+      _auto = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _create());
+    }
+  }
 
   @override
   void dispose() {
@@ -183,68 +195,78 @@ class _CreateProfileState extends ConsumerState<CreateProfileScreen> {
       }
       ref.invalidate(profilesProvider);
     } catch (e) {
-      if (mounted) setState(() => _error = friendly(e));
+      if (mounted) {
+        setState(() {
+          _error = friendly(e);
+          _auto = false;
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Spacer(),
-            const Text(
-              'Create your profile',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'You can add family members later.',
-              style: TextStyle(fontSize: 12, color: Pal.mut),
-            ),
-            const SizedBox(height: 18),
-            TextField(
-              controller: _name,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(labelText: 'Name', errorText: _error),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () async {
-                final d = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime(1990),
-                  firstDate: DateTime(1900),
-                  lastDate: DateTime.now(),
-                );
-                if (d != null) setState(() => _dob = d);
-              },
-              child: Text(
-                _dob == null
-                    ? 'Date of birth (optional)'
-                    : _dob!.toIso8601String().substring(0, 10),
+  Widget build(BuildContext context) => _auto
+      ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+      : Scaffold(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Spacer(),
+                  const Text(
+                    'Create your profile',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'You can add family members later.',
+                    style: TextStyle(fontSize: 12, color: Pal.mut),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: _name,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Name',
+                      errorText: _error,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime(1990),
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime.now(),
+                      );
+                      if (d != null) setState(() => _dob = d);
+                    },
+                    child: Text(
+                      _dob == null
+                          ? 'Date of birth (optional)'
+                          : _dob!.toIso8601String().substring(0, 10),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed: _busy ? null : _create,
+                    child: const Text('Continue'),
+                  ),
+                  const Spacer(flex: 2),
+                  TextButton(
+                    onPressed: () => ref.read(authProvider.notifier).signOut(),
+                    child: const Text('Sign out'),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-            FilledButton(
-              onPressed: _busy ? null : _create,
-              child: const Text('Continue'),
-            ),
-            const Spacer(flex: 2),
-            TextButton(
-              onPressed: () => ref.read(authProvider.notifier).signOut(),
-              child: const Text('Sign out'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+          ),
+        );
 }
 
 const consentPurposes = [
@@ -278,6 +300,7 @@ class ConsentScreen extends ConsumerStatefulWidget {
 
 class _ConsentState extends ConsumerState<ConsentScreen> {
   final _on = {for (final c in consentPurposes) c.$1: true};
+  DateTime? _dob;
   bool _busy = false;
   String? _error;
 
@@ -294,6 +317,12 @@ class _ConsentState extends ConsumerState<ConsentScreen> {
           'policy_version': '1.0',
         });
       }
+      if (_dob != null) {
+        await ref.read(apiProvider).patch('/profiles/$id', {
+          'date_of_birth': _dob!.toIso8601String().substring(0, 10),
+        });
+        ref.invalidate(profileMapProvider(''));
+      }
       // AI answers use the cloud model, so agreeing to them also allows it.
       await ref.read(apiProvider).put(
         '/profiles/$id/agent/permissions/cloud_model',
@@ -309,7 +338,7 @@ class _ConsentState extends ConsumerState<ConsentScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Your consent')),
+    appBar: AppBar(title: const Text('Almost done')),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -318,6 +347,29 @@ class _ConsentState extends ConsumerState<ConsentScreen> {
           style: TextStyle(fontSize: 12, color: Pal.mut),
         ),
         const SizedBox(height: 10),
+        SCard(
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: const Icon(Icons.cake_outlined, color: Pal.pri),
+            title: const Text('Date of birth', style: TextStyle(fontSize: 13)),
+            subtitle: Text(
+              _dob == null
+                  ? 'Optional. Sets age-specific reference ranges for your results.'
+                  : _dob!.toIso8601String().substring(0, 10),
+              style: const TextStyle(fontSize: 11),
+            ),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _dob ?? DateTime(1990),
+                firstDate: DateTime(1900),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _dob = d);
+            },
+          ),
+        ),
         for (final c in consentPurposes)
           SCard(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
