@@ -253,9 +253,14 @@ class NotificationsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final list = ref.watch(noticesProvider);
-    final urgent = list.where((n) => n.urgent).toList();
-    final other = list.where((n) => !n.urgent).toList();
-    Widget tile(Notice n) => SCard(
+    // Lab alerts are grouped under the report they came from; the rest stay as reminders and suggestions.
+    final byReport = <String, List<Notice>>{};
+    for (final n in list.where((n) => n.source != null)) {
+      byReport.putIfAbsent(n.source!, () => []).add(n);
+    }
+    final reminders = list.where((n) => n.source == null && n.urgent).toList();
+    final other = list.where((n) => n.source == null && !n.urgent).toList();
+    Widget tile(Notice n, {bool showSource = true}) => SCard(
       color: n.urgent ? Pal.warnBg : null,
       onTap: () {
         if (n.actionLabel == null) Navigator.pop(context);
@@ -294,7 +299,7 @@ class NotificationsScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (n.source != null)
+                if (n.source != null && showSource)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Row(
@@ -366,9 +371,19 @@ class NotificationsScreen extends ConsumerWidget {
           : ListView(
               padding: const EdgeInsets.all(14),
               children: [
-                if (urgent.isNotEmpty) ...[
+                if (reminders.isNotEmpty) ...[
                   const SectionTitle('Needs attention'),
-                  for (final n in urgent) tile(n),
+                  for (final n in reminders) tile(n),
+                ],
+                for (final e in byReport.entries) ...[
+                  SectionTitle(
+                    e.key,
+                    trailing: Text(
+                      '${e.value.length} ${e.value.length == 1 ? 'result' : 'results'} to look at',
+                      style: const TextStyle(fontSize: 10.5, color: Pal.mut),
+                    ),
+                  ),
+                  for (final n in e.value) tile(n, showSource: false),
                 ],
                 if (other.isNotEmpty) ...[
                   const SectionTitle('Worth a look'),

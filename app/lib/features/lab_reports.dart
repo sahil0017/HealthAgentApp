@@ -41,14 +41,38 @@ class LabReportsView extends ConsumerWidget {
                   title: 'Across your reports',
                   icon: Icons.compare_arrows,
                 ),
-              for (var i = 0; i < list.length; i++)
+              for (var i = 0; i < list.length; i++) ...[
+                if (i == 0 || _month(list[i]) != _month(list[i - 1]))
+                  SectionTitle(_month(list[i])),
                 _ReportCard(list[i], latest: i == 0),
+              ],
             ],
           );
         },
       ),
     );
   }
+}
+
+/// "March 2026" for a report, so a long list reads as a timeline.
+String _month(Json g) {
+  final d = DateTime.tryParse('${g['report_date']}');
+  if (d == null) return 'Undated';
+  const m = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return '${m[d.month - 1]} ${d.year}';
 }
 
 /// Opens the assistant limited to one report.

@@ -66,6 +66,7 @@ class _Labs extends ConsumerStatefulWidget {
 class _LabsState extends ConsumerState<_Labs> {
   String _show = 'all';
   String _view = 'report';
+  String _group = 'panel';
 
   @override
   Widget build(BuildContext context) {
@@ -103,14 +104,18 @@ class _LabsState extends ConsumerState<_Labs> {
 
   Widget _byTest(BuildContext context) {
     final s = ref.watch(profileListProvider('/biomarkers/summary'));
+    final reports =
+        ref.watch(labReportsProvider).value ?? const <Map<String, dynamic>>[];
     final sources = <String, String>{
-      for (final g
-          in ref.watch(labReportsProvider).value ??
-              const <Map<String, dynamic>>[])
+      for (final g in reports)
         '${g['document_id']}': [
           '${g['title']}',
           shortDate('${g['report_date']}'),
         ].where((x) => x.isNotEmpty).join(' · '),
+    };
+    final dates = <String, String>{
+      for (final g in reports)
+        '${g['document_id']}': '${g['report_date'] ?? ''}',
     };
     return RefreshIndicator(
       onRefresh: () async =>
@@ -141,13 +146,22 @@ class _LabsState extends ConsumerState<_Labs> {
           });
           final byPanel = <String, List<Json>>{};
           final labels = <String, String>{};
+          final byDate = _group == 'date';
           for (final b in shown) {
-            final k = '${b['category']}';
+            final doc = '${(b['latest'] as Map?)?['document_id']}';
+            final k = byDate
+                ? (dates[doc] ?? '').isEmpty
+                      ? 'undated'
+                      : '${dates[doc]}|$doc'
+                : '${b['category']}';
             byPanel.putIfAbsent(k, () => []).add(b);
-            labels[k] = '${b['category_label'] ?? 'Other measurements'}';
+            labels[k] = byDate
+                ? (sources[doc] ?? 'Earlier results')
+                : '${b['category_label'] ?? 'Other measurements'}';
           }
           final panels = byPanel.keys.toList()
             ..sort((x, y) {
+              if (byDate) return y.compareTo(x);
               final ox = byPanel[x]!.where((b) => outOfRange(flagOf(b))).length;
               final oy = byPanel[y]!.where((b) => outOfRange(flagOf(b))).length;
               if (ox != oy) return oy.compareTo(ox);
@@ -230,6 +244,30 @@ class _LabsState extends ConsumerState<_Labs> {
                   ],
                 ),
               ),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                      value: 'panel',
+                      icon: Icon(Icons.category_outlined, size: 15),
+                      label: Text('Group by panel'),
+                    ),
+                    ButtonSegment(
+                      value: 'date',
+                      icon: Icon(Icons.event_outlined, size: 15),
+                      label: Text('Group by date'),
+                    ),
+                  ],
+                  selected: {_group},
+                  onSelectionChanged: (v) => setState(() => _group = v.first),
+                ),
+              ),
+              const SizedBox(height: 6),
               SizedBox(
                 height: 40,
                 child: ListView(
