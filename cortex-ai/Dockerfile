@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim AS model
+FROM ghcr.io/astral-sh/uv:0.13.7-python3.12-trixie-slim AS model
 ARG CORTEX_INFERENCE=1
 ARG EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG EMBEDDING_REVISION=5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
@@ -14,7 +14,7 @@ m=os.environ.get('RERANKER_MODEL'); r=os.environ.get('RERANKER_REVISION'); \
 (snapshot_download(m, revision=r) if m and r else None)"; \
        fi
 
-FROM ghcr.io/astral-sh/uv:0.13.6-python3.12-trixie-slim
+FROM ghcr.io/astral-sh/uv:0.13.7-python3.12-trixie-slim
 ARG CORTEX_INFERENCE=1
 ARG EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 ARG EMBEDDING_REVISION=5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
