@@ -11,6 +11,10 @@ The full contract is `backend/openapi.yaml`. Routes are grouped by module.
 | Biomarkers | `/profiles/{id}/observations`, `/biomarkers`, `/biomarkers/{code}/trend`, `/observations/{id}/verify` |
 | Ask AI | `/profiles/{id}/questions` (returns `{questions: [...]}`), `/mcp` |
 | Command centre | `/profiles/{id}/overview`, `/timeline`, `/history`, `/goals`, `/follow-ups` |
+| Agent | `/profiles/{id}/agent/briefing`, `.../briefing/summary`, `.../chat`, `.../wellbeing` (score, habit projections, today's plan) |
+| AI insights | `/profiles/{id}/agent/insights/{research,lifestyle,history,labs}`, `.../insights/uploads`, `.../insights/document/{documentID}`, `.../insights/biomarker/{code}`; each returns `{headline, items[{title, detail, tone}], source: ai or records, ai_available}` |
+| Nearby | `/nearby/news` (local stories by city, then country, then worldwide), `/nearby/places`, `/nearby/alerts` |
+| Prescriptions | `/profiles/{id}/prescriptions`, `.../prescriptions/from-document/{documentID}` (medicines the AI read from a report) |
 | Devices | `/profiles/{id}/devices`, `/device-readings`, `.../lab-comparison` |
 | Knowledge (admin) | `/knowledge/entries`, `/knowledge/research`, `.../approve`, `.../reject` |
 | Research | `/profiles/{id}/investigations`, `.../items`, `.../refresh` |

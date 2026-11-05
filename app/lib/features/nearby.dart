@@ -19,14 +19,88 @@ final alertsProvider = FutureProvider.autoDispose.family<List<Json>, String>(
       ),
 );
 
-final hospitalsProvider = FutureProvider.autoDispose.family<List<Json>, Area>(
-  (ref, a) => ref
+/// Words from the user's own record that point to a specialty: active conditions and the
+/// categories of results that are out of range.
+final careNeedsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
+  final terms = <String>{};
+  try {
+    final history = await ref.watch(profileListProvider('/history').future);
+    for (final e in history) {
+      if (e['kind'] == 'condition' && e['status'] == 'active') {
+        terms.add('${e['title']}'.toLowerCase());
+      }
+    }
+    final labs = await ref.watch(
+      profileListProvider('/biomarkers/summary').future,
+    );
+    for (final b in labs) {
+      final flag = '${(b['latest'] as Map?)?['flag'] ?? ''}';
+      if (flag.isNotEmpty && outOfRange(flag) && b['category'] != null) {
+        terms.add('${b['category']}'.toLowerCase());
+      }
+    }
+  } catch (_) {}
+  return terms.toList();
+});
+
+// Words that appear in hospital specialty tags and names for each need.
+const _specialtyHints = <String, List<String>>{
+  'lipid': ['cardio', 'heart'],
+  'cardi': ['cardio', 'heart'],
+  'hypertension': ['cardio', 'heart'],
+  'blood pressure': ['cardio', 'heart'],
+  'glucose': ['diabet', 'endocrin'],
+  'diabet': ['diabet', 'endocrin'],
+  'thyroid': ['endocrin', 'diabet'],
+  'kidney': ['nephro', 'renal', 'kidney'],
+  'renal': ['nephro', 'renal', 'kidney'],
+  'liver': ['gastro', 'hepat', 'liver'],
+  'asthma': ['pulmon', 'chest', 'respir'],
+  'blood count': ['haemat', 'hemat', 'oncolog'],
+  'anaemia': ['haemat', 'hemat'],
+  'cancer': ['oncolog', 'cancer'],
+  'bone': ['ortho'],
+  'pregnan': ['maternity', 'gynae', 'gynec', 'obstet'],
+};
+
+/// Orders hospitals by fit with the user's records, emergency cover and distance, and says why.
+List<Json> rankHospitals(List<Json> all, List<String> needs) {
+  final scored = <(double, Json)>[];
+  for (final h in all) {
+    final text = '${h['speciality'] ?? ''} ${h['name']}'.toLowerCase();
+    var score = -(numOf(h['distance_km']) ?? 0).toDouble() * 0.4;
+    String? reason;
+    for (final n in needs) {
+      final hints = <String>{
+        for (final e in _specialtyHints.entries)
+          if (n.contains(e.key)) ...e.value,
+        ...n.split(RegExp(r'\W+')).where((w) => w.length > 4),
+      };
+      if (hints.any(text.contains)) {
+        score += 4;
+        reason ??= 'Matches your ${n.length > 24 ? 'records' : n}';
+      }
+    }
+    if (h['emergency'] == true) score += 2;
+    if (text.contains('multi') || text.contains('super')) score += 1;
+    scored.add((score, {...h, 'reason': ?reason}));
+  }
+  scored.sort((a, b) => b.$1.compareTo(a.$1));
+  return [for (final s in scored) s.$2];
+}
+
+final hospitalsProvider = FutureProvider.autoDispose.family<List<Json>, Area>((
+  ref,
+  a,
+) async {
+  final all = await ref
       .read(apiProvider)
       .list(
         '/nearby/hospitals?lat=${a.lat}&lng=${a.lng}&radius_km=15',
         key: 'hospitals',
-      ),
-);
+      );
+  return rankHospitals(all, await ref.watch(careNeedsProvider.future));
+});
 
 const _small = TextStyle(fontSize: 10.5, color: Pal.mut);
 const _bold = TextStyle(fontSize: 12, fontWeight: FontWeight.w600);
@@ -136,6 +210,22 @@ class NearbyResults extends ConsumerWidget {
                     ),
                   ],
                 ),
+        ),
+        SCard(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(builder: (_) => const AreaMapScreen()),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.map_outlined, color: Pal.pri, size: 20),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text('Area map: hospitals and alerts around you'),
+              ),
+              Icon(Icons.chevron_right, color: Pal.mut),
+            ],
+          ),
         ),
         const SectionTitle('Doctors, clinics, pharmacies & labs'),
         SCard(

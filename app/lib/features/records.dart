@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'insights.dart';
 
 Widget _page(String title, Widget body, {List<Widget>? actions}) => Scaffold(
   appBar: AppBar(title: Text(title), actions: actions),
@@ -64,7 +66,7 @@ final _sharedWithMeProvider = FutureProvider.autoDispose<List<Json>>(
 const _scopeLabels = {
   'summary': 'Basic summary',
   'labs': 'Lab results',
-  'history': 'Medical history',
+  'history': 'Medical History',
   'follow_ups': 'Follow-ups',
 };
 
@@ -197,7 +199,7 @@ class FamilyScreen extends ConsumerWidget {
     final mine = ref.watch(_sharesProvider);
     final theirs = ref.watch(_sharedWithMeProvider);
     return _page(
-      'Family sharing',
+      'Family & Caregiver Access',
       ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -398,34 +400,37 @@ class DataControlScreen extends ConsumerStatefulWidget {
 }
 
 class _DataControlState extends ConsumerState<DataControlScreen> {
-  static const _options = <int?>[null, 30, 90, 365, 730];
+  static const _options = <(int?, String)>[
+    (null, 'Keep'),
+    (730, '2 years'),
+    (365, '1 year'),
+    (90, '90 days'),
+    (30, '30 days'),
+  ];
   int? _ai, _dev;
-  bool _loaded = false, _busy = false;
-
-  String _name(int? d) => d == null ? 'Keep' : '$d days';
+  bool _loaded = false, _busy = false, _exporting = false;
+  Json? _summary;
 
   Future<void> _save() async {
-    setState(() => _busy = true);
     try {
       await ref.read(apiProvider).put('/profiles/${_pid(ref)}/retention', {
         'ai_history_days': _ai,
         'device_readings_days': _dev,
       });
-      if (mounted) toast(context, 'Saved');
+      ref.invalidate(profileMapProvider('/retention'));
+      if (mounted) toast(context, 'Retention updated');
     } catch (e) {
       if (mounted) toast(context, friendly(e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _apply() async {
+  Future<void> _cleanUp() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete older data now?'),
+        title: const Text('Clean up now?'),
         content: const Text(
-          'Questions and device readings older than your limits are permanently deleted.',
+          'Assistant history and device readings older than your limits are permanently deleted. Your reports and results are never touched.',
         ),
         actions: [
           TextButton(
@@ -434,44 +439,143 @@ class _DataControlState extends ConsumerState<DataControlScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
+            child: const Text('Delete older data'),
           ),
         ],
       ),
     );
     if (ok != true) return;
+    setState(() => _busy = true);
     try {
-      await _save();
       final r =
           await ref
                   .read(apiProvider)
                   .post('/profiles/${_pid(ref)}/retention/apply')
               as Map?;
-      if (mounted) toast(context, 'Done${r == null ? '' : ': $r'}');
+      final n = (r?.values ?? []).whereType<num>().fold<num>(
+        0,
+        (a, b) => a + b,
+      );
+      ref.invalidate(profileMapProvider('/retention'));
+      if (mounted) {
+        toast(
+          context,
+          n == 0
+              ? 'Nothing was older than your limits'
+              : '$n old items deleted',
+        );
+      }
     } catch (e) {
       if (mounted) toast(context, friendly(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _export() async {
+  Future<String?> _fetchExport() async {
+    setState(() => _exporting = true);
     try {
       final d = await ref
           .read(apiProvider)
           .get('/profiles/${_pid(ref)}/export');
-      await Clipboard.setData(
-        ClipboardData(text: const JsonEncoder.withIndent('  ').convert(d)),
-      );
-      if (mounted) toast(context, 'Export copied to clipboard');
+      final m = d is Map ? d.cast<String, dynamic>() : <String, dynamic>{};
+      if (mounted) setState(() => _summary = m);
+      return const JsonEncoder.withIndent('  ').convert(d);
     } catch (e) {
       if (mounted) toast(context, friendly(e));
+      return null;
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
+
+  Future<void> _copy() async {
+    final text = await _fetchExport();
+    if (text == null) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) toast(context, 'Copied. Paste it anywhere you keep backups.');
+  }
+
+  Future<void> _share() async {
+    final text = await _fetchExport();
+    if (text == null) return;
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              utf8.encode(text),
+              mimeType: 'application/json',
+              name: 'sehat-health-data.json',
+            ),
+          ],
+          fileNameOverrides: ['sehat-health-data.json'],
+        ),
+      );
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted)
+        toast(context, 'Sharing is not available here. Copied instead.');
+    }
+  }
+
+  static const _labels = {
+    'documents': 'Reports',
+    'observations': 'Lab results',
+    'lifestyle_logs': 'Habit logs',
+    'symptom_entries': 'Symptoms',
+    'history_entries': 'History',
+    'goals': 'Goals',
+    'follow_ups': 'Follow-ups',
+    'health_questions': 'Assistant questions',
+    'research_investigations': 'Research',
+    'device_readings': 'Device readings',
+  };
+
+  Widget _policy(
+    IconData icon,
+    String title,
+    String body,
+    int? value,
+    ValueChanged<int?> on,
+  ) => SCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: Pal.pri),
+            const SizedBox(width: 8),
+            Text(title, style: _bold),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(body, style: _small),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final (days, label) in _options)
+              ChoiceChip(
+                label: Text(label, style: const TextStyle(fontSize: 11)),
+                selected: value == days,
+                onSelected: (_) {
+                  setState(() => on(days));
+                  _save();
+                },
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final r = ref.watch(profileMapProvider('/retention'));
     return _page(
-      'Data & retention',
+      'Data Retention & Export',
       AsyncBody<Json>(
         r,
         onRetry: () => ref.invalidate(profileMapProvider('/retention')),
@@ -481,60 +585,97 @@ class _DataControlState extends ConsumerState<DataControlScreen> {
             _dev = (p['device_readings_days'] as num?)?.toInt();
             _loaded = true;
           }
-          Widget pick(String label, int? v, ValueChanged<int?> on) => Row(
-            children: [
-              Expanded(child: Text(label, style: _bold)),
-              DropdownButton<int?>(
-                value: _options.contains(v) ? v : null,
-                items: [
-                  for (final o in _options)
-                    DropdownMenuItem(value: o, child: Text(_name(o))),
-                ],
-                onChanged: (x) => setState(() => on(x)),
-              ),
-            ],
-          );
+          final last = DateTime.tryParse('${p['last_applied_at'] ?? ''}');
+          final counts = <MapEntry<String, int>>[
+            for (final e in _labels.entries)
+              if (((_summary?[e.key] as List?)?.length ?? 0) > 0)
+                MapEntry(e.value, (_summary![e.key] as List).length),
+          ];
           return ListView(
             padding: const EdgeInsets.all(14),
             children: [
+              const SectionTitle('How long we keep it'),
+              _policy(
+                Icons.chat_bubble_outline,
+                'Assistant history',
+                'Questions you asked Sehat and its answers.',
+                _ai,
+                (x) => _ai = x,
+              ),
+              _policy(
+                Icons.watch_outlined,
+                'Device readings',
+                'Steps, heart rate and other readings from connected devices.',
+                _dev,
+                (x) => _dev = x,
+              ),
               SCard(
-                child: Column(
+                color: Pal.priBg,
+                child: Row(
                   children: [
-                    pick('Agent questions', _ai, (x) => _ai = x),
-                    pick('Device readings', _dev, (x) => _dev = x),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: _busy ? null : _save,
-                            child: const Text('Save'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: _busy ? null : _apply,
-                            child: const Text('Apply now'),
-                          ),
-                        ),
-                      ],
+                    const Icon(Icons.lock_outline, size: 16, color: Pal.pri),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Reports, lab results and medical history are kept until you delete them.',
+                        style: TextStyle(fontSize: 11, height: 1.3),
+                      ),
                     ),
                   ],
                 ),
               ),
-              const SectionTitle('Your data'),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _cleanUp,
+                icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+                label: Text(
+                  last == null
+                      ? 'Clean up now'
+                      : 'Clean up now · last run ${last.toLocal().day}/${last.toLocal().month}/${last.toLocal().year}',
+                ),
+              ),
+              const SectionTitle('Take your data with you'),
               SCard(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Export everything as JSON (copied to clipboard).',
-                        style: TextStyle(fontSize: 11.5),
-                      ),
+                    const Text(
+                      'A complete copy of your profile, reports, results, habits, care plan and consents in one JSON file.',
+                      style: TextStyle(fontSize: 11.5, height: 1.35),
                     ),
-                    OutlinedButton(
-                      onPressed: _export,
-                      child: const Text('Export'),
+                    if (counts.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final c in counts) Pill('${c.value} ${c.key}'),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _exporting ? null : _share,
+                            icon: _exporting
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.ios_share, size: 16),
+                            label: const Text('Share as file'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: _exporting ? null : _copy,
+                          child: const Text('Copy'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -616,7 +757,7 @@ class HistoryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final h = ref.watch(profileListProvider('/history'));
     return Scaffold(
-      appBar: AppBar(title: const Text('Medical history')),
+      appBar: AppBar(title: const Text('Medical History')),
       floatingActionButton: FloatingActionButton.small(
         onPressed: () => _add(context, ref),
         child: const Icon(Icons.add),
@@ -624,46 +765,64 @@ class HistoryScreen extends ConsumerWidget {
       body: AsyncBody<List<Json>>(
         h,
         onRetry: () => ref.invalidate(profileListProvider('/history')),
-        builder: (l) => l.isEmpty
-            ? const Empty(
+        builder: (l) => ListView(
+          padding: const EdgeInsets.all(14),
+          children: [
+            InsightPanel(
+              path: '/agent/insights/history',
+              title: 'Found in your reports',
+              icon: Icons.fact_check_outlined,
+              itemLabel: 'Add to my history',
+              onItem: (it) async {
+                try {
+                  await ref.read(apiProvider).post(
+                    '/profiles/${_pid(ref)}/history',
+                    {'kind': 'condition', 'title': '${it['title']}'},
+                  );
+                  ref.invalidate(profileListProvider('/history'));
+                  if (context.mounted) toast(context, 'Added to your history');
+                } catch (e) {
+                  if (context.mounted) toast(context, friendly(e));
+                }
+              },
+            ),
+            if (l.isEmpty)
+              const Empty(
                 Icons.medical_information_outlined,
-                'No history yet',
-                body: 'Conditions, allergies, surgeries and medications.',
-              )
-            : ListView(
-                padding: const EdgeInsets.all(14),
-                children: [
-                  for (final e in l)
-                    SCard(
-                      child: Row(
+                'Nothing saved yet',
+                body: 'Add what Sehat found in your reports, or add conditions, allergies and surgeries yourself.',
+              ),
+            for (final e in l)
+              SCard(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${e['title']}', style: _bold),
-                                Text(
-                                  _kinds['${e['kind']}'] ?? '${e['kind']}',
-                                  style: _small,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Pill('${e['status']}'),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, size: 18),
-                            onPressed: () async {
-                              await ref
-                                  .read(apiProvider)
-                                  .delete('/history/${e['id']}');
-                              ref.invalidate(profileListProvider('/history'));
-                            },
+                          Text('${e['title']}', style: _bold),
+                          Text(
+                            _kinds['${e['kind']}'] ?? '${e['kind']}',
+                            style: _small,
                           ),
                         ],
                       ),
                     ),
-                ],
+                    Pill('${e['status']}'),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: () async {
+                        await ref
+                            .read(apiProvider)
+                            .delete('/history/${e['id']}');
+                        ref.invalidate(profileListProvider('/history'));
+                      },
+                    ),
+                  ],
+                ),
               ),
+          ],
+        ),
       ),
     );
   }
@@ -697,7 +856,7 @@ class _McpState extends ConsumerState<McpScreen> {
 
   @override
   Widget build(BuildContext context) => _page(
-    'Connect AI tools',
+    'Connected Apps',
     ListView(
       padding: const EdgeInsets.all(14),
       children: [

@@ -67,7 +67,7 @@ func (m *Module) biomarkerCompare(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(codes)
 	out := []biomarker.Change{}
 	for _, code := range codes {
-		if c := biomarker.Compare(trends[code], biomarker.CategoryOf(code, categories), from, to); c.Status != "no_data" {
+		if c := biomarker.Compare(trends[code], biomarker.CategoryFor(code, trends[code].DisplayName, categories), from, to); c.Status != "no_data" {
 			out = append(out, c)
 		}
 	}

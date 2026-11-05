@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,9 +16,11 @@ import (
 	"time"
 	"uuid"
 
+	"cortex/backend/internal/domain/biomarker"
 	"cortex/backend/internal/platform/httpx"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 )
 
 const maxDocumentBytes = 15 << 20
@@ -318,6 +321,12 @@ func (m *Module) approveDocument(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, 500, map[string]string{"error": "review_save_failed"})
 		return
 	}
+	for i := range in.Biomarkers {
+		b := &in.Biomarkers[i]
+		if b.BiomarkerCode == nil || strings.TrimSpace(*b.BiomarkerCode) == "" {
+			b.BiomarkerCode = m.ensureCatalog(ctx, tx, b.Name, b.Unit)
+		}
+	}
 	for _, b := range in.Biomarkers {
 		_, err = tx.Exec(ctx, `INSERT INTO observations(profile_id,document_id,owner_id,biomarker_code,name,value,unit,observed_at,reference_range,source_type,verification_status) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::date,$9,'LAB_DOCUMENT','VERIFIED')`, chi.URLParam(r, "profileID"), d.ID, httpx.Owner(r), b.BiomarkerCode, strings.TrimSpace(b.Name), b.Value, strings.TrimSpace(b.Unit), stringValue(b.ObservedAt), strings.TrimSpace(b.ReferenceRange))
 		if err != nil {
@@ -354,4 +363,23 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+// ensureCatalog gives a reviewed result with no catalog match its own entry, so the same test from another lab
+// joins the same trend. User-reported entries are not used to auto-match future extractions. It returns nil when
+// an existing entry with that code uses a different unit, leaving the result unlinked as before.
+func (m *Module) ensureCatalog(ctx context.Context, tx pgx.Tx, name, unit string) *string {
+	name, unit = strings.TrimSpace(name), strings.TrimSpace(unit)
+	code := biomarker.CodeFor(name)
+	if code == "" {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO biomarker_catalog(code,display_name,synonyms,supported_units,status,source) VALUES($1,$2,ARRAY[$2]::text[],ARRAY[$3]::text[],'user_reported','report') ON CONFLICT(code) DO NOTHING`, code, name, unit); err != nil {
+		return nil
+	}
+	var units []string
+	if err := tx.QueryRow(ctx, `SELECT supported_units FROM biomarker_catalog WHERE code=$1`, code).Scan(&units); err != nil || (len(units) > 0 && !httpx.Contains(units, unit)) {
+		return nil
+	}
+	return &code
 }

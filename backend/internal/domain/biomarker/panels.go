@@ -3,7 +3,9 @@ package biomarker
 import (
 	"math"
 	"sort"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // Category is a panel family. The catalog is learned, so each biomarker is assigned one when it is
@@ -37,6 +39,50 @@ func ValidCategory(id string) bool {
 func CategoryOf(code string, categories map[string]string) string {
 	if c, ok := categories[code]; ok {
 		return c
+	}
+	return "other"
+}
+
+// CategoryLabel is the standard panel name shown to people.
+func CategoryLabel(id string) string {
+	for _, c := range Categories {
+		if c.ID == id {
+			return c.Label
+		}
+	}
+	return "Other measurements"
+}
+
+// categoryWords maps words in a test's name to a panel, so tests the catalog has not classified still land in the
+// right family. Checked in order: the first family with a matching word wins.
+var categoryWords = []struct {
+	id    string
+	words []string
+}{
+	{"glucose", []string{"glucose", "hba1c", "a1c", "glycohemoglobin", "glycohaemoglobin", "glycated", "glycosylated", "insulin", "fructosamine"}},
+	{"lipid", []string{"cholesterol", "ldl", "hdl", "vldl", "triglyceride", "triglycerides", "lipoprotein", "lipid"}},
+	{"liver", []string{"bilirubin", "sgot", "sgpt", "alt", "ast", "alanine", "aspartate", "alkaline", "phosphatase", "ggt", "gamma", "albumin", "globulin", "transaminase", "transferase"}},
+	{"kidney", []string{"creatinine", "urea", "bun", "uric", "urate", "egfr", "cystatin"}},
+	{"hormone", []string{"tsh", "thyroid", "thyroxine", "triiodothyronine", "t3", "t4", "cortisol", "testosterone", "estradiol", "prolactin", "fsh", "lh", "progesterone", "dhea", "hormone"}},
+	{"vitamin", []string{"vitamin", "b12", "cobalamin", "folate", "folic", "ferritin", "iron", "tibc", "transferrin", "calcium", "magnesium", "zinc", "phosphorus", "sodium", "potassium", "chloride"}},
+	{"cbc", []string{"hemoglobin", "haemoglobin", "hematocrit", "haematocrit", "pcv", "rbc", "wbc", "platelet", "platelets", "leukocyte", "leucocyte", "neutrophil", "neutrophils", "lymphocyte", "lymphocytes", "monocyte", "monocytes", "eosinophil", "eosinophils", "basophil", "basophils", "mcv", "mch", "mchc", "rdw", "mpv", "corpuscular", "blood", "cell", "cells"}},
+}
+
+// CategoryFor uses the catalog's panel when it has one and otherwise reads the test's name.
+func CategoryFor(code, name string, categories map[string]string) string {
+	if c, ok := categories[code]; ok && c != "other" {
+		return c
+	}
+	words := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(code+" "+name), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		words[w] = true
+	}
+	for _, f := range categoryWords {
+		for _, w := range f.words {
+			if words[w] {
+				return f.id
+			}
+		}
 	}
 	return "other"
 }

@@ -5,7 +5,13 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'agent_screens.dart';
-import 'more.dart';
+import 'health.dart';
+import 'notifications.dart';
+import 'find_care.dart';
+import 'plan.dart';
+import 'prescriptions.dart';
+import 'records.dart';
+import 'summary.dart';
 
 class TodayTab extends ConsumerWidget {
   const TodayTab({super.key});
@@ -14,8 +20,12 @@ class TodayTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ov = ref.watch(profileMapProvider('/overview'));
     return RefreshIndicator(
-      onRefresh: () async =>
-          ref.refresh(profileMapProvider('/overview').future),
+      onRefresh: () async {
+        refreshCarePlan(ref);
+        ref.invalidate(wellbeingProvider);
+        ref.invalidate(doseScheduleProvider);
+        await ref.read(profileMapProvider('/overview').future);
+      },
       child: AsyncBody<Json>(
         ov,
         onRetry: () => ref.invalidate(profileMapProvider('/overview')),
@@ -30,6 +40,133 @@ List<Json> _list(Object? v) => (v as List? ?? [])
     .map((e) => e.cast<String, dynamic>())
     .toList();
 
+void _go(BuildContext context, Widget w) =>
+    Navigator.push(context, MaterialPageRoute<void>(builder: (_) => w));
+
+/// Top results as small visual cards: out-of-range tests first, each with its place in the reference range.
+class _KeyResults extends ConsumerWidget {
+  const _KeyResults();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final list = ref
+        .watch(profileListProvider('/biomarkers/summary'))
+        .asData
+        ?.value;
+    if (list == null || list.isEmpty) return const SizedBox.shrink();
+    int rank(Json b) =>
+        outOfRange((b['latest'] as Map?)?['flag'] as String?) ? 0 : 1;
+    final top = [...list]..sort((a, b) => rank(a) - rank(b));
+    final flagged = list.where((b) => rank(b) == 0).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(
+          'Latest lab results',
+          trailing: flagged == 0
+              ? const Pill('All in range', fg: Pal.ok, bg: Pal.okBg)
+              : Pill('$flagged outside range', fg: Pal.warn, bg: Pal.warnBg),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+          child: Row(
+            children: [
+              Expanded(
+                flex: list.length - flagged == 0 ? 1 : list.length - flagged,
+                child: Container(height: 6, color: Pal.ok),
+              ),
+              if (flagged > 0) ...[
+                const SizedBox(width: 2),
+                Expanded(
+                  flex: flagged,
+                  child: Container(height: 6, color: Pal.warn),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 112,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: top.length.clamp(0, 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final b = top[i];
+              final latest = (b['latest'] as Map?)?.cast<String, dynamic>();
+              final range = (latest?['range'] as Map?)?.cast<String, dynamic>();
+              final v = numOf(latest?['value']);
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _go(
+                  context,
+                  BiomarkerScreen(
+                    '${b['biomarker_code']}',
+                    '${b['display_name']}',
+                  ),
+                ),
+                child: Container(
+                  width: 150,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Pal.card,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${b['display_name']}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            fmtNum(v),
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              '${b['unit'] ?? ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Pal.mut,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      if (v != null)
+                        RangeBar(
+                          value: v.toDouble(),
+                          low: numOf(range?['low'])?.toDouble(),
+                          high: numOf(range?['high'])?.toDouble(),
+                        ),
+                      const SizedBox(height: 6),
+                      Pill.flag(latest?['flag'] as String?),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _Body extends ConsumerWidget {
   const _Body(this.d);
   final Json d;
@@ -38,65 +175,64 @@ class _Body extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sum = (d['summary'] as Map?)?.cast<String, dynamic>() ?? {};
     final comp = (d['completeness'] as Map?)?.cast<String, dynamic>() ?? {};
+    final profile = (d['profile'] as Map?)?.cast<String, dynamic>() ?? {};
     final score = (numOf(comp['score']) ?? 0).toDouble();
-    final all = _list(d['attention']);
-    all.sort(
-      (a, b) =>
-          (b['severity'] == 'action' ? 1 : 0) -
-          (a['severity'] == 'action' ? 1 : 0),
-    );
-    final attention = all.take(2).toList();
     final goals = _list(d['goals']);
-    final reminders = _list(d['reminders']);
-    final changes = _list(d['recent_changes']);
     final missing = _list(comp['items'])
         .where((i) => i['done'] != true)
         .toList();
+    final open = ref
+        .watch(profileListProvider('/follow-ups'))
+        .asData
+        ?.value
+        .where((f) => f['status'] == 'open')
+        .toList();
+    final next = (open ?? []).where((f) => f['due_on'] != null).toList()
+      ..sort((a, b) => '${a['due_on']}'.compareTo('${b['due_on']}'));
+    final onTrack = goals
+        .where((g) => '${(g['progress'] as Map?)?['status']}' == 'on_target')
+        .length;
+    final name = '${profile['display_name'] ?? ''}'.split(' ').first;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
       children: [
-        const BriefingCard(),
-        SCard(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute<void>(builder: (_) => const NearbyScreen()),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.place_outlined, color: Pal.pri, size: 18),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Nearby: outbreak alerts, hospitals and air quality for your area',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Pal.mut),
-            ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 2, 2, 6),
+          child: Text(
+            name.isEmpty ? 'Today' : 'Hello, $name',
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
         ),
+        const UrgentStrip(),
+        const BriefingCard(),
+        const WellbeingCard(),
+        const TodaysPlan(),
+        const MedicinesTodayCard(),
+        const HabitTrends(),
+        const _KeyResults(),
+        const SectionTitle('Health record'),
         SCard(
           child: Row(
             children: [
-              Ring(value: score / 100, label: '${score.round()}%', size: 58),
+              Ring(value: score / 100, label: '${score.round()}%', size: 56),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Profile completeness',
-                      style: TextStyle(
-                        fontSize: 13,
+                    Text(
+                      '${sum['documents'] ?? 0} reports · ${sum['biomarkers_tracked'] ?? 0} biomarkers tracked',
+                      style: const TextStyle(
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       missing.isEmpty
-                          ? 'Everything is in place.'
-                          : 'Next: ${missing.first['label']}',
+                          ? 'Your health record is complete.'
+                          : 'Complete your record: ${missing.first['label']}',
                       style: const TextStyle(fontSize: 11, color: Pal.mut),
                     ),
                   ],
@@ -105,226 +241,117 @@ class _Body extends ConsumerWidget {
             ],
           ),
         ),
-        Row(
+        SCard(
+          onTap: () => _go(context, const CarePlanScreen()),
+          child: Row(
+            children: [
+              const Icon(Icons.checklist, color: Pal.pri, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Care plan',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (goals.isEmpty)
+                          'No treatment goals yet'
+                        else
+                          '$onTrack of ${goals.length} goals on target',
+                        '${open?.length ?? sum['open_follow_ups'] ?? 0} follow-ups pending',
+                      ].join(' · '),
+                      style: const TextStyle(fontSize: 11, color: Pal.mut),
+                    ),
+                    if (next.isNotEmpty)
+                      Text(
+                        'Next follow-up: ${next.first['title']} · ${next.first['due_on']}',
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Pal.mut),
+            ],
+          ),
+        ),
+        const SectionTitle('Care services'),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.55,
           children: [
-            _Stat('Documents', sum['documents']),
-            _Stat('Biomarkers', sum['biomarkers_tracked']),
-            _Stat('Goals', sum['active_goals']),
-            _Stat('Follow-ups', sum['open_follow_ups']),
+            _Service(
+              Icons.description_outlined,
+              'Consultation Summary',
+              'Results and questions, ready for your doctor',
+              () => _go(context, const VisitPrepScreen()),
+            ),
+            _Service(
+              Icons.medication_outlined,
+              'Medications',
+              'Dose schedule, reminders and drug information',
+              () => _go(context, const PrescriptionsScreen()),
+            ),
+            _Service(
+              Icons.local_hospital_outlined,
+              'Care Locator',
+              'Hospitals, doctors and emergency care near you',
+              () => _go(context, const FindCareScreen()),
+            ),
+            _Service(
+              Icons.family_restroom,
+              'Family Profiles',
+              'Manage health for parents and children',
+              () => _go(context, const FamilyScreen()),
+            ),
           ],
         ),
-        if (attention.isNotEmpty) ...[
-          const SectionTitle('Needs attention'),
-          for (final a in attention)
-            SCard(
-              color: a['severity'] == 'action' ? Pal.warnBg : null,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    a['severity'] == 'action'
-                        ? Icons.priority_high_rounded
-                        : Icons.info_outline,
-                    size: 16,
-                    color: a['severity'] == 'action' ? Pal.warn : Pal.pri,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${a['title']}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '${a['detail']}',
-                          style: const TextStyle(fontSize: 11, color: Pal.mut),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-        if (changes.isNotEmpty) ...[
-          const SectionTitle('Recent changes'),
-          for (final c in changes.take(5))
-            SCard(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${c['name']}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  Text(
-                    '${fmtNum(numOf(c['value']))} ${c['unit']}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (numOf(c['change_percent']) != null) ...[
-                    const SizedBox(width: 8),
-                    Pill(
-                      '${numOf(c['change_percent'])! > 0 ? '+' : ''}${fmtNum(numOf(c['change_percent']))}%',
-                      fg: Pal.mut,
-                      bg: Pal.line,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
-        if (goals.isNotEmpty) ...[
-          const SectionTitle('Goals'),
-          for (final g in goals)
-            SCard(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${g['title']}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          'Latest ${fmtNum(numOf((g['progress'] as Map?)?['latest_value']))} ${g['unit'] ?? ''}',
-                          style: const TextStyle(fontSize: 11, color: Pal.mut),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Pill(
-                    '${(g['progress'] as Map?)?['status'] ?? ''}'.replaceAll(
-                      '_',
-                      ' ',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-        SectionTitle(
-          'Follow-ups',
-          trailing: TextButton(
-            onPressed: () => _addFollowUp(context, ref),
-            child: const Text('Add'),
-          ),
-        ),
-        if (reminders.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: Text(
-              'No open follow-ups.',
-              style: TextStyle(fontSize: 11, color: Pal.mut),
-            ),
-          ),
-        for (final f in reminders)
-          SCard(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: CheckboxListTile(
-              dense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 6),
-              controlAffinity: ListTileControlAffinity.leading,
-              value: f['status'] == 'done',
-              title: Text(
-                '${f['title']}',
-                style: const TextStyle(fontSize: 12),
-              ),
-              subtitle: f['due_on'] == null
-                  ? null
-                  : Text(
-                      'Due ${f['due_on']}',
-                      style: const TextStyle(fontSize: 10),
-                    ),
-              onChanged: (_) async {
-                await ref.read(apiProvider).patch('/follow-ups/${f['id']}', {
-                  'status': 'done',
-                });
-                ref.invalidate(profileMapProvider('/overview'));
-              },
-            ),
-          ),
       ],
     );
   }
-
-  Future<void> _addFollowUp(BuildContext context, WidgetRef ref) async {
-    final c = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New follow-up', style: TextStyle(fontSize: 15)),
-        content: TextField(
-          controller: c,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'e.g. Repeat lipid panel',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, c.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-    if (title == null || title.isEmpty) return;
-    final id = ref.read(profileIdProvider);
-    try {
-      await ref.read(apiProvider).post('/profiles/$id/follow-ups', {
-        'kind': 'other',
-        'title': title,
-      });
-      ref.invalidate(profileMapProvider('/overview'));
-    } catch (e) {
-      if (context.mounted) toast(context, friendly(e));
-    }
-  }
 }
 
-class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
-  final String label;
-  final Object? value;
+class _Service extends StatelessWidget {
+  const _Service(this.icon, this.title, this.body, this.onTap);
+  final IconData icon;
+  final String title, body;
+  final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Expanded(
+  Widget build(BuildContext context) => InkWell(
+    borderRadius: BorderRadius.circular(12),
+    onTap: onTap,
     child: Container(
-      margin: const EdgeInsets.only(right: 6),
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Pal.card,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Icon(icon, color: Pal.pri, size: 20),
+          const Spacer(),
           Text(
-            '${value ?? 0}',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Pal.pri,
-            ),
+            title,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
           ),
-          Text(label, style: const TextStyle(fontSize: 9.5, color: Pal.mut)),
+          const SizedBox(height: 2),
+          Text(
+            body,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10.5, color: Pal.mut),
+          ),
         ],
       ),
     ),

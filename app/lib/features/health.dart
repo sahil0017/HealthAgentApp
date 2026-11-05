@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import 'places.dart';
+import 'plan.dart';
 import 'records.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'insights.dart';
 
 class HealthTab extends ConsumerStatefulWidget {
   const HealthTab({super.key});
@@ -25,9 +28,9 @@ class _HealthState extends ConsumerState<HealthTab> {
         child: SegmentedButton<int>(
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(value: 0, label: Text('Lab results')),
+            ButtonSegment(value: 0, label: Text('Lab Results')),
             ButtonSegment(value: 1, label: Text('Vitals')),
-            ButtonSegment(value: 2, label: Text('Devices')),
+            ButtonSegment(value: 2, label: Text('Wearables')),
           ],
           selected: {_seg},
           onSelectionChanged: (s) => setState(() => _seg = s.first),
@@ -39,7 +42,7 @@ class _HealthState extends ConsumerState<HealthTab> {
           child: TextButton.icon(
             onPressed: () => showAddBiomarker(context, ref),
             icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add a value'),
+            label: const Text('Add a result'),
           ),
         ),
       Expanded(
@@ -53,10 +56,17 @@ class _HealthState extends ConsumerState<HealthTab> {
   );
 }
 
-class _Labs extends ConsumerWidget {
+class _Labs extends ConsumerStatefulWidget {
   const _Labs();
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Labs> createState() => _LabsState();
+}
+
+class _LabsState extends ConsumerState<_Labs> {
+  String _show = 'all';
+
+  @override
+  Widget build(BuildContext context) {
     final s = ref.watch(profileListProvider('/biomarkers/summary'));
     return RefreshIndicator(
       onRefresh: () async =>
@@ -66,44 +76,172 @@ class _Labs extends ConsumerWidget {
         onRetry: () =>
             ref.invalidate(profileListProvider('/biomarkers/summary')),
         builder: (list) {
-          if (list.isEmpty)
+          if (list.isEmpty) {
             return const Empty(
               Icons.science_outlined,
               'No lab results yet',
-              body: 'Confirm a document in the Vault to see your biomarkers here.',
+              body: 'Confirm a report in the Reports tab and your results appear here, grouped by panel.',
             );
-          final flagged = list
-              .where(
-                (b) => ((b['latest'] as Map?)?['flag'] ?? 'normal') != 'normal',
-              )
-              .length;
-          final byCat = <String, List<Json>>{};
-          for (final b in list) {
-            byCat.putIfAbsent('${b['category']}', () => []).add(b);
           }
+          String flagOf(Json b) => '${(b['latest'] as Map?)?['flag'] ?? ''}';
+          final out = list.where((b) => outOfRange(flagOf(b))).length;
+          final inr = list.where((b) => inRange(flagOf(b))).length;
+          final unrated = list.length - out - inr;
+          final shown = list.where((b) {
+            final f = flagOf(b);
+            return switch (_show) {
+              'out' => outOfRange(f),
+              'in' => inRange(f),
+              _ => true,
+            };
+          });
+          final byPanel = <String, List<Json>>{};
+          final labels = <String, String>{};
+          for (final b in shown) {
+            final k = '${b['category']}';
+            byPanel.putIfAbsent(k, () => []).add(b);
+            labels[k] = '${b['category_label'] ?? 'Other measurements'}';
+          }
+          final panels = byPanel.keys.toList()
+            ..sort((x, y) {
+              final ox = byPanel[x]!.where((b) => outOfRange(flagOf(b))).length;
+              final oy = byPanel[y]!.where((b) => outOfRange(flagOf(b))).length;
+              if (ox != oy) return oy.compareTo(ox);
+              if (x == 'other') return 1;
+              if (y == 'other') return -1;
+              return labels[x]!.compareTo(labels[y]!);
+            });
+          Widget chip(String id, String text) => Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(text, style: const TextStyle(fontSize: 12)),
+              selected: _show == id,
+              onSelected: (_) => setState(() => _show = id),
+            ),
+          );
           return ListView(
             padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
             children: [
               SCard(
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        '${list.length} biomarkers tracked',
-                        style: const TextStyle(fontSize: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${list.length} lab results',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Pill(
+                          out == 0 ? 'All in range' : '$out outside range',
+                          fg: out == 0 ? Pal.ok : Pal.warn,
+                          bg: out == 0 ? Pal.okBg : Pal.warnBg,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        height: 8,
+                        child: Row(
+                          children: [
+                            if (inr > 0)
+                              Expanded(
+                                flex: inr,
+                                child: Container(color: Pal.ok),
+                              ),
+                            if (out > 0) ...[
+                              const SizedBox(width: 2),
+                              Expanded(
+                                flex: out,
+                                child: Container(color: Pal.warn),
+                              ),
+                            ],
+                            if (unrated > 0) ...[
+                              const SizedBox(width: 2),
+                              Expanded(
+                                flex: unrated,
+                                child: Container(color: Pal.line),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-                    Pill(
-                      flagged == 0 ? 'All in range' : '$flagged to review',
-                      fg: flagged == 0 ? Pal.ok : Pal.warn,
-                      bg: flagged == 0 ? Pal.okBg : Pal.warnBg,
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                        '$inr in range',
+                        '$out outside range',
+                        if (unrated > 0) '$unrated without a range',
+                      ].join(' · '),
+                      style: const TextStyle(fontSize: 10.5, color: Pal.mut),
                     ),
                   ],
                 ),
               ),
-              for (final e in byCat.entries) ...[
-                SectionTitle(e.key.replaceAll('_', ' ')),
-                for (final b in e.value) _BiomarkerTile(b),
+              SizedBox(
+                height: 40,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    chip('all', 'All · ${list.length}'),
+                    if (out > 0) chip('out', 'Outside range · $out'),
+                    chip('in', 'In range · $inr'),
+                  ],
+                ),
+              ),
+              if (panels.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(
+                    child: Text(
+                      'Nothing in this view.',
+                      style: TextStyle(color: Pal.mut, fontSize: 12),
+                    ),
+                  ),
+                ),
+              for (final k in panels) ...[
+                SectionTitle(
+                  labels[k]!,
+                  trailing: Builder(
+                    builder: (_) {
+                      final o = byPanel[k]!
+                          .where((b) => outOfRange(flagOf(b)))
+                          .length;
+                      return o == 0
+                          ? Text(
+                              '${byPanel[k]!.length} results',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                color: Pal.mut,
+                              ),
+                            )
+                          : Pill(
+                              '$o of ${byPanel[k]!.length} outside range',
+                              fg: Pal.warn,
+                              bg: Pal.warnBg,
+                            );
+                    },
+                  ),
+                ),
+                for (final b
+                    in (byPanel[k]!..sort((x, y) {
+                      final ox = outOfRange(flagOf(x)) ? 0 : 1;
+                      final oy = outOfRange(flagOf(y)) ? 0 : 1;
+                      return ox != oy
+                          ? ox.compareTo(oy)
+                          : '${x['display_name']}'.compareTo(
+                              '${y['display_name']}',
+                            );
+                    })))
+                  _BiomarkerTile(b),
               ],
             ],
           );
@@ -111,6 +249,35 @@ class _Labs extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _rangeText(Map? r, String unit) {
+  final lo = numOf(r?['low']), hi = numOf(r?['high']);
+  final u = unit.isEmpty ? '' : ' $unit';
+  if (lo != null && hi != null) return '${fmtNum(lo)}–${fmtNum(hi)}$u';
+  if (hi != null) return 'up to ${fmtNum(hi)}$u';
+  if (lo != null) return 'at least ${fmtNum(lo)}$u';
+  return '';
+}
+
+String _shortDate(String? iso) {
+  final d = DateTime.tryParse(iso ?? '');
+  if (d == null) return '';
+  const m = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return '${d.day} ${m[d.month - 1]} ${d.year}';
 }
 
 class _BiomarkerTile extends StatelessWidget {
@@ -121,6 +288,15 @@ class _BiomarkerTile extends StatelessWidget {
     final latest = (b['latest'] as Map?)?.cast<String, dynamic>();
     final range = (latest?['range'] as Map?)?.cast<String, dynamic>();
     final v = numOf(latest?['value']);
+    final unit = '${b['unit'] ?? ''}';
+    final rt = _rangeText(range, unit);
+    final dir = '${(b['trend'] as Map?)?['direction'] ?? b['trend'] ?? ''}';
+    final trendIcon = switch (dir) {
+      'rising' => Icons.trending_up,
+      'falling' => Icons.trending_down,
+      'stable' => Icons.trending_flat,
+      _ => null,
+    };
     return SCard(
       onTap: () => Navigator.push(
         context,
@@ -130,6 +306,7 @@ class _BiomarkerTile extends StatelessWidget {
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -137,30 +314,55 @@ class _BiomarkerTile extends StatelessWidget {
                 child: Text(
                   '${b['display_name']}',
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              Text(
-                '${fmtNum(v)} ${b['unit'] ?? ''}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 8),
               Pill.flag(latest?['flag'] as String?),
             ],
           ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                fmtNum(v),
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  unit,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: Pal.mut),
+                ),
+              ),
+              if (trendIcon != null) Icon(trendIcon, size: 16, color: Pal.mut),
+            ],
+          ),
           if (v != null) ...[
-            const SizedBox(height: 7),
+            const SizedBox(height: 6),
             RangeBar(
               value: v.toDouble(),
               low: numOf(range?['low'])?.toDouble(),
               high: numOf(range?['high'])?.toDouble(),
             ),
           ],
+          const SizedBox(height: 5),
+          Text(
+            [
+              if (rt.isNotEmpty) 'Reference $rt' else 'No reference range',
+              if (_shortDate(latest?['observed_at'] as String?).isNotEmpty)
+                'Tested ${_shortDate(latest?['observed_at'] as String?)}',
+            ].join(' · '),
+            style: const TextStyle(fontSize: 10, color: Pal.mut),
+          ),
         ],
       ),
     );
@@ -172,12 +374,98 @@ final _trendProvider = FutureProvider.family<Json, String>((ref, code) {
   return ref.read(apiProvider).map('/profiles/$id/biomarkers/$code/trend');
 });
 
+/// What a single test connects to: its goal, a repeat-test follow-up and labs nearby.
+class _LinkedActions extends ConsumerWidget {
+  const _LinkedActions(this.code, this.name, this.goal);
+  final String code, name;
+  final Json? goal;
+
+  Future<void> _addRepeat(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(apiProvider).post(
+        '/profiles/${ref.read(profileIdProvider)}/follow-ups',
+        {'kind': 'investigation', 'title': 'Repeat $name'},
+      );
+      refreshCarePlan(ref);
+      if (context.mounted) toast(context, 'Added to your care plan');
+    } catch (e) {
+      if (context.mounted) toast(context, friendly(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void open(Widget w) =>
+        Navigator.push(context, MaterialPageRoute<void>(builder: (_) => w));
+    final lo = numOf(goal?['target_min']), hi = numOf(goal?['target_max']);
+    final status = '${(goal?['progress'] as Map?)?['status'] ?? ''}'.replaceAll(
+      '_',
+      ' ',
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (goal != null)
+          SCard(
+            onTap: () => open(const GoalsScreen()),
+            child: Row(
+              children: [
+                const Icon(Icons.flag_outlined, color: Pal.pri, size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Your target: ${lo != null && hi != null
+                        ? '${fmtNum(lo)}–${fmtNum(hi)}'
+                        : hi != null
+                        ? 'up to ${fmtNum(hi)}'
+                        : 'at least ${fmtNum(lo)}'} ${goal?['unit'] ?? ''}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (status.isNotEmpty) Pill(status),
+              ],
+            ),
+          ),
+        Wrap(
+          spacing: 8,
+          children: [
+            if (goal == null)
+              ActionChip(
+                avatar: const Icon(Icons.flag_outlined, size: 16),
+                label: const Text('Set a goal'),
+                onPressed: () => open(GoalForm(initialCode: code)),
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.add_task, size: 16),
+              label: const Text('Plan a repeat test'),
+              onPressed: () => _addRepeat(context, ref),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.biotech_outlined, size: 16),
+              label: const Text('Find a lab'),
+              onPressed: () => open(const DoctorsScreen(initialKind: 'lab')),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class BiomarkerScreen extends ConsumerWidget {
   const BiomarkerScreen(this.code, this.name, {super.key});
   final String code, name;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(_trendProvider(code));
+    final goal = (ref.watch(profileListProvider('/goals')).asData?.value ?? [])
+        .where((g) => g['biomarker_code'] == code && g['status'] == 'active')
+        .firstOrNull;
+    final gMin = numOf(goal?['target_min'])?.toDouble();
+    final gMax = numOf(goal?['target_max'])?.toDouble();
     return Scaffold(
       appBar: AppBar(title: Text(name)),
       body: AsyncBody<Json>(
@@ -196,6 +484,12 @@ class BiomarkerScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.all(14),
             children: [
+              InsightPanel(
+                path: '/agent/insights/biomarker/$code',
+                title: 'What this means for you',
+                icon: Icons.lightbulb_outline,
+              ),
+              _LinkedActions(code, name, goal),
               if (spots.length >= 2)
                 SCard(
                   child: SizedBox(
@@ -215,6 +509,18 @@ class BiomarkerScreen extends ConsumerWidget {
                             ),
                           ),
                         ),
+                        extraLinesData: ExtraLinesData(
+                          horizontalLines: [
+                            for (final v in [gMin, gMax])
+                              if (v != null)
+                                HorizontalLine(
+                                  y: v,
+                                  color: Pal.ok,
+                                  strokeWidth: 1,
+                                  dashArray: [5, 4],
+                                ),
+                          ],
+                        ),
                         lineBarsData: [
                           LineChartBarData(
                             spots: spots,
@@ -231,7 +537,7 @@ class BiomarkerScreen extends ConsumerWidget {
               else
                 const SCard(
                   child: Text(
-                    'Add another result to see a trend.',
+                    'Add another result to see how this changes over time.',
                     style: TextStyle(fontSize: 12, color: Pal.mut),
                   ),
                 ),
@@ -239,11 +545,16 @@ class BiomarkerScreen extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.all(4),
                   child: Text(
-                    'Direction: $trend',
+                    'Trend: ${switch ('$trend') {
+                      'rising' => 'Rising',
+                      'falling' => 'Falling',
+                      'stable' => 'Stable',
+                      _ => 'Not enough results yet',
+                    }}',
                     style: const TextStyle(fontSize: 11, color: Pal.mut),
                   ),
                 ),
-              const SectionTitle('Readings'),
+              const SectionTitle('Result history'),
               for (final p in pts.reversed)
                 SCard(
                   padding: const EdgeInsets.symmetric(
@@ -273,7 +584,7 @@ class BiomarkerScreen extends ConsumerWidget {
               const Padding(
                 padding: EdgeInsets.all(8),
                 child: Text(
-                  'Reference ranges are general guidance, not a diagnosis.',
+                  'Reference ranges come from your lab report. Your doctor interprets them for you.',
                   style: TextStyle(fontSize: 10, color: Pal.mut),
                 ),
               ),

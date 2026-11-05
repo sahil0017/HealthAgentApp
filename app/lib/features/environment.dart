@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/hardware.dart';
 import '../core/state.dart';
@@ -12,10 +14,41 @@ import 'places.dart';
 
 const _note = TextStyle(fontSize: 10.5, color: Pal.mut);
 
-final environmentProvider = FutureProvider.autoDispose.family<Json, Area>(
-  (ref, a) =>
-      ref.read(apiProvider).map('/environment/now?lat=${a.lat}&lng=${a.lng}'),
-);
+final _liveKeys = <String>{};
+
+/// Opens instantly from the last reading saved on the phone, then refreshes in the background.
+/// Pull to refresh always goes live.
+final environmentProvider = FutureProvider.family<Json, Area>((ref, a) async {
+  final key = 'env_${a.lat.toStringAsFixed(2)}_${a.lng.toStringAsFixed(2)}';
+  final prefs = await SharedPreferences.getInstance();
+  Future<Json> live() async {
+    final d = await ref
+        .read(apiProvider)
+        .map('/environment/now?lat=${a.lat}&lng=${a.lng}');
+    _liveKeys.add(key);
+    await prefs.setString(
+      key,
+      jsonEncode({'at': DateTime.now().millisecondsSinceEpoch, 'd': d}),
+    );
+    return d;
+  }
+
+  final saved = prefs.getString(key);
+  if (saved != null && !_liveKeys.contains(key)) {
+    try {
+      final c = jsonDecode(saved) as Map<String, dynamic>;
+      if (DateTime.now().millisecondsSinceEpoch - (c['at'] as int) <
+          6 * 3600 * 1000) {
+        _liveKeys.add(key);
+        live()
+            .then((_) => ref.invalidateSelf())
+            .catchError((_) => <String, dynamic>{});
+        return (c['d'] as Map).cast<String, dynamic>();
+      }
+    } catch (_) {}
+  }
+  return live();
+});
 
 String _n(Object? v, [int dp = 0]) {
   final x = numOf(v);
@@ -97,7 +130,7 @@ class EnvironmentScreen extends ConsumerWidget {
   const EnvironmentScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      NeedsArea('Air & weather', (area) {
+      NeedsArea('Environmental Health', (area) {
         return RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(environmentProvider(area));
@@ -137,7 +170,7 @@ class EnvironmentScreen extends ConsumerWidget {
                   const Padding(
                     padding: EdgeInsets.all(8),
                     child: Text(
-                      'Source: Open-Meteo, for your approximate area. AQI follows the US EPA scale, UV follows the WHO scale and pollutant markers use WHO 2021 guideline levels. General guidance, not medical advice.',
+                      'Source: Open-Meteo, for your approximate area. AQI follows the US EPA scale, UV follows the WHO scale and pollutant markers use WHO 2021 guideline levels.',
                       style: _note,
                     ),
                   ),

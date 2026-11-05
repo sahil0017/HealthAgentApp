@@ -735,6 +735,22 @@ paths:
         '201': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid prescription }
         '403': { description: Consent required }
+  /profiles/{profileID}/prescriptions/from-document/{documentID}:
+    get:
+      summary: Medicines the AI reader found in an uploaded document, as an unsaved draft
+      description: Filled only when the person allowed AI processing and the cloud model. Nothing is saved until the person reviews and posts the prescription.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: documentID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { description: Document not found }
+  /profiles/{profileID}/prescriptions/doses:
+    post:
+      summary: Mark one scheduled dose (medicine, slot, day) as taken or not taken
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '400': { description: Invalid dose }
+        '404': { description: Medicine not found }
   /profiles/{profileID}/prescriptions/read:
     post:
       summary: Read a prescription photo with AI (raw image body, requires cloud=1 and AI processing consent); returns an unsaved draft
@@ -747,8 +763,8 @@ paths:
         '503': { description: Reader unavailable }
   /profiles/{profileID}/prescriptions/schedule:
     get:
-      summary: Active medicines grouped into morning, afternoon, evening and night, plus as-needed
-      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      summary: Active medicines grouped into morning, afternoon, evening and night, plus as-needed, with doses taken on `day`
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: day, in: query, schema: { type: string, format: date } }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/prescriptions/{rxID}:
@@ -823,7 +839,7 @@ paths:
   /environment/now:
     get:
       summary: Live air quality and weather for an area from Open-Meteo, with the nearest OpenAQ station when configured
-      description: Query `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored). Returns current US AQI, PM2.5, PM10, ozone, NO2, UV, temperature, humidity and wind, an AQI category with general advice, and `station` readings if `CORTEX_OPENAQ_API_KEY` is set. Either upstream may be missing from the answer if it fails.
+      description: Query `lat`, `lng` (rounded to ~100 m on arrival, never stored). Returns current US AQI, PM2.5, PM10, ozone, NO2, UV, temperature, humidity and wind, an AQI category with general advice, and `station` readings if `CORTEX_OPENAQ_API_KEY` is set. Either upstream may be missing from the answer if it fails.
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid area }
@@ -853,7 +869,7 @@ paths:
   /nearby/places:
     get:
       summary: Doctors, clinics, pharmacies or labs near an area from OpenStreetMap, nearest first
-      description: Query `kind` (doctor, clinic, pharmacy or lab), `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored) and `radius_km` (1-50, default 10). Listings are community-mapped and flagged `verified:false`; they are not a registry or a recommendation.
+      description: Query `kind` (doctor, clinic, pharmacy or lab), `lat`, `lng` (rounded to ~100 m on arrival, never stored) and `radius_km` (1-50, default 10). Listings are community-mapped and flagged `verified:false`; they are not a registry or a recommendation.
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid kind or area }
@@ -870,10 +886,17 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '502': { description: Source unavailable }
+  /nearby/news:
+    get:
+      summary: Health headlines from the WHO newsroom, plus local stories for the caller's city
+      description: Query `city` and `country_code`. Local stories are searched by city, widened to the country when the city has none. Only place names are sent upstream. Cached for 15 minutes. 502 when both sources fail.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '502': { description: Source unavailable }
   /nearby/hospitals:
     get:
       summary: Hospitals near an area from OpenStreetMap, nearest first
-      description: Query `lat`, `lng` (rounded to a ~5 km grid on arrival, never stored) and `radius_km` (1-50, default 10).
+      description: Query `lat`, `lng` (rounded to ~100 m on arrival, never stored) and `radius_km` (1-50, default 10).
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Invalid area }
@@ -892,9 +915,47 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '400': { description: Unknown permission }
+  /profiles/{profileID}/agent/insights/{kind}:
+    get:
+      summary: Written insights (research, lifestyle, history, labs) from the person's own records
+      description: Uses the cloud model only with AI consent and the cloud_model permission, and falls back to a summary built from the records. Cached for six hours.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: kind, in: path, required: true, schema: { type: string, enum: [research, lifestyle, history, labs] } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/wellbeing:
+    get:
+      summary: Summary dashboard. Wellbeing score, habit projections and today's plan, all from the person's own data
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: day, in: query, schema: { type: string, format: date } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/insights/biomarker/{code}:
+    get:
+      summary: Plain-language explanation of one test and what the person's numbers mean
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: code, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/insights/uploads:
+    get:
+      summary: Result and out-of-range counts for every uploaded report
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/insights/document/{documentID}:
+    get:
+      summary: Summary of one uploaded report, its weak spots and next steps
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: documentID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/agent/briefing:
     get:
       summary: Daily briefing restating the user's own records
+      parameters: [{ $ref: '#/components/parameters/profileID' }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/agent/briefing/summary:
+    get:
+      summary: A short written briefing from the Copilot agent, built from tool calls over the record
+      description: Returns {summary, source (copilot|none), model, steps[]}. Empty (source none) unless the ai_processing consent and the read_labs and cloud_model permissions are granted, or when the model is unavailable or its text is not grounded in the record.
       parameters: [{ $ref: '#/components/parameters/profileID' }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
@@ -909,7 +970,7 @@ paths:
     post:
       summary: Ask the agent; it reads the user's record with tools and returns the steps it took
       description: |
-        Body {message, mode (explain|plan|visit), history[]}. Returns {answer, steps[], actions[], source (model|records|safety), model, urgent}.
+        Body {message, mode (explain|plan|visit), history[]}. Returns {answer, steps[], actions[], source (copilot|model|records|safety), model, urgent}.
         Needs the ai_processing consent and the read_labs permission. A cloud model is used only when the cloud_model permission is granted;
         otherwise, or if the model is unavailable or its answer is not grounded in tool results, the answer is built from the record alone.
         Emergency wording is answered with a safety message and never reaches a model. Actions are suggestions the app carries out on tap.

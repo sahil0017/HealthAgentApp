@@ -89,12 +89,39 @@ func TestUpstreamFailureIsReportedNotInvented(t *testing.T) {
 	}
 }
 
-func TestNearbyPointsShareOneCachedAnswer(t *testing.T) {
+func TestNearbyPointsWithinOneHundredMetresShareOneCachedAnswer(t *testing.T) {
 	m, h := testModule(t)
-	get(h, "/nearby/hospitals?lat=28.611&lng=77.209")
+	get(h, "/nearby/hospitals?lat=28.6112&lng=77.2091")
 	m.OverpassURL = "http://127.0.0.1:1"
-	if c := get(h, "/nearby/hospitals?lat=28.612&lng=77.208").Code; c != 200 {
+	if c := get(h, "/nearby/hospitals?lat=28.6114&lng=77.2089").Code; c != 200 {
 		t.Fatalf("want cached 200, got %d", c)
+	}
+}
+
+func TestHospitalsFallBackToAMirrorWhenThePrimaryIsDown(t *testing.T) {
+	m, h := testModule(t)
+	m.Mirrors = []string{m.OverpassURL}
+	m.OverpassURL = "http://127.0.0.1:1"
+	if c := get(h, "/nearby/hospitals?lat=28.61&lng=77.21").Code; c != 200 {
+		t.Fatalf("want 200 via the mirror, got %d", c)
+	}
+}
+
+func TestOlderAnswersAreServedWhenEveryMapServerIsDown(t *testing.T) {
+	m, h := testModule(t)
+	get(h, "/nearby/hospitals?lat=28.61&lng=77.21")
+	m.mu.Lock()
+	for k, c := range m.cache {
+		c.at = c.at.Add(-2 * cacheTTL)
+		m.cache[k] = c
+	}
+	m.mu.Unlock()
+	m.OverpassURL = "http://127.0.0.1:1"
+	if c := get(h, "/nearby/hospitals?lat=28.61&lng=77.21").Code; c != 200 {
+		t.Fatalf("want the older answer, got %d", c)
+	}
+	if c := get(h, "/nearby/hospitals?lat=19.07&lng=72.87").Code; c != 502 {
+		t.Fatalf("an uncached area must still report 502, got %d", c)
 	}
 }
 
@@ -126,5 +153,40 @@ func TestPlacesAreTaggedUnverifiedSortedAndValidated(t *testing.T) {
 		if c := get(h, "/nearby/places"+p).Code; c != 400 {
 			t.Fatalf("%q: want 400, got %d", p, c)
 		}
+	}
+}
+
+func TestListsComeFromTheSearchServiceWhenNoOverpassServerAnswers(t *testing.T) {
+	search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"osm_type":"node","osm_id":9,"lat":"28.62","lon":"77.21","name":"City Clinic","extratags":{"phone":"+91 11 5550"}}]`))
+	}))
+	t.Cleanup(search.Close)
+	m, h := testModule(t)
+	m.OverpassURL = "http://127.0.0.1:1"
+	m.SearchURL = search.URL
+	for _, p := range []string{"/nearby/hospitals?lat=28.61&lng=77.21", "/nearby/places?kind=lab&lat=28.61&lng=77.21"} {
+		rec := get(h, p)
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "City Clinic") {
+			t.Fatalf("%s: %d %s", p, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestNewsListsLocalStoriesFirstAndNamesTheSource(t *testing.T) {
+	rss := func(items string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`<rss><channel>` + items + `</channel></rss>`))
+		}))
+	}
+	who := rss(`<item><title>WHO update</title><link>https://who.int/a</link><pubDate>Mon, 02 Nov 2026 10:00:00 GMT</pubDate></item>`)
+	local := rss(`<item><title>Dengue cases rise - The Hindu</title><link>https://news.example/b</link><pubDate>Tue, 03 Nov 2026 10:00:00 GMT</pubDate><source>The Hindu</source></item>`)
+	t.Cleanup(who.Close)
+	t.Cleanup(local.Close)
+	m, h := testModule(t)
+	m.NewsURL, m.LocalNewsURL = who.URL, local.URL
+	rec := get(h, "/nearby/news?city=Chennai&country_code=IN")
+	body := rec.Body.String()
+	if rec.Code != 200 || strings.Index(body, "Dengue cases rise") > strings.Index(body, "WHO update") || !strings.Contains(body, `"source":"The Hindu"`) || strings.Contains(body, "- The Hindu\"") {
+		t.Fatalf("news: %d %s", rec.Code, body)
 	}
 }

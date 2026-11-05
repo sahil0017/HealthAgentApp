@@ -114,3 +114,35 @@ func TestReadGuardsAndNormalises(t *testing.T) {
 		t.Fatal("reading must not save anything")
 	}
 }
+
+func TestDoseLogging(t *testing.T) {
+	c, p := setup(t, "health_data")
+	h := testkit.Router("owner-a", New(c))
+	base := "/profiles/" + p + "/prescriptions"
+	call(h, "POST", base, `{"items":[{"name":"Metformin","slots":["morning","night"]}]}`)
+	_, out := call(h, "GET", base+"/schedule?day=2026-01-02", "")
+	id := out["data"].(map[string]any)["slots"].([]any)[0].(map[string]any)["items"].([]any)[0].(map[string]any)["id"].(string)
+	if code, _ := call(h, "POST", base+"/doses", `{"item_id":"`+id+`","slot":"morning","day":"2026-01-02","taken":true}`); code != 200 {
+		t.Fatalf("log = %d", code)
+	}
+	_, out = call(h, "GET", base+"/schedule?day=2026-01-02", "")
+	slots := out["data"].(map[string]any)["slots"].([]any)
+	if slots[0].(map[string]any)["items"].([]any)[0].(map[string]any)["taken"] != true || slots[3].(map[string]any)["items"].([]any)[0].(map[string]any)["taken"] == true {
+		t.Fatalf("only the morning dose should be taken: %v", slots)
+	}
+	_, out = call(h, "GET", base+"/schedule?day=2026-01-03", "")
+	if out["data"].(map[string]any)["slots"].([]any)[0].(map[string]any)["items"].([]any)[0].(map[string]any)["taken"] == true {
+		t.Fatal("another day must start untaken")
+	}
+	call(h, "POST", base+"/doses", `{"item_id":"`+id+`","slot":"morning","day":"2026-01-02","taken":false}`)
+	_, out = call(h, "GET", base+"/schedule?day=2026-01-02", "")
+	if out["data"].(map[string]any)["slots"].([]any)[0].(map[string]any)["items"].([]any)[0].(map[string]any)["taken"] == true {
+		t.Fatal("undo should clear the dose")
+	}
+	if code, _ := call(h, "POST", base+"/doses", `{"item_id":"`+id+`","slot":"lunch","taken":true}`); code != http.StatusBadRequest {
+		t.Fatalf("bad slot = %d", code)
+	}
+	if code, _ := call(h, "POST", base+"/doses", `{"item_id":"00000000-0000-0000-0000-000000000000","slot":"morning","taken":true}`); code != http.StatusNotFound {
+		t.Fatalf("unknown item = %d", code)
+	}
+}

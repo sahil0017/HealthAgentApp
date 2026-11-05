@@ -57,3 +57,29 @@ func TestCoverageFlagsNeverMeasuredAndStalePanels(t *testing.T) {
 		t.Error("unverified readings must not create an 'other' panel")
 	}
 }
+
+func TestCategoryForReadsTheNameWhenTheCatalogHasNoPanel(t *testing.T) {
+	cases := map[string]string{
+		"Very Low-Density Lipoprotein (VLDL)": "lipid",
+		"Bilirubin, Direct":                   "liver",
+		"Gamma-glutamyl Transferase":          "liver",
+		"Mean Corpuscular Hemoglobin":         "cbc",
+		"Absolute Basophil Count (ABC)":       "cbc",
+		"Glycated Hemoglobin":                 "glucose",
+		"Uric Acid":                           "kidney",
+		"Vitamin B12":                         "vitamin",
+		"Thyroid Stimulating Hormone":         "hormone",
+		"Something Unrecognised":              "other",
+	}
+	for name, want := range cases {
+		if got := CategoryFor("X", name, nil); got != want {
+			t.Errorf("%s: got %s want %s", name, got, want)
+		}
+	}
+	if CategoryFor("X", "Bilirubin", map[string]string{"X": "kidney"}) != "kidney" {
+		t.Error("the catalog's panel must win over the name")
+	}
+	if CategoryLabel("lipid") != "Lipid profile" {
+		t.Error("label")
+	}
+}

@@ -7,7 +7,8 @@ import 'core/state.dart';
 import 'core/theme.dart';
 import 'core/widgets.dart';
 import 'features/lock.dart';
-import 'features/agent.dart';
+import 'features/agent_chat.dart';
+import 'features/notifications.dart';
 import 'features/auth.dart';
 import 'features/health.dart';
 import 'features/more.dart';
@@ -110,17 +111,17 @@ class Shell extends ConsumerStatefulWidget {
 }
 
 class _ShellState extends ConsumerState<Shell> {
-  int _i = 0;
   static const _tabs = [
-    (Icons.today_outlined, Icons.today, 'Dashboard'),
-    (Icons.folder_outlined, Icons.folder, 'Vault'),
-    (Icons.monitor_heart_outlined, Icons.monitor_heart, 'Health'),
-    (Icons.auto_awesome_outlined, Icons.auto_awesome, 'Agent'),
+    (Icons.today_outlined, Icons.today, 'Summary'),
+    (Icons.folder_outlined, Icons.folder, 'Reports'),
+    (Icons.monitor_heart_outlined, Icons.monitor_heart, 'Lab Results'),
+    (Icons.auto_awesome_outlined, Icons.auto_awesome, 'Assistant'),
     (Icons.grid_view_outlined, Icons.grid_view_rounded, 'More'),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final _i = ref.watch(shellTabProvider);
     final profiles = ref.watch(profilesProvider).value ?? [];
     final id = ref.watch(profileIdProvider);
     final name =
@@ -133,6 +134,7 @@ class _ShellState extends ConsumerState<Shell> {
       appBar: AppBar(
         title: Text(_tabs[_i].$3),
         actions: [
+          const NotificationBell(),
           if (profiles.length > 1)
             PopupMenuButton<String>(
               tooltip: 'Switch profile',
@@ -181,7 +183,7 @@ class _ShellState extends ConsumerState<Shell> {
                 TodayTab(),
                 VaultTab(),
                 HealthTab(),
-                AgentTab(),
+                AgentChatScreen(embedded: true),
                 MoreTab(),
               ],
             ),
@@ -192,7 +194,7 @@ class _ShellState extends ConsumerState<Shell> {
         selectedIndex: _i,
         height: 62,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (v) => setState(() => _i = v),
+        onDestinationSelected: (v) => ref.read(shellTabProvider.notifier).go(v),
         destinations: [
           for (final t in _tabs)
             NavigationDestination(

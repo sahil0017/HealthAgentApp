@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CORTEX data model explorer</title>
+<style>
+  :root { --bg:#0b1110; --panel:#121a18; --line:#26332e; --text:#e8efeb; --mute:#8c9c95; --accent:#7ae0b6;
+          --g1:#7ae0b6; --g2:#6cb4ff; --g3:#c9a0ff; --g4:#ffc470; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif; height:100vh; display:grid; grid-template-columns:240px minmax(0,1fr) 320px; grid-template-rows:52px minmax(0,1fr); }
+  header { grid-column:1/-1; display:flex; align-items:center; gap:12px; padding:0 14px; white-space:nowrap; overflow-x:auto; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:15px; letter-spacing:3px; margin:0; }
+  header .sp { flex:1; }
+  button, label.chk { background:#1a2723; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:#1f4a3a; border-color:#2d6b53; }
+  label.chk { display:flex; align-items:center; gap:6px; }
+  aside { background:var(--panel); border-right:1px solid var(--line); overflow:auto; padding:12px; }
+  aside input { width:100%; padding:8px 10px; background:#0d1513; border:1px solid var(--line); border-radius:8px; color:var(--text); margin-bottom:10px; }
+  .grp { margin:12px 0 4px; font-size:11px; letter-spacing:1.5px; color:var(--mute); text-transform:uppercase; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .grp i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .item { padding:5px 10px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; }
+  .item:hover { background:#1a2723; }
+  .item.sel { background:#1f4a3a; }
+  .item small { color:var(--mute); }
+  main { position:relative; overflow:hidden; min-width:0; min-height:0; }
+  .only-small { display:none; }
+  #closeDetail { display:none; float:right; }
+  @media (max-width: 1000px) {
+    body { grid-template-columns:minmax(0,1fr); }
+    .only-small { display:inline-block; }
+    header .subtitle, header .sp { display:none; }
+    header h1 { letter-spacing:2px; }
+    aside { position:fixed; left:0; top:52px; bottom:0; width:260px; z-index:30; transform:translateX(-100%); transition:transform .2s; border-right:1px solid var(--line); }
+    body.list-open aside { transform:none; }
+    #detail { position:fixed; left:0; right:0; bottom:0; max-height:55vh; z-index:20; border-left:0; border-top:1px solid var(--line); transform:translateY(100%); transition:transform .2s; }
+    body.has-sel #detail { transform:none; }
+    #closeDetail { display:inline-block; }
+    #tour { bottom:auto; top:12px; }
+    .legend { display:none; }
+    .hint { display:none; }
+  }
+  svg { width:100%; height:100%; cursor:grab; display:block; }
+  svg.panning { cursor:grabbing; }
+  .node rect { fill:#151e1b; stroke-width:1.5; rx:8; }
+  .node text { fill:var(--text); font-size:12.5px; pointer-events:none; }
+  .node .sub { fill:var(--mute); font-size:10.5px; }
+  .node { cursor:pointer; transition:opacity .15s; }
+  .node.dim { opacity:.18; }
+  .node.sel rect { fill:#1f3a30; stroke-width:3; }
+  .edge { fill:none; stroke:#4a5a53; stroke-width:1.4; transition:opacity .15s; }
+  .edge.own { stroke-dasharray:4 4; stroke:#33423b; }
+  .edge.hl { stroke:var(--accent); stroke-width:2.4; stroke-dasharray:none; }
+  .edge.dim { opacity:.07; }
+  .gl { fill:var(--mute); font-size:12px; letter-spacing:2px; text-transform:uppercase; pointer-events:none; }
+  #detail { background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:16px; }
+  #detail h2 { margin:0 0 2px; font-size:18px; }
+  #detail .badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); color:var(--mute); margin-bottom:10px; }
+  #detail p { color:#b6c4bd; margin:8px 0 14px; }
+  #detail h3 { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:var(--mute); margin:16px 0 6px; }
+  .col { display:flex; gap:8px; align-items:baseline; padding:4px 0; border-bottom:1px solid #1a2420; font-family:ui-monospace,Menlo,monospace; font-size:12.5px; }
+  .col .n { flex:1; }
+  .tag { font-size:10px; padding:1px 6px; border-radius:6px; font-family:-apple-system,sans-serif; }
+  .tag.pk { background:#4d3d12; color:#ffc470; }
+  .tag.fk { background:#12384d; color:#6cb4ff; }
+  .tag.vec { background:#3a2150; color:#c9a0ff; }
+  .rel { padding:6px 8px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; cursor:pointer; font-size:13px; }
+  .rel:hover { border-color:var(--accent); }
+  .rel small { color:var(--mute); display:block; }
+  #tour { position:absolute; left:50%; bottom:16px; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px 14px; display:none; gap:10px; align-items:center; box-shadow:0 8px 30px #000a; }
+  .hint { position:absolute; left:14px; bottom:12px; color:var(--mute); font-size:12px; pointer-events:none; }
+  .legend { position:absolute; right:14px; top:12px; background:#121a18cc; border:1px solid var(--line); border-radius:10px; padding:8px 12px; font-size:12px; color:var(--mute); }
+  .legend div { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .legend svg { width:26px; height:6px; flex:none; display:inline-block; cursor:default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CORTEX DATA MODEL</h1>
+  <button class="only-small" id="toggleList">☰ Tables</button>
+  <span class="subtitle" style="color:var(--mute)">39 tables · from migrations 001–023</span>
+  <span class="sp"></span>
+  <label class="chk"><input type="checkbox" id="own"> Show profile ownership links</label>
+  <button id="reset">Reset layout</button>
+  <button class="primary" id="startTour">▶ Guided tour</button>
+</header>
+
+<aside>
+  <input id="search" placeholder="Search tables or columns…">
+  <div id="list"></div>
+</aside>
+
+<main>
+  <svg id="svg"><g id="world"><g id="labels"></g><g id="edges"></g><g id="nodes"></g></g></svg>
+  <div class="legend">
+    <div><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#4a5a53" stroke-width="2"/></svg> foreign key</div>
+    <div><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#33423b" stroke-width="2" stroke-dasharray="4 4"/></svg> profile ownership (profile_id, owner_id)</div>
+    <div><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#7ae0b6" stroke-width="3"/></svg> selected table's links</div>
+  </div>
+  <div class="hint">Drag tables to rearrange · drag background to pan · scroll to zoom · click a table</div>
+  <div id="tour">
+    <button id="prev">◀ Prev</button>
+    <span id="tourpos" style="min-width:90px;text-align:center"></span>
+    <button id="next">Next ▶</button>
+    <button id="stop">✕</button>
+  </div>
+</main>
+
+<section id="detail"><h2>Select a table</h2><p>Click any table in the diagram or list to see its columns, how it connects, and what it is for. Or start the guided tour.</p></section>
+
+<script>
+const GROUPS = {
+  identity: { label:'Identity, consent & audit', color:'#7ae0b6' },
+  records:  { label:'Documents & observations', color:'#6cb4ff' },
+  knowledge:{ label:'Knowledge & research', color:'#c9a0ff' },
+  tracking: { label:'Tracking, devices & meds', color:'#ffc470' },
+};
+
+// [name, group, description, columns]. Columns: 'name' or 'name:tag' (pk | vec)
+const T = [
+ ['users','identity','Authenticated accounts. The id is the owner identity used throughout the system.',['id:pk','status','created_at','updated_at']],
+ ['api_sessions','identity','Bearer sessions. Only the SHA-256 hash of the token is stored.',['token_hash:pk','id','user_id','device','user_agent','started_at','last_seen_at','expires_at','revoked_at','created_at']],
+ ['profiles','identity','Root of all personal health data. One account can hold several profiles. Children reference (id, owner_id) so cross-owner links are impossible.',['id:pk','owner_id','display_name','timezone','measurement_system','date_of_birth','sex','blood_group','height_cm','created_at']],
+ ['consents','identity','Purpose-based, revocable consent (e.g. report storage, document processing, AI processing).',['id:pk','profile_id','purpose','granted','policy_version','recorded_at','expires_at','revoked_at']],
+ ['audit_events','identity','Append-only record of security-relevant actions, with limited structured details.',['id:pk','owner_id','profile_id','action','resource_type','resource_id','details','created_at']],
+ ['retention_policies','identity','Per-profile retention windows for AI history and device readings.',['profile_id:pk','ai_history_days','device_readings_days','updated_at','last_applied_at']],
+ ['profile_shares','identity','Scoped, expiring share codes for giving someone else access to a profile.',['id:pk','profile_id','owner_id','label','scopes','code_hash','grantee_id','expires_at','accepted_at','revoked_at','created_at']],
+ ['agent_permissions','identity','What the AI agent is allowed to do for a profile. Composite key: profile + permission.',['profile_id','owner_id','permission','granted','updated_at']],
+ ['agent_actions','identity','Actions the agent proposes. They need the person\'s decision before anything happens.',['id:pk','profile_id','owner_id','kind','title','reason','dedupe_key','status','result_id','created_at','decided_at']],
+
+ ['medical_documents','records','Uploaded reports. Tracks object-storage key, hash, processing status, retries and version chain.',['id:pk','profile_id','owner_id','object_key','file_name','content_type','byte_size','sha256','document_type','status','extraction','error_code','attempt_count','retry_after','document_version','supersedes_document_id','malware_scan_status','created_at','updated_at']],
+ ['outbox_events','records','Durable work queue for document processing: leases, attempts and errors. Points at documents by aggregate_id, with no foreign key.',['id:pk','event_type','aggregate_type','aggregate_id','payload','status','attempts','available_at','locked_at','lock_owner','last_error','created_at','updated_at']],
+ ['document_extraction_runs','records','One row per extraction attempt: pipeline version, page count and warnings.',['id:pk','document_id','profile_id','pipeline_version','status','page_count','warning','created_at']],
+ ['document_extraction_pages','records','Extracted text for each page of a document.',['document_id','page_number','extracted_text']],
+ ['document_extraction_candidates','records','Proposed lab values. They stay candidates until the person reviews and approves them.',['id:pk','document_id','profile_id','owner_id','biomarker_code','display_name','value_numeric','unit','observed_at','reference_range','source_page','evidence','review_status','created_at']],
+ ['document_page_chunks','records','Searchable chunks of document text with a pgvector embedding and full-text vector.',['id:pk','owner_id','profile_id','document_id','page_number','chunk_index','content','embedding:vec','embedding_model','content_tsv','created_at']],
+ ['observations','records','Approved health values: the verified record. Versioned through revision and supersedes_id.',['id:pk','profile_id','document_id','owner_id','biomarker_code','name','value','unit','observed_at','reference_range','source','source_type','verification_status','revision','supersedes_id','created_at']],
+ ['observation_revisions','records','Snapshot history of every edit to an observation.',['id:pk','observation_id','profile_id','owner_id','revision','snapshot','change_reason','changed_at']],
+ ['record_chunks','records','Observation text embedded for hybrid search (pgvector HNSW + full-text). Always filtered by owner and profile.',['id:pk','owner_id','profile_id','observation_id','observation_revision','content','embedding:vec','embedding_model','content_tsv','created_at']],
+ ['biomarker_catalog','records','Learned catalog of biomarkers: names, synonyms, units, LOINC codes. Drives extraction. New entries wait for administrator approval.',['code:pk','display_name','synonyms','supported_units','loinc_nums','learned_units','category','status','source','reference_note','approved_by','approved_at','created_at']],
+
+ ['knowledge_entries','knowledge','Everything the research agent learns (biomarkers, units, literature) lands here as pending until an administrator reviews it.',['id:pk','kind','entry_key','payload','evidence','agreement','status','proposed_by','reviewed_by','review_note','reviewed_at','created_at']],
+ ['research_tasks','knowledge','Durable queue of research lookups with retry and back-off. No foreign keys.',['id:pk','kind','term','status','attempts','last_error','available_at','created_at','updated_at']],
+ ['research_sources','knowledge','An approved literature source (e.g. a PubMed abstract) linked to the knowledge entry that approved it.',['id:pk','knowledge_entry_id','identifier','title','journal','published_year','url','approved_at']],
+ ['research_chunks','knowledge','Embedded source text so health questions can cite research as [R#].',['id:pk','source_id','ordinal','content','embedding:vec','embedding_model','content_tsv']],
+ ['reference_ranges','knowledge','Approved reference ranges per biomarker, unit, sex and age band.',['id:pk','biomarker_code','unit','sex','age_min','age_max','low','high','source','knowledge_entry_id','approved_by','approved_at']],
+ ['unit_conversions','knowledge','Approved unit conversion factors per biomarker.',['id:pk','biomarker_code','from_unit','to_unit','factor','source','knowledge_entry_id','approved_by','approved_at']],
+ ['research_investigations','knowledge','A person\'s saved research question about their health.',['id:pk','profile_id','owner_id','title','question','status','created_at','updated_at','last_refreshed_at']],
+ ['research_investigation_items','knowledge','Evidence pinned to an investigation: sources, excerpts and notes.',['id:pk','investigation_id','kind','source_id','excerpt','note','created_at']],
+
+ ['history_entries','tracking','Medical history: conditions, procedures and the like, with dates.',['id:pk','owner_id','profile_id','kind','title','notes','started_on','ended_on','status','created_at','updated_at']],
+ ['goals','tracking','Target ranges a person sets for a biomarker.',['id:pk','owner_id','profile_id','biomarker_code','title','target_min','target_max','unit','status','created_at','updated_at']],
+ ['follow_ups','tracking','Reminders and follow-up tasks with due dates.',['id:pk','owner_id','profile_id','kind','title','notes','due_on','status','completed_at','created_at','updated_at']],
+ ['symptom_entries','tracking','Symptoms with severity and timing.',['id:pk','profile_id','owner_id','name','severity','started_at','ended_at','notes','created_at','updated_at']],
+ ['lifestyle_logs','tracking','Lifestyle logs such as sleep, activity and diet.',['id:pk','profile_id','owner_id','category','value','unit','label','notes','logged_on','created_at']],
+ ['health_questions','tracking','Saved questions and answers with sources, limitations, triage, confidence and feedback.',['id:pk','profile_id','owner_id','question','answer','sources','limitations','workflow','suggested_questions','urgent','triage','confidence','uncertainty','feedback','feedback_comment','created_at']],
+ ['devices','tracking','Connected devices or data sources.',['id:pk','profile_id','owner_id','kind','source','name','manufacturer','model','external_id','status','last_synced_at','created_at','updated_at']],
+ ['device_readings','tracking','Individual measurements. dedupe_key prevents double-counting on re-sync.',['id:pk','device_id','profile_id','owner_id','metric','value','unit','original_value','original_unit','measured_at','local_date','dedupe_key','created_at']],
+ ['device_syncs','tracking','Log of each sync batch: accepted, duplicate and rejected counts.',['id:pk','device_id','profile_id','owner_id','accepted','duplicates','rejected','first_measured_at','last_measured_at','created_at']],
+ ['prescriptions','tracking','A prescription: doctor, date and source.',['id:pk','profile_id','owner_id','doctor','prescribed_on','source','created_at']],
+ ['prescription_items','tracking','Individual medicines with dose, schedule slots, duration and confidence.',['id:pk','prescription_id','profile_id','name','strength','form','dose','frequency_text','timing_text','duration_text','instructions','slots','with_food','as_needed','duration_days','ends_on','confidence','active','created_at']],
+ ['dose_logs','tracking','Which doses were taken, by day and slot.',['item_id','profile_id','owner_id','day','slot','taken_at']],
+];
+
+// [from, fromCol, to, toCol, ownership?, label]
+const FK = [
+ ['api_sessions','user_id','users','id',0,'belongs to'],
+ ['consents','profile_id','profiles','id',0,'grants'],
+ ['retention_policies','profile_id','profiles','id',0,'has'],
+ ['observations','document_id','medical_documents','id',0,'sourced from (SET NULL)'],
+ ['observations','biomarker_code','biomarker_catalog','code',0,'classified as'],
+ ['observations','supersedes_id','observations','id',0,'supersedes'],
+ ['observation_revisions','observation_id','observations','id',0,'history of'],
+ ['record_chunks','observation_id','observations','id',0,'embeds'],
+ ['medical_documents','supersedes_document_id','medical_documents','id',0,'new version of'],
+ ['document_extraction_runs','document_id','medical_documents','id',0,'run for'],
+ ['document_extraction_pages','document_id','medical_documents','id',0,'page of'],
+ ['document_extraction_candidates','document_id','medical_documents','id',0,'proposed from'],
+ ['document_extraction_candidates','biomarker_code','biomarker_catalog','code',0,'matches'],
+ ['document_page_chunks','document_id','medical_documents','id',0,'chunk of'],
+ ['research_sources','knowledge_entry_id','knowledge_entries','id',0,'approved via (1:1)'],
+ ['research_chunks','source_id','research_sources','id',0,'chunk of'],
+ ['reference_ranges','biomarker_code','biomarker_catalog','code',0,'range for'],
+ ['reference_ranges','knowledge_entry_id','knowledge_entries','id',0,'evidence (SET NULL)'],
+ ['unit_conversions','biomarker_code','biomarker_catalog','code',0,'conversion for'],
+ ['unit_conversions','knowledge_entry_id','knowledge_entries','id',0,'evidence (SET NULL)'],
+ ['research_investigation_items','investigation_id','research_investigations','id',0,'item of'],
+ ['research_investigation_items','source_id','research_sources','id',0,'cites'],
+ ['goals','biomarker_code','biomarker_catalog','code',0,'targets'],
+ ['device_readings','device_id','devices','id',0,'reading from'],
+ ['device_syncs','device_id','devices','id',0,'sync of'],
+ ['prescription_items','prescription_id','prescriptions','id',0,'item of'],
+ ['dose_logs','item_id','prescription_items','id',0,'dose of'],
+];
+// Tables that hold (profile_id, owner_id) -> profiles(id, owner_id)
+['medical_documents','observations','observation_revisions','document_extraction_candidates','record_chunks','document_page_chunks',
+ 'history_entries','goals','follow_ups','health_questions','devices','device_readings','device_syncs','research_investigations',
+ 'profile_shares','symptom_entries','lifestyle_logs','agent_permissions','agent_actions','prescriptions','dose_logs'
+].forEach(n => FK.push([n,'profile_id, owner_id','profiles','id, owner_id',1,'owned by']));
+['document_extraction_runs','document_extraction_pages','prescription_items'].forEach(()=>{}); // linked via parent tables
+FK.push(['document_extraction_runs','profile_id','profiles','id',1,'owned by']);
+FK.push(['observation_revisions','profile_id','profiles','id',1,'owned by (also FK)']);
+FK.push(['prescription_items','profile_id','profiles','id',1,'owned by (via profile_id)']);
+FK.push(['audit_events','profile_id','profiles','id',1,'logged for (logical)']);
+
+const byName = Object.fromEntries(T.map(t => [t[0], {name:t[0], group:t[1], desc:t[2], cols:t[3].map(c => { const [n,tag]=c.split(':'); return {n,tag}; })}]));
+const fkCols = {}; FK.forEach(f => f[1].split(', ').forEach(c => (fkCols[f[0]] ??= new Set()).add(c)));
+
+// ---------- layout ----------
+const NW = 200, NH = 40, GAPX = 28, GAPY = 26;
+const order = Object.keys(GROUPS);
+const layout = {};
+// Hand-placed around `profiles`, the hub every health table hangs off.
+const POS = {
+  // identity (left column)
+  users:[40,70], api_sessions:[40,150], consents:[40,290], retention_policies:[40,370], audit_events:[40,450],
+  profile_shares:[40,530], agent_permissions:[40,610], agent_actions:[40,690],
+  profiles:[330,380],
+  // documents & observations (centre)
+  outbox_events:[620,70], medical_documents:[620,150], document_extraction_runs:[900,30], document_extraction_pages:[900,100],
+  document_extraction_candidates:[900,170], document_page_chunks:[900,240],
+  observations:[620,330], observation_revisions:[900,330], record_chunks:[900,400], biomarker_catalog:[620,500],
+  // knowledge & research (right)
+  reference_ranges:[900,520], unit_conversions:[900,590], knowledge_entries:[1180,520], research_tasks:[1180,440],
+  research_sources:[1180,600], research_chunks:[1180,680], research_investigations:[620,700], research_investigation_items:[900,700],
+  // tracking (bottom)
+  history_entries:[330,560], follow_ups:[330,630], symptom_entries:[330,700], lifestyle_logs:[330,770],
+  health_questions:[330,840], goals:[620,860], devices:[620,950], device_readings:[900,930], device_syncs:[900,1000],
+  prescriptions:[40,880], prescription_items:[40,960], dose_logs:[40,1040],
+};
+const GLABEL = { identity:[40,40], records:[620,40], knowledge:[1180,410], tracking:[330,530] };
+function defaultLayout() {
+  Object.keys(POS).forEach(n => { layout[n] = { x:POS[n][0], y:POS[n][1] }; });
+  order.forEach(g => { GROUPS[g].x = GLABEL[g][0]; GROUPS[g].y = GLABEL[g][1]; });
+}
+function fitView() {
+  const r = svg.getBoundingClientRect(), xs = Object.values(layout);
+  const x0 = Math.min(...xs.map(p=>p.x))-30, x1 = Math.max(...xs.map(p=>p.x))+NW+30;
+  const y0 = Math.min(...xs.map(p=>p.y))-50, y1 = Math.max(...xs.map(p=>p.y))+NH+30;
+  const k = Math.max(0.15, Math.min(1.2, r.width/(x1-x0), r.height/(y1-y0)));
+  view = { k, x:(r.width-(x1-x0)*k)/2 - x0*k, y:(r.height-(y1-y0)*k)/2 - y0*k };
+  applyView();
+}
+defaultLayout();
+
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('svg'), world = document.getElementById('world');
+const gEdges = document.getElementById('edges'), gNodes = document.getElementById('nodes'), gLabels = document.getElementById('labels');
+let view = { x:0, y:0, k:1 }, selected = null, showOwn = false, nodeEls = {}, edgeEls = [];
+
+function el(tag, attrs={}, parent) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; }
+function applyView() { world.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
+
+function build() {
+  gLabels.innerHTML = gNodes.innerHTML = gEdges.innerHTML = ''; nodeEls = {}; edgeEls = [];
+  order.forEach(g => { const t = el('text', {x:GROUPS[g].x, y:GROUPS[g].y, class:'gl'}, gLabels); t.textContent = GROUPS[g].label; t.style.fill = GROUPS[g].color; });
+  FK.forEach(f => { const e = el('path', {class:'edge'+(f[4]?' own':'')}, gEdges); edgeEls.push({f, e}); });
+  T.forEach(t => {
+    const n = byName[t[0]], c = GROUPS[n.group].color;
+    const g = el('g', {class:'node'}, gNodes);
+    el('rect', {width:NW, height:NH, stroke:c}, g);
+    const tx = el('text', {x:12, y:17}, g); tx.textContent = n.name.length>26 ? n.name.slice(0,25)+'…' : n.name;
+    const sb = el('text', {x:12, y:31, class:'sub'}, g); sb.textContent = n.cols.length + ' columns';
+    g.addEventListener('pointerdown', ev => startDrag(ev, n.name));
+    nodeEls[n.name] = g;
+  });
+  update();
+}
+
+function anchor(a, b) {
+  const A = layout[a], B = layout[b], ac = {x:A.x+NW/2, y:A.y+NH/2}, bc = {x:B.x+NW/2, y:B.y+NH/2};
+  const dx = bc.x-ac.x, dy = bc.y-ac.y;
+  if (Math.abs(dx) > NW*0.6) {
+    const s = dx>0 ? {x:A.x+NW,y:ac.y} : {x:A.x,y:ac.y}, e = dx>0 ? {x:B.x,y:bc.y} : {x:B.x+NW,y:bc.y};
+    const m = (s.x+e.x)/2; return `M${s.x},${s.y} C${m},${s.y} ${m},${e.y} ${e.x},${e.y}`;
+  }
+  const s = dy>0 ? {x:ac.x,y:A.y+NH} : {x:ac.x,y:A.y}, e = dy>0 ? {x:bc.x,y:B.y} : {x:bc.x,y:B.y+NH};
+  if (Math.abs(dy) > NH*2.2) {
+    const sx = A.x+NW, ex = B.x+NW, bulge = Math.max(sx, ex) + 34 + Math.min(Math.abs(dy)*0.05, 30);
+    return `M${sx},${ac.y} C${bulge},${ac.y} ${bulge},${bc.y} ${ex},${bc.y}`;
+  }
+  const m = (s.y+e.y)/2; return `M${s.x},${s.y} C${s.x},${m} ${e.x},${m} ${e.x},${e.y}`;
+}
+function selfLoop(a) { const A = layout[a]; return `M${A.x+NW},${A.y+12} C${A.x+NW+46},${A.y-6} ${A.x+NW+46},${A.y+NH+6} ${A.x+NW},${A.y+NH-12}`; }
+
+function update() {
+  T.forEach(t => { const p = layout[t[0]]; nodeEls[t[0]].setAttribute('transform', `translate(${p.x},${p.y})`); });
+  const rel = selected ? new Set(FK.filter(f => f[0]===selected || f[2]===selected).flatMap(f => [f[0], f[2]])) : null;
+  edgeEls.forEach(({f,e}) => {
+    e.setAttribute('d', f[0]===f[2] ? selfLoop(f[0]) : anchor(f[0], f[2]));
+    const touches = selected && (f[0]===selected || f[2]===selected);
+    const visible = !f[4] || showOwn || touches;
+    e.style.display = visible ? '' : 'none';
+    e.classList.toggle('hl', !!touches);
+    e.classList.toggle('dim', !!selected && !touches);
+  });
+  T.forEach(t => { const g = nodeEls[t[0]]; g.classList.toggle('sel', selected===t[0]); g.classList.toggle('dim', !!rel && !rel.has(t[0]) && selected!==t[0]); });
+}
+
+// ---------- interaction ----------
+let drag = null, pan = null, moved = false;
+function toWorld(ev) { const r = svg.getBoundingClientRect(); return { x:(ev.clientX-r.left-view.x)/view.k, y:(ev.clientY-r.top-view.y)/view.k }; }
+function startDrag(ev, name) { ev.stopPropagation(); const p = toWorld(ev); drag = { name, dx:p.x-layout[name].x, dy:p.y-layout[name].y }; moved = false; svg.setPointerCapture(ev.pointerId); }
+svg.addEventListener('pointerdown', ev => { if (!drag) { pan = { x:ev.clientX-view.x, y:ev.clientY-view.y }; svg.classList.add('panning'); moved = false; svg.setPointerCapture(ev.pointerId); } });
+svg.addEventListener('pointermove', ev => {
+  if (drag) { const p = toWorld(ev); layout[drag.name].x = p.x-drag.dx; layout[drag.name].y = p.y-drag.dy; moved = true; update(); }
+  else if (pan) { view.x = ev.clientX-pan.x; view.y = ev.clientY-pan.y; moved = true; applyView(); }
+});
+svg.addEventListener('pointerup', () => {
+  if (drag) { if (!moved) select(drag.name); drag = null; }
+  else if (pan) { if (!moved) select(null); pan = null; svg.classList.remove('panning'); }
+});
+svg.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const r = svg.getBoundingClientRect(), mx = ev.clientX-r.left, my = ev.clientY-r.top;
+  const k = Math.min(2.5, Math.max(0.15, view.k * (ev.deltaY<0 ? 1.1 : 0.9)));
+  view.x = mx-(mx-view.x)*(k/view.k); view.y = my-(my-view.y)*(k/view.k); view.k = k; applyView();
+}, { passive:false });
+
+function focusOn(name) {
+  const r = svg.getBoundingClientRect(), p = layout[name];
+  view.x = r.width/2 - (p.x+NW/2)*view.k; view.y = r.height/2 - (p.y+NH/2)*view.k; applyView();
+}
+
+function select(name, focus) {
+  selected = name; document.body.classList.toggle('has-sel', !!name); document.body.classList.remove('list-open'); update(); renderList(); renderDetail();
+  if (name && focus) focusOn(name);
+}
+
+// ---------- panels ----------
+function renderList() {
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  const root = document.getElementById('list'); root.innerHTML = '';
+  order.forEach(g => {
+    const rows = T.filter(t => t[1]===g && (!q || t[0].includes(q) || t[3].some(c => c.toLowerCase().includes(q))));
+    if (!rows.length) return;
+    const h = document.createElement('div'); h.className = 'grp'; h.innerHTML = `<i style="background:${GROUPS[g].color}"></i>${GROUPS[g].label}`;
+    root.appendChild(h);
+    rows.forEach(t => {
+      const d = document.createElement('div'); d.className = 'item'+(selected===t[0]?' sel':'');
+      d.innerHTML = `<span>${t[0]}</span><small>${t[3].length}</small>`;
+      d.onclick = () => select(t[0], true);
+      root.appendChild(d);
+    });
+  });
+}
+document.getElementById('search').addEventListener('input', renderList);
+
+function renderDetail() {
+  const d = document.getElementById('detail');
+  if (!selected) { d.innerHTML = '<h2>Select a table</h2><p>Click any table in the diagram or list to see its columns, how it connects, and what it is for. Try <b>profiles</b>: it is the hub, and most tables are owned by it (tick "Show profile ownership links" to see them all). Or start the guided tour.</p>'; return; }
+  const n = byName[selected], fks = fkCols[selected] || new Set();
+  const out = FK.filter(f => f[0]===selected && f[2]!==selected || (f[0]===selected && f[2]===selected));
+  const inn = FK.filter(f => f[2]===selected && f[0]!==selected);
+  const rel = (f, other, dir) => `<div class="rel" data-t="${other}"><b>${dir} ${other}</b><small>${f[0]}.${f[1]} → ${f[2]}.${f[3]} · ${f[5]}${f[4]?' · ownership':''}</small></div>`;
+  d.innerHTML = `
+    <button id="closeDetail">✕</button><h2>${n.name}</h2><span class="badge" style="border-color:${GROUPS[n.group].color};color:${GROUPS[n.group].color}">${GROUPS[n.group].label}</span>
+    <p>${n.desc}</p>
+    <h3>Columns (${n.cols.length})</h3>
+    ${n.cols.map(c => `<div class="col"><span class="n">${c.n}</span>${c.tag==='pk'?'<span class="tag pk">PK</span>':''}${fks.has(c.n)?'<span class="tag fk">FK</span>':''}${c.tag==='vec'?'<span class="tag vec">vector</span>':''}</div>`).join('')}
+    <h3>References (${out.length})</h3>
+    ${out.map(f => rel(f, f[2], '→')).join('') || '<small style="color:var(--mute)">None</small>'}
+    <h3>Referenced by (${inn.length})</h3>
+    ${inn.map(f => rel(f, f[0], '←')).join('') || '<small style="color:var(--mute)">None</small>'}`;
+  document.getElementById('closeDetail').onclick = () => select(null);
+  d.querySelectorAll('.rel').forEach(r => r.onclick = () => select(r.dataset.t, true));
+}
+
+// ---------- tour ----------
+const tour = [...T].map(t => t[0]);
+const tourOrder = ['profiles','users','api_sessions','consents','audit_events','retention_policies','profile_shares','agent_permissions','agent_actions',
+ 'medical_documents','outbox_events','document_extraction_runs','document_extraction_pages','document_extraction_candidates','document_page_chunks','biomarker_catalog','observations','observation_revisions','record_chunks',
+ 'knowledge_entries','research_tasks','research_sources','research_chunks','reference_ranges','unit_conversions','research_investigations','research_investigation_items',
+ 'history_entries','goals','follow_ups','symptom_entries','lifestyle_logs','health_questions','devices','device_readings','device_syncs','prescriptions','prescription_items','dose_logs'];
+let ti = -1;
+function tourGo(i) { ti = Math.max(0, Math.min(tourOrder.length-1, i)); document.getElementById('tourpos').textContent = `${ti+1} / ${tourOrder.length}`; select(tourOrder[ti], true); }
+document.getElementById('startTour').onclick = () => { document.getElementById('tour').style.display = 'flex'; view.k = Math.max(view.k, 0.9); tourGo(0); };
+document.getElementById('next').onclick = () => tourGo(ti+1);
+document.getElementById('prev').onclick = () => tourGo(ti-1);
+document.getElementById('stop').onclick = () => { document.getElementById('tour').style.display = 'none'; select(null); };
+document.addEventListener('keydown', ev => { if (document.getElementById('tour').style.display==='flex') { if (ev.key==='ArrowRight') tourGo(ti+1); if (ev.key==='ArrowLeft') tourGo(ti-1); } });
+
+document.getElementById('toggleList').onclick = () => document.body.classList.toggle('list-open');
+document.getElementById('own').onchange = e => { showOwn = e.target.checked; update(); };
+document.getElementById('reset').onclick = () => { defaultLayout(); fitView(); update(); };
+
+build(); renderList(); applyView();
+fitView();
+window.addEventListener('resize', fitView);
+</script>
+</body>
+</html>

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +18,14 @@ var placeKinds = map[string][]string{
 	"clinic":   {"nwr[amenity=clinic]", "nwr[healthcare=clinic]"},
 	"pharmacy": {"nwr[amenity=pharmacy]"},
 	"lab":      {"nwr[healthcare=laboratory]", "nwr[amenity=laboratory]"},
+}
+
+// placeTerms are the Nominatim categories used when Overpass is unreachable.
+var placeTerms = map[string][]string{
+	"doctor":   {"doctors"},
+	"clinic":   {"clinic"},
+	"pharmacy": {"pharmacy"},
+	"lab":      {"diagnostic laboratory"},
 }
 
 type place struct {
@@ -52,7 +59,7 @@ func (m *Module) places(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lat, lng = roundCoord(lat), roundCoord(lng)
-	key := fmt.Sprintf("p:%s:%.2f:%.2f:%.0f", kind, lat, lng, radius)
+	key := fmt.Sprintf("p:%s:%.3f:%.3f:%.0f", kind, lat, lng, radius)
 	resp := func(v any) map[string]any {
 		return map[string]any{"places": v, "kind": kind, "source": "OpenStreetMap", "verified": false,
 			"note": "Listed by OpenStreetMap contributors. Not verified against a medical registry and not a recommendation."}
@@ -67,8 +74,12 @@ func (m *Module) places(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "%s(around:%d,%.5f,%.5f);", f, int(radius*1000), lat, lng)
 	}
 	sb.WriteString(");out center 80;")
-	body, err := m.post(r.Context(), m.OverpassURL, url.Values{"data": {sb.String()}})
+	body, err := m.fetchArea(r.Context(), sb.String(), lat, lng, radius, placeTerms[kind], nil)
 	if err != nil {
+		if v, ok := m.stale(key); ok {
+			httpx.WriteJSON(w, 200, resp(v))
+			return
+		}
 		httpx.WriteError(w, 502, "PLACES_UNAVAILABLE", "Nearby places could not be loaded right now.", nil)
 		return
 	}

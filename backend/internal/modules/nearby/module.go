@@ -17,11 +17,20 @@ import (
 )
 
 const (
-	whoURL      = "https://www.who.int/api/news/diseaseoutbreaknews"
-	overpassURL = "https://overpass-api.de/api/interpreter"
-	userAgent   = "SehatApp/1.0 (personal health app)"
-	cacheTTL    = 10 * time.Minute
+	whoURL          = "https://www.who.int/api/news/diseaseoutbreaknews"
+	overpassURL     = "https://overpass-api.de/api/interpreter"
+	userAgent       = "SehatApp/1.0 (personal health app)"
+	cacheTTL        = 10 * time.Minute
+	overpassBackoff = 3 * time.Minute
+	// staleTTL is how long an old answer may still be served when every map server is busy.
+	staleTTL = 24 * time.Hour
 )
+
+// overpassMirrors are tried after the primary server, because the public servers shed load with 502s.
+var overpassMirrors = []string{
+	"https://overpass.kumi.systems/api/interpreter",
+	"https://overpass.private.coffee/api/interpreter",
+}
 
 // Module implements module.Module.
 type Module struct {
@@ -30,6 +39,13 @@ type Module struct {
 	HTTP        *http.Client
 	WHOURL      string
 	OverpassURL string
+	Mirrors     []string
+	// SearchURL is a Nominatim endpoint used when no Overpass server answers; empty disables it.
+	SearchURL string
+	// NewsURL and LocalNewsURL are RSS endpoints for worldwide and city-level health news.
+	NewsURL, LocalNewsURL string
+
+	overpassDownUntil time.Time
 
 	mu    sync.Mutex
 	cache map[string]cached
@@ -42,11 +58,15 @@ type cached struct {
 
 func New(c *core.Core) *Module {
 	return &Module{
-		Core:        c,
-		HTTP:        &http.Client{Timeout: 25 * time.Second},
-		WHOURL:      whoURL,
-		OverpassURL: overpassURL,
-		cache:       map[string]cached{},
+		Core:         c,
+		HTTP:         &http.Client{Timeout: 25 * time.Second},
+		WHOURL:       whoURL,
+		OverpassURL:  overpassURL,
+		Mirrors:      overpassMirrors,
+		SearchURL:    "https://nominatim.openstreetmap.org/search",
+		NewsURL:      whoNewsURL,
+		LocalNewsURL: localNewsFn,
+		cache:        map[string]cached{},
 	}
 }
 
@@ -56,6 +76,7 @@ func (m *Module) Authed(r chi.Router) {
 	r.Get("/nearby/sources", m.sources)
 	r.Get("/nearby/alerts", m.alerts)
 	r.Get("/nearby/hospitals", m.hospitals)
+	r.Get("/nearby/news", m.news)
 	r.Get("/nearby/places", m.places)
 }
 
@@ -64,6 +85,17 @@ func (m *Module) fromCache(key string) (any, bool) {
 	defer m.mu.Unlock()
 	c, ok := m.cache[key]
 	if !ok || time.Since(c.at) > cacheTTL {
+		return nil, false
+	}
+	return c.data, true
+}
+
+// stale returns an answer of any age up to staleTTL, for when the live servers are unavailable.
+func (m *Module) stale(key string) (any, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.cache[key]
+	if !ok || time.Since(c.at) > staleTTL {
 		return nil, false
 	}
 	return c.data, true

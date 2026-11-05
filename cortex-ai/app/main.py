@@ -254,6 +254,50 @@ async def prescription_read(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
+class StandardiseRequest(BaseModel):
+    labels: list[str] = Field(min_length=1, max_length=60)
+
+
+@app.post("/v1/labs/standardise")
+async def labs_standardise(req: StandardiseRequest) -> JSONResponse:
+    """Standard names and panels for lab-report labels. Only the labels are sent to the model."""
+    labels = [label.strip()[:80] for label in req.labels if label.strip()]
+    try:
+        result = await copilot_agent.standardise_labs(labels)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "standardiser_unavailable", "reason": str(exc)})
+    return JSONResponse(result)
+
+
+class ExtractRequest(BaseModel):
+    text: str = Field(min_length=20, max_length=24000)
+
+
+@app.post("/v1/documents/extract")
+async def documents_extract(req: ExtractRequest) -> JSONResponse:
+    """Structured tests and medicines from the text of any lab report or prescription."""
+    try:
+        result = await copilot_agent.extract_document(req.text)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "extractor_unavailable", "reason": str(exc)})
+    return JSONResponse(result)
+
+
+class InsightRequest(BaseModel):
+    kind: str = Field(pattern="^(research|lifestyle|history|upload|labs|biomarker)$")
+    facts: str = Field(min_length=10, max_length=20000)
+
+
+@app.post("/v1/insights")
+async def insights(req: InsightRequest) -> JSONResponse:
+    """Coaching and summaries from facts the caller has already de-identified."""
+    try:
+        result = await copilot_agent.build_insights(req.kind, req.facts)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "insights_unavailable", "reason": str(exc)})
+    return JSONResponse(result)
+
+
 @app.post("/v1/agent/step")
 def agent_step(step: AgentStep) -> JSONResponse:
     """One model turn of the agent loop: either tool calls to run or a final answer."""

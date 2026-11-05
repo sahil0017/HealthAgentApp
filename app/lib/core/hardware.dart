@@ -12,7 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-/// Coarse area only: coordinates are rounded on the phone to a 0.05 degree grid (about 5 km).
+/// The phone's position rounded to about 100 m, used only to find care nearby and never stored.
 class Area {
   const Area({
     required this.lat,
@@ -66,7 +66,7 @@ Future<Area?> searchPlace(String query) async {
   );
 }
 
-double roundCoord(double v) => (v / 0.05).round() * 0.05;
+double roundCoord(double v) => (v * 1000).round() / 1000;
 
 abstract class LocationSource {
   /// Returns null when permission is denied or location is unavailable.
@@ -91,12 +91,12 @@ class PhoneLocation implements LocationSource {
     try {
       return await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
-          accuracy: precise ? LocationAccuracy.best : LocationAccuracy.high,
+          accuracy: LocationAccuracy.best,
           timeLimit: const Duration(seconds: 15),
         ),
       );
     } catch (_) {
-      // A cold GPS fix can time out indoors; the last known fix is still good enough for a ~5 km area.
+      // A cold GPS fix can time out indoors; fall back to the last known fix.
       return Geolocator.getLastKnownPosition();
     }
   }

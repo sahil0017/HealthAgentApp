@@ -167,15 +167,58 @@ final profileListProvider = FutureProvider.family<List<Json>, String>((
 
 /// Remembered coarse area, set after the user grants location.
 class AreaNotifier extends Notifier<Area?> {
+  static const _key = 'last_area';
+
   @override
-  Area? build() => null;
+  Area? build() {
+    _restore();
+    return null;
+  }
+
+  Future<void> _restore() async {
+    try {
+      final raw = (await SharedPreferences.getInstance()).getString(_key);
+      if (raw == null || state != null) return;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      state = Area(
+        lat: (m['lat'] as num).toDouble(),
+        lng: (m['lng'] as num).toDouble(),
+        city: m['city'] as String?,
+        region: m['region'] as String?,
+        countryCode: m['cc'] as String?,
+        country: m['country'] as String?,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _save(Area a) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(
+      _key,
+      jsonEncode({
+        'lat': a.lat,
+        'lng': a.lng,
+        'city': a.city,
+        'region': a.region,
+        'cc': a.countryCode,
+        'country': a.country,
+      }),
+    );
+  }
+
   Future<bool> detect() async {
     final a = await ref.read(locationProvider).currentArea();
-    state = a;
+    if (a != null) {
+      state = a;
+      _save(a);
+    }
     return a != null;
   }
 
-  void set(Area a) => state = a;
+  void set(Area a) {
+    state = a;
+    _save(a);
+  }
 }
 
 final areaProvider = NotifierProvider<AreaNotifier, Area?>(AreaNotifier.new);
@@ -183,3 +226,12 @@ final areaProvider = NotifierProvider<AreaNotifier, Area?>(AreaNotifier.new);
 String friendly(Object e) => e is ApiError
     ? (e.status == 0 ? 'You appear to be offline.' : e.message)
     : 'Something went wrong.';
+
+/// The selected bottom tab, so a notification can jump to Records or Results.
+class TabNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+  void go(int i) => state = i;
+}
+
+final shellTabProvider = NotifierProvider<TabNotifier, int>(TabNotifier.new);

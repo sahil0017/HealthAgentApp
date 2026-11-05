@@ -37,12 +37,6 @@ const _modes = [
   ('visit', 'Visit prep', Icons.event_note_outlined),
 ];
 
-const _starters = [
-  'What is outside my range?',
-  'Summarise my latest results',
-  'What changed since last time?',
-];
-
 class _Msg {
   _Msg.user(this.text) : user = true;
   _Msg.agent() : user = false;
@@ -62,7 +56,10 @@ class _Msg {
 
 /// A chat with the agent: it reads the record with tools, shows each step, and offers actions to tap.
 class AgentChatScreen extends ConsumerStatefulWidget {
-  const AgentChatScreen({super.key});
+  const AgentChatScreen({super.key, this.embedded = false});
+
+  /// True when shown as the Agent tab: no app bar, tools sit in a slim toolbar.
+  final bool embedded;
   @override
   ConsumerState<AgentChatScreen> createState() => _ChatState();
 }
@@ -296,24 +293,58 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
     final cloud = perms.any(
       (p) => p['permission'] == 'cloud_model' && p['granted'] == true,
     );
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agent chat'),
-        actions: [
-          IconButton(
-            tooltip: 'What-if',
-            icon: const Icon(Icons.tune),
-            onPressed: _busy ? null : _whatIf,
-          ),
-          IconButton(
-            tooltip: 'New chat',
-            icon: const Icon(Icons.refresh),
-            onPressed: _busy ? null : () => setState(_msgs.clear),
-          ),
+    final tools = <Widget>[
+      IconButton(
+        tooltip: 'What-if',
+        icon: const Icon(Icons.tune),
+        onPressed: _busy ? null : _whatIf,
+      ),
+      IconButton(
+        tooltip: 'New chat',
+        icon: const Icon(Icons.refresh),
+        onPressed: _busy ? null : () => setState(_msgs.clear),
+      ),
+      PopupMenuButton<Widget>(
+        tooltip: 'Agent tools',
+        icon: const Icon(Icons.more_vert),
+        onSelected: (w) =>
+            Navigator.push(context, MaterialPageRoute<void>(builder: (_) => w)),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: BriefingScreen(), child: Text('Daily briefing')),
+          PopupMenuItem(value: RunAgentScreen(), child: Text('Run a check-up')),
+          PopupMenuItem(value: ApprovalsScreen(), child: Text('Approvals')),
+          PopupMenuItem(value: VisitPrepScreen(), child: Text('Visit prep')),
+          PopupMenuItem(value: ActivityScreen(), child: Text('Activity')),
+          PopupMenuItem(value: PermissionsScreen(), child: Text('Permissions')),
         ],
       ),
+    ];
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : AppBar(title: const Text('Sehat'), actions: tools),
       body: Column(
         children: [
+          if (widget.embedded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 4, 0),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: Pal.pri, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Sehat',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  ...tools,
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
             child: Row(
@@ -401,7 +432,7 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
                         isDense: true,
                         hintText: _listening
                             ? 'Listening…'
-                            : 'Ask about your results',
+                            : 'Ask Sehat about your health',
                         suffixIcon: IconButton(
                           tooltip: 'Speak',
                           icon: Icon(
@@ -433,38 +464,121 @@ class _ChatState extends ConsumerState<AgentChatScreen> {
 class _Intro extends ConsumerWidget {
   const _Intro({required this.onPick});
   final void Function(String) onPick;
+
+  static const _cards = [
+    (
+      Icons.biotech_outlined,
+      'Understand my results',
+      'What is outside my range, and why it matters',
+      'What is outside my range?',
+    ),
+    (
+      Icons.trending_up,
+      'What changed',
+      'Trends since your last report',
+      'What changed since last time?',
+    ),
+    (
+      Icons.event_note_outlined,
+      'Prepare for my doctor',
+      'Questions and a summary to carry along',
+      'Prepare me for my next doctor visit',
+    ),
+    (
+      Icons.restaurant_outlined,
+      'Improve with lifestyle',
+      'Food, sleep and activity tied to your numbers',
+      'What lifestyle changes would help my results most?',
+    ),
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final extra = ref.watch(_promptsProvider).asData?.value ?? [];
     return ListView(
       padding: const EdgeInsets.all(14),
       children: [
-        const SizedBox(height: 20),
-        const Icon(Icons.auto_awesome, size: 38, color: Pal.pri),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const CircleAvatar(
+              radius: 22,
+              backgroundColor: Pal.priBg,
+              child: Icon(Icons.auto_awesome, color: Pal.pri),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Hi, I’m Sehat',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'I read your own reports, medicines and check-ins, then answer with the numbers behind it.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Pal.mut,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        for (final c in _cards)
+          SCard(
+            onTap: () => onPick(c.$4),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Pal.priBg,
+                  child: Icon(c.$1, size: 18, color: Pal.pri),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        c.$2,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(c.$3, style: _note),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Pal.mut),
+              ],
+            ),
+          ),
+        if (extra.isNotEmpty) ...[
+          const SectionTitle('Asked about your record'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final s in extra.take(4))
+                ActionChip(
+                  label: Text(s, style: const TextStyle(fontSize: 11.5)),
+                  onPressed: () => onPick(s),
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
         const Text(
-          'Ask your agent',
+          'Tip: the tune icon lets you try “what if” values, and the mic lets you speak.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'It reads your own record with tools and shows what it looked at. Pick a mode above, tap a prompt, type, or use the mic. The tune icon lets you try “what if” values.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: Pal.mut, height: 1.4),
-        ),
-        const SizedBox(height: 18),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in [..._starters, ...extra.take(3)])
-              ActionChip(
-                label: Text(s, style: const TextStyle(fontSize: 12)),
-                onPressed: () => onPick(s),
-              ),
-          ],
+          style: _note,
         ),
       ],
     );
@@ -517,7 +631,52 @@ class _Bubble extends StatelessWidget {
                   Text('Reading your record…', style: _note),
                 ],
               ),
-            for (var i = 0; i < m.stepsShown; i++)
+            if (m.done && m.stepsShown > 0)
+              Theme(
+                data: Theme.of(context)
+                    .copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(
+                    'Looked at ${m.stepsShown} part${m.stepsShown == 1 ? '' : 's'} of your record',
+                    style: _note,
+                  ),
+                  children: [
+                    for (var i = 0; i < m.stepsShown; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 5),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Pal.pri,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  text: '${m.steps[i]['label']}',
+                                  style: const TextStyle(fontSize: 11.5),
+                                  children: [
+                                    TextSpan(
+                                      text: '  ${m.steps[i]['summary']}',
+                                      style: _note,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            for (var i = 0; i < (m.done ? 0 : m.stepsShown); i++)
               Padding(
                 padding: const EdgeInsets.only(bottom: 5),
                 child: Row(
@@ -562,18 +721,13 @@ class _Bubble extends StatelessWidget {
               Row(
                 children: [
                   Pill(
-                    m.source == 'copilot'
-                        ? 'GitHub Copilot${m.model.isEmpty ? '' : ' · ${m.model}'}'
-                        : m.source == 'model'
-                        ? 'AI model${m.model.isEmpty ? '' : ' · ${m.model.split('/').last}'}'
+                    m.source == 'copilot' || m.source == 'model'
+                        ? 'Sehat AI'
                         : 'From your records',
                   ),
                   const SizedBox(width: 6),
                   const Expanded(
-                    child: Text(
-                      'Information, not medical advice.',
-                      style: _note,
-                    ),
+                    child: Text('Based on your records', style: _note),
                   ),
                 ],
               ),

@@ -13,7 +13,7 @@ import (
 	pdf "github.com/giraffesyo/pdf"
 )
 
-const PipelineVersion = "pdf-text-ocr-v3"
+const PipelineVersion = "pdf-text-ocr-ai-v4"
 
 type Candidate struct {
 	ID             string  `json:"id,omitempty"`
@@ -25,6 +25,7 @@ type Candidate struct {
 	ReferenceRange string  `json:"reference_range"`
 	Page           int     `json:"page"`
 	Evidence       string  `json:"evidence"`
+	Panel          string  `json:"panel,omitempty"`
 }
 
 type Result struct {
@@ -35,6 +36,9 @@ type Result struct {
 	Warnings     []string
 	UnknownNames []string
 	ManualReview bool
+	// AI is the model's reading of the document, set by the worker when the person allowed the cloud model.
+	AI      *AIReading
+	AIAdded int
 }
 
 // DocumentProcessor is the seam for deterministic document processing. Future AI

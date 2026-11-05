@@ -24,7 +24,9 @@ func (m *Module) Name() string { return "prescriptions" }
 func (m *Module) Authed(r chi.Router) {
 	r.Post("/profiles/{profileID}/prescriptions/read", m.read)
 	r.Get("/profiles/{profileID}/prescriptions", m.list)
+	r.Get("/profiles/{profileID}/prescriptions/from-document/{documentID}", m.fromDocument)
 	r.Post("/profiles/{profileID}/prescriptions", m.save)
 	r.Get("/profiles/{profileID}/prescriptions/schedule", m.dailySchedule)
+	r.Post("/profiles/{profileID}/prescriptions/doses", m.logDose)
 	r.Delete("/profiles/{profileID}/prescriptions/{rxID}", m.remove)
 }

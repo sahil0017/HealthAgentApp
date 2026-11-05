@@ -174,14 +174,14 @@ func (m *Module) briefing(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, 500, "BRIEFING_UNAVAILABLE", "The briefing could not be prepared.", nil)
 			return
 		}
-		s := section{Key: "labs", Title: "Lab results to look at", Items: []line{}}
+		s := section{Key: "labs", Title: "Results needing attention", Items: []line{}}
 		for _, l := range labs {
 			s.Items = append(s.Items, line{Text: l.describe(), Tone: "attention"})
 		}
 		out = append(out, s)
 	}
 
-	fu := section{Key: "follow_ups", Title: "Follow-ups", Items: []line{}}
+	fu := section{Key: "follow_ups", Title: "Pending follow-ups", Items: []line{}}
 	rows, err := m.DB.Pool.Query(ctx, `SELECT title, due_on::text, due_on IS NOT NULL AND due_on < current_date FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 20`, profileID, owner)
 	if err == nil {
 		for rows.Next() {
@@ -204,7 +204,7 @@ func (m *Module) briefing(w http.ResponseWriter, r *http.Request) {
 	out = append(out, fu)
 
 	if m.granted(ctx, profileID, "read_lifestyle") {
-		sy := section{Key: "symptoms", Title: "Symptoms still active", Items: []line{}}
+		sy := section{Key: "symptoms", Title: "Active symptoms", Items: []line{}}
 		rows, err := m.DB.Pool.Query(ctx, `SELECT name, severity FROM symptom_entries WHERE profile_id=$1 AND owner_id=$2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 20`, profileID, owner)
 		if err == nil {
 			for rows.Next() {
@@ -219,9 +219,15 @@ func (m *Module) briefing(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sy)
 	}
 
+	rx := section{Key: "medicines", Title: "Medication schedule", Items: []line{}}
+	for _, sl := range m.todaysDoses(ctx, owner, profileID, r.URL.Query().Get("day")) {
+		rx.Items = append(rx.Items, line{Text: sl})
+	}
+	out = append(out, rx)
+
 	var review int
 	_ = m.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM medical_documents WHERE profile_id=$1 AND owner_id=$2 AND status IN ('review_required','manual_review_required')`, profileID, owner).Scan(&review)
-	docs := section{Key: "documents", Title: "Reports", Items: []line{}}
+	docs := section{Key: "documents", Title: "Recent reports", Items: []line{}}
 	if review > 0 {
 		docs.Items = append(docs.Items, line{Text: fmt.Sprintf("%d report(s) are waiting for your review", review), Tone: "attention"})
 	}
@@ -270,11 +276,24 @@ func (m *Module) visitPrep(w http.ResponseWriter, r *http.Request) {
 	if m.granted(ctx, profileID, "read_lifestyle") {
 		symptoms = collect(`SELECT name||' (severity '||severity||'/10, since '||started_at::date||')' FROM symptom_entries WHERE profile_id=$1 AND owner_id=$2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 20`, profileID, owner)
 	}
+	// Saved prescriptions are the source of truth for current medicines; history entries add the rest.
+	meds := collect(`SELECT trim(i.name||' '||i.strength||CASE WHEN i.frequency_text<>'' THEN ' — '||i.frequency_text ELSE '' END)
+		FROM prescription_items i JOIN prescriptions p ON p.id=i.prescription_id
+		WHERE i.profile_id=$1 AND p.owner_id=$2 AND i.active ORDER BY i.name`, profileID, owner)
+	have := map[string]bool{}
+	for _, s := range meds {
+		have[strings.ToLower(strings.Fields(s + " ")[0])] = true
+	}
+	for _, s := range collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind='medication' AND status='active' ORDER BY title`, profileID, owner) {
+		if f := strings.Fields(s); len(f) == 0 || !have[strings.ToLower(f[0])] {
+			meds = append(meds, s)
+		}
+	}
 	httpx.WriteJSON(w, 200, map[string]any{
 		"generated_at":    time.Now().UTC(),
 		"labs_to_discuss": labs,
 		"active_symptoms": symptoms,
-		"medications":     collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind='medication' AND status='active' ORDER BY title`, profileID, owner),
+		"medications":     meds,
 		"conditions":      collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind IN ('condition','allergy') AND status='active' ORDER BY title`, profileID, owner),
 		"open_follow_ups": collect(`SELECT title FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 20`, profileID, owner),
 		"goals":           collect(`SELECT title FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 20`, profileID, owner),
@@ -337,4 +356,114 @@ func (m *Module) suggestions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, 200, map[string]any{"suggestions": out})
+}
+
+// todaysDoses lists, per time of day, the active scheduled medicines that have not been marked taken.
+func (m *Module) todaysDoses(ctx context.Context, owner, profileID, day string) []string {
+	if _, err := time.Parse("2006-01-02", day); err != nil {
+		day = time.Now().UTC().Format("2006-01-02")
+	}
+	rows, err := m.DB.Pool.Query(ctx, `SELECT s.slot, i.name, i.strength, EXISTS(SELECT 1 FROM dose_logs d WHERE d.item_id=i.id AND d.day=$3::date AND d.slot=s.slot)
+		FROM prescription_items i JOIN prescriptions p ON p.id=i.prescription_id, unnest(i.slots) AS s(slot)
+		WHERE i.profile_id=$1 AND p.owner_id=$2 AND i.active AND NOT i.as_needed AND (i.ends_on IS NULL OR i.ends_on >= $3::date)
+		ORDER BY array_position(ARRAY['morning','afternoon','evening','night'], s.slot), i.name`, profileID, owner, day)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	pending, done := map[string][]string{}, 0
+	order := []string{}
+	for rows.Next() {
+		var slot, name, strength string
+		var taken bool
+		if rows.Scan(&slot, &name, &strength, &taken) != nil {
+			continue
+		}
+		if taken {
+			done++
+			continue
+		}
+		if _, ok := pending[slot]; !ok {
+			order = append(order, slot)
+		}
+		pending[slot] = append(pending[slot], strings.TrimSpace(name+" "+strength))
+	}
+	out := []string{}
+	for _, slot := range order {
+		out = append(out, strings.ToUpper(slot[:1])+slot[1:]+": "+strings.Join(pending[slot], ", "))
+	}
+	if done > 0 {
+		out = append(out, fmt.Sprintf("%d dose(s) already taken today", done))
+	}
+	return out
+}
+
+// carePlanFacts is plain text for the agent: open follow-ups, active symptoms and reports waiting for review.
+func (m *Module) carePlanFacts(ctx context.Context, owner, profileID string) string {
+	parts := []string{}
+	if rows, err := m.DB.Pool.Query(ctx, `SELECT title, COALESCE(due_on::text,''), due_on IS NOT NULL AND due_on < current_date FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 15`, profileID, owner); err == nil {
+		for rows.Next() {
+			var title, due string
+			var overdue bool
+			if rows.Scan(&title, &due, &overdue) == nil {
+				t := "Follow-up: " + title
+				if due != "" {
+					t += " (due " + due
+					if overdue {
+						t += ", overdue"
+					}
+					t += ")"
+				}
+				parts = append(parts, t)
+			}
+		}
+		rows.Close()
+	}
+	if m.granted(ctx, profileID, "read_lifestyle") {
+		if rows, err := m.DB.Pool.Query(ctx, `SELECT name, severity FROM symptom_entries WHERE profile_id=$1 AND owner_id=$2 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 10`, profileID, owner); err == nil {
+			for rows.Next() {
+				var name string
+				var sev int
+				if rows.Scan(&name, &sev) == nil {
+					parts = append(parts, fmt.Sprintf("Active symptom: %s (severity %d/10)", name, sev))
+				}
+			}
+			rows.Close()
+		}
+	}
+	var review int
+	_ = m.DB.Pool.QueryRow(ctx, `SELECT count(*) FROM medical_documents WHERE profile_id=$1 AND owner_id=$2 AND status IN ('review_required','manual_review_required')`, profileID, owner).Scan(&review)
+	if review > 0 {
+		parts = append(parts, fmt.Sprintf("%d report(s) are waiting for the person to review.", review))
+	}
+	if len(parts) == 0 {
+		return "No open follow-ups, active symptoms or reports waiting."
+	}
+	return strings.Join(parts, "\n")
+}
+
+// briefingSummary is the agent's short written briefing. It needs the cloud model permission and falls back
+// to nothing: the structured briefing above always stands on its own.
+func (m *Module) briefingSummary(w http.ResponseWriter, r *http.Request) {
+	if !m.ProfileOwned(r) {
+		m.notFound(w)
+		return
+	}
+	ctx, owner, profileID := r.Context(), httpx.Owner(r), chi.URLParam(r, "profileID")
+	if !m.HasConsent(ctx, profileID, "ai_processing") || !m.granted(ctx, profileID, "read_labs") || !m.granted(ctx, profileID, "cloud_model") {
+		httpx.WriteJSON(w, 200, map[string]any{"summary": "", "source": "none"})
+		return
+	}
+	l := &labs{m: m, ctx: ctx, owner: owner, profile: profileID, repo: observations.New(m.DB), touched: map[string]bool{}}
+	if err := l.load(); err != nil {
+		httpx.WriteJSON(w, 200, map[string]any{"summary": "", "source": "none"})
+		return
+	}
+	in := chatRequest{Message: "Write my briefing for today.", Mode: "briefing"}
+	answer, model, steps, ok := m.copilotStep(l, in)
+	if !ok {
+		httpx.WriteJSON(w, 200, map[string]any{"summary": "", "source": "none"})
+		return
+	}
+	httpx.WriteJSON(w, 200, map[string]any{"summary": answer, "source": "copilot", "model": model, "steps": steps, "disclaimer": disclaimer})
 }

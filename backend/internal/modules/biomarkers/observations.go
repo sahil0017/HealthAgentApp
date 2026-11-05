@@ -101,7 +101,10 @@ func (m *Module) listBiomarkers(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 404, "PROFILE_NOT_FOUND", "The requested profile could not be found.", nil)
 		return
 	}
-	rows, err := m.DB.Pool.Query(r.Context(), `SELECT code,display_name,synonyms,supported_units FROM biomarker_catalog ORDER BY display_name`)
+	rows, err := m.DB.Pool.Query(r.Context(), `SELECT code,display_name,synonyms,supported_units FROM biomarker_catalog
+		WHERE status IN ('approved','legacy_seed')
+		   OR code IN (SELECT biomarker_code FROM observations WHERE profile_id=$1 AND owner_id=$2 AND biomarker_code IS NOT NULL)
+		ORDER BY display_name`, chi.URLParam(r, "profileID"), httpx.Owner(r))
 	if err != nil {
 		httpx.WriteError(w, 500, "BIOMARKER_CATALOG_UNAVAILABLE", "The biomarker catalog is unavailable.", nil)
 		return

@@ -47,6 +47,7 @@ type item struct {
 	Understood    bool     `json:"understood"`
 	Summary       string   `json:"summary"`
 	Times         []string `json:"times"`
+	Taken         bool     `json:"taken"`
 }
 
 type prescription struct {
@@ -157,8 +158,17 @@ func (m *Module) read(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"is_prescription": false, "items": []item{}, "unreadable": out.Unreadable, "model": out.Model, "note": readerNote})
 		return
 	}
+	items := buildItems(out.Medicines)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"is_prescription": true, "doctor": clip(out.Doctor, 160), "date": clip(out.Date, 40), "items": items,
+		"unreadable": out.Unreadable, "model": out.Model, "note": readerNote,
+	})
+}
+
+// buildItems turns medicines read by the model into unsaved draft lines with their schedule worked out.
+func buildItems(meds []readerMedicine) []item {
 	items := []item{}
-	for _, med := range out.Medicines {
+	for _, med := range meds {
 		if len(items) >= maxItems || strings.TrimSpace(med.Name) == "" {
 			continue
 		}
@@ -180,10 +190,30 @@ func (m *Module) read(w http.ResponseWriter, r *http.Request) {
 		fill(&it, schedule.Parse(it.FrequencyText, it.TimingText), true)
 		items = append(items, it)
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"is_prescription": true, "doctor": clip(out.Doctor, 160), "date": clip(out.Date, 40), "items": items,
-		"unreadable": out.Unreadable, "model": out.Model, "note": readerNote,
-	})
+	return items
+}
+
+// fromDocument returns the medicines found in an uploaded document as an unsaved draft, so a prescription
+// PDF or scan can be reviewed and saved like a photographed one. Nothing is saved here.
+func (m *Module) fromDocument(w http.ResponseWriter, r *http.Request) {
+	if !m.ProfileReadable(w, r) {
+		return
+	}
+	var raw []byte
+	err := m.DB.Pool.QueryRow(r.Context(), `SELECT COALESCE(extraction->'ai','null'::jsonb)::text FROM medical_documents WHERE id::text=$1 AND profile_id::text=$2 AND deleted_at IS NULL`, chi.URLParam(r, "documentID"), chi.URLParam(r, "profileID")).Scan(&raw)
+	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, "DOCUMENT_NOT_FOUND", "That document was not found.", nil)
+		return
+	}
+	var ai struct {
+		Doctor    string           `json:"doctor"`
+		Medicines []readerMedicine `json:"medicines"`
+	}
+	_ = json.Unmarshal(raw, &ai)
+	for i := range ai.Medicines {
+		ai.Medicines[i].Confidence = 0.8
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"is_prescription": len(ai.Medicines) > 0, "doctor": clip(ai.Doctor, 160), "items": buildItems(ai.Medicines), "note": readerNote})
 }
 
 type saveInput struct {
@@ -385,6 +415,8 @@ func (m *Module) dailySchedule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, 500, "PRESCRIPTION_LOAD_FAILED", "Prescriptions could not be loaded.", nil)
 		return
 	}
+	day := dayParam(r)
+	taken := m.takenDoses(r.Context(), chi.URLParam(r, "profileID"), httpx.Owner(r), day)
 	slots := make([]scheduleSlot, len(schedule.Slots))
 	for i, s := range schedule.Slots {
 		slots[i] = scheduleSlot{Slot: s, Label: schedule.Labels[s], Time: schedule.DefaultTimes[s], Items: []item{}}
@@ -398,7 +430,9 @@ func (m *Module) dailySchedule(w http.ResponseWriter, r *http.Request) {
 			placed := false
 			for i, s := range schedule.Slots {
 				if httpx.Contains(it.Slots, s) {
-					slots[i].Items = append(slots[i].Items, it)
+					c := it
+					c.Taken = taken[it.ID+"|"+s]
+					slots[i].Items = append(slots[i].Items, c)
 					placed = true
 				}
 			}
@@ -411,7 +445,7 @@ func (m *Module) dailySchedule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"slots": slots, "as_needed": asNeeded, "unscheduled": unscheduled,
+		"day": day, "slots": slots, "as_needed": asNeeded, "unscheduled": unscheduled,
 		"note": "Times are general suggestions based on common prescription shorthand. Follow your prescriber's instructions.",
 	})
 }
@@ -437,4 +471,77 @@ func (m *Module) remove(w http.ResponseWriter, r *http.Request) {
 	}
 	m.audit(r.Context(), owner, profileID, "prescription.delete", &id)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// dayParam is the person's local calendar day, sent by the app; it falls back to the server's UTC day.
+func dayParam(r *http.Request) string {
+	if d := r.URL.Query().Get("day"); d != "" {
+		if _, err := time.Parse("2006-01-02", d); err == nil {
+			return d
+		}
+	}
+	return time.Now().UTC().Format("2006-01-02")
+}
+
+func (m *Module) takenDoses(ctx context.Context, profileID, owner, day string) map[string]bool {
+	out := map[string]bool{}
+	rows, err := m.DB.Pool.Query(ctx, `SELECT item_id::text, slot FROM dose_logs WHERE profile_id=$1 AND owner_id=$2 AND day=$3::date`, profileID, owner, day)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, slot string
+		if rows.Scan(&id, &slot) == nil {
+			out[id+"|"+slot] = true
+		}
+	}
+	return out
+}
+
+// logDose marks one scheduled dose as taken (or clears it) for a day. It only records what the person tells it.
+func (m *Module) logDose(w http.ResponseWriter, r *http.Request) {
+	if !m.ProfileReadable(w, r) {
+		return
+	}
+	var in struct {
+		ItemID string `json:"item_id"`
+		Slot   string `json:"slot"`
+		Day    string `json:"day"`
+		Taken  bool   `json:"taken"`
+	}
+	if httpx.DecodeJSON(r, 4<<10, &in) != nil || !httpx.Contains(schedule.Slots, in.Slot) {
+		httpx.Invalid(w, "DOSE_INVALID", "A medicine and a time of day are required.", "slot")
+		return
+	}
+	if _, err := uuid.Parse(in.ItemID); err != nil {
+		httpx.Invalid(w, "DOSE_INVALID", "A medicine and a time of day are required.", "item_id")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", in.Day); err != nil {
+		in.Day = time.Now().UTC().Format("2006-01-02")
+	}
+	profileID, owner := chi.URLParam(r, "profileID"), httpx.Owner(r)
+	var err error
+	if in.Taken {
+		tag, e := m.DB.Pool.Exec(r.Context(), `INSERT INTO dose_logs(item_id,profile_id,owner_id,day,slot)
+			SELECT i.id,i.profile_id,p.owner_id,$4::date,$5 FROM prescription_items i JOIN prescriptions p ON p.id=i.prescription_id
+			WHERE i.id=$1 AND i.profile_id=$2 AND p.owner_id=$3 AND i.active ON CONFLICT DO NOTHING`, in.ItemID, profileID, owner, in.Day, in.Slot)
+		if e == nil && tag.RowsAffected() == 0 {
+			var n int
+			_ = m.DB.Pool.QueryRow(r.Context(), `SELECT count(*) FROM dose_logs WHERE item_id=$1 AND profile_id=$2 AND owner_id=$3 AND day=$4::date AND slot=$5`, in.ItemID, profileID, owner, in.Day, in.Slot).Scan(&n)
+			if n == 0 {
+				httpx.WriteError(w, http.StatusNotFound, "PRESCRIPTION_NOT_FOUND", "Medicine not found.", nil)
+				return
+			}
+		}
+		err = e
+	} else {
+		_, err = m.DB.Pool.Exec(r.Context(), `DELETE FROM dose_logs WHERE item_id=$1 AND profile_id=$2 AND owner_id=$3 AND day=$4::date AND slot=$5`, in.ItemID, profileID, owner, in.Day, in.Slot)
+	}
+	if err != nil {
+		httpx.WriteError(w, 500, "DOSE_SAVE_FAILED", "The dose could not be saved.", nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"item_id": in.ItemID, "slot": in.Slot, "day": in.Day, "taken": in.Taken})
 }

@@ -31,9 +31,10 @@ const (
 var emergency = regexp.MustCompile(`(?i)\b(chest (pain|pressure|tightness)|crushing pain|can'?t breathe|cannot breathe|trouble breathing|difficulty breathing|shortness of breath|face (is )?droop\w*|slurred speech|stroke|heart attack|severe bleeding|coughing (up )?blood|vomiting blood|anaphyla\w*|overdos\w*|took too many|passed out|unconscious|seizure|suicid\w*)\b`)
 
 var modes = map[string]string{
-	"explain": "Explain the person's lab results in plain language.",
-	"plan":    "Suggest simple, non-medical next steps such as questions to ask, tests to track or records to upload. Do not recommend treatment or medication.",
-	"visit":   "Prepare the person for a doctor visit: what changed, what is outside range, and questions to ask.",
+	"explain":  "Explain the person's lab results in plain language.",
+	"plan":     "Suggest simple, non-medical next steps such as questions to ask, tests to track or records to upload. Do not recommend treatment or medication.",
+	"briefing": "Write a short daily briefing: what needs attention first, any follow-ups that are due, and which medicines are scheduled today. Call the tools for every part and keep it to a few sentences.",
+	"visit":    "Prepare the person for a doctor visit: what changed, what is outside range, and questions to ask.",
 }
 
 type chatTurn struct {
@@ -343,6 +344,7 @@ func (l *labs) snapshot() map[string]any {
 		"list_flagged_labs": flaggedText,
 		"trends":            trends,
 		"list_medications":  l.medicationFacts(),
+		"get_care_plan":     l.m.carePlanFacts(l.ctx, l.owner, l.profile),
 	}
 }
 
@@ -373,9 +375,13 @@ func (m *Module) copilotStep(l *labs, in chatRequest) (answer, model string, ste
 	}
 	var facts strings.Builder
 	for _, c := range out.Calls {
-		if c.Tool == "list_medications" {
-			text := snap["list_medications"].(string)
-			steps = append(steps, step{c.Tool, "Checked your saved medicines", truncate(text, 90)})
+		if c.Tool == "list_medications" || c.Tool == "get_care_plan" {
+			text, _ := snap[c.Tool].(string)
+			label := "Checked your saved medicines"
+			if c.Tool == "get_care_plan" {
+				label = "Checked follow-ups and symptoms"
+			}
+			steps = append(steps, step{c.Tool, label, truncate(text, 90)})
 			facts.WriteString(text + "\n")
 			continue
 		}

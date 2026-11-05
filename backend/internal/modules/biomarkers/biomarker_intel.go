@@ -50,6 +50,7 @@ type BiomarkerSummary struct {
 	BiomarkerCode string                `json:"biomarker_code"`
 	DisplayName   string                `json:"display_name"`
 	Category      string                `json:"category"`
+	CategoryLabel string                `json:"category_label"`
 	Latest        *biomarker.TrendPoint `json:"latest"`
 	Previous      *float64              `json:"previous_value"`
 	Change        *float64              `json:"change"`
@@ -93,7 +94,7 @@ func (m *Module) biomarkerSummaries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		t := biomarker.BuildTrend(code, names[code], byCode[code], false, known, learned, sex, age, now)
-		s := BiomarkerSummary{BiomarkerCode: code, DisplayName: t.DisplayName, Category: biomarker.CategoryOf(code, categories), Unit: t.CanonicalUnit, Trend: t.Trend, Cadence: t.Cadence, Readings: len(t.Points), Unverified: t.Unverified, Excluded: len(t.Excluded), Kinds: t.Kinds}
+		s := BiomarkerSummary{BiomarkerCode: code, DisplayName: t.DisplayName, Category: biomarker.CategoryFor(code, t.DisplayName, categories), CategoryLabel: biomarker.CategoryLabel(biomarker.CategoryFor(code, t.DisplayName, categories)), Unit: t.CanonicalUnit, Trend: t.Trend, Cadence: t.Cadence, Readings: len(t.Points), Unverified: t.Unverified, Excluded: len(t.Excluded), Kinds: t.Kinds}
 		if n := len(t.Points); n > 0 {
 			latest := t.Points[n-1]
 			s.Latest = &latest

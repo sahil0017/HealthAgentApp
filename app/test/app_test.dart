@@ -12,11 +12,17 @@ import 'package:sehat/core/hardware.dart';
 import 'package:sehat/core/state.dart';
 import 'package:sehat/features/agent_screens.dart';
 import 'package:sehat/features/environment.dart';
+import 'package:sehat/features/find_care.dart';
 import 'package:sehat/features/health.dart';
 import 'package:sehat/features/lookup.dart';
+import 'package:sehat/features/nearby.dart';
 import 'package:sehat/features/more.dart';
 import 'package:sehat/features/places.dart';
+import 'package:sehat/features/notifications.dart';
 import 'package:sehat/features/plan.dart';
+import 'package:sehat/features/summary.dart';
+import 'package:sehat/features/today.dart';
+import 'package:sehat/features/prescriptions.dart';
 import 'package:sehat/features/vault.dart';
 
 class _FakeLocation implements LocationSource {
@@ -62,6 +68,23 @@ Widget _app(ApiClient api, {Widget? home}) => ProviderScope(
 );
 
 void main() {
+  test(
+    'hospitals matching the user records rank above a nearer general one',
+    () {
+      final ranked = rankHospitals(
+        [
+          {'name': 'Corner Nursing Home', 'distance_km': 1.0},
+          {'name': 'City Heart Institute', 'distance_km': 4.0},
+          {'name': 'Far Hospital', 'distance_km': 9.0, 'emergency': true},
+        ],
+        ['lipid profile'],
+      );
+      expect(ranked.first['name'], 'City Heart Institute');
+      expect(ranked.first['reason'], 'Matches your lipid profile');
+      expect(ranked.last['name'], 'Far Hospital');
+    },
+  );
+
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('signed out shows sign-in', (t) async {
@@ -77,27 +100,10 @@ void main() {
     expect(find.text('Create your profile'), findsOneWidget);
   });
 
-  testWidgets('nearby shows alerts and hospitals for the detected area', (
+  testWidgets('find care shows emergency, reach and hospital details', (
     t,
   ) async {
-    String? country;
     final api = _api((r) {
-      if (r.url.path.endsWith('/nearby/alerts')) {
-        country = r.url.queryParameters['country'];
-        return _json({
-          'alerts': [
-            {
-              'id': 'a',
-              'title': 'Measles - India',
-              'summary': 'Cases rising',
-              'published_at': '2026-10-01T00:00:00Z',
-              'url': 'https://example.org/a',
-              'source': 'WHO',
-              'in_country': true,
-            },
-          ],
-        });
-      }
       if (r.url.path.endsWith('/nearby/hospitals')) {
         return _json({
           'hospitals': [
@@ -105,24 +111,28 @@ void main() {
               'id': 'n/1',
               'name': 'City Hospital',
               'distance_km': 1.5,
-              'emergency': true,
+              'emergency': false,
+              'phone': '+91 11 5550',
             },
           ],
         });
       }
+      if (r.url.path.endsWith('/nearby/places')) {
+        return _json({'places': []});
+      }
       return _json({});
     }, token: 'tok');
-    await t.pumpWidget(_app(api, home: const NearbyScreen()));
-    await t.tap(find.text('Use my location'));
+    await t.pumpWidget(_app(api, home: const FindCareScreen()));
+    await t.tap(find.text('Approximate only'));
     await t.pumpAndSettle();
-    expect(country, 'India');
-    expect(find.text('Measles - India'), findsOneWidget);
-    expect(find.text('Your country'), findsOneWidget);
-    expect(find.text('City Hospital'), findsOneWidget);
-    expect(
-      find.textContaining('not verified against a medical registry'),
-      findsOneWidget,
-    );
+    expect(find.text('Emergency'), findsOneWidget);
+    expect(find.text('Call 112'), findsOneWidget);
+    expect(find.text('Nearest hospital'), findsOneWidget);
+    expect(find.text('Care within reach'), findsOneWidget);
+    await t.tap(find.text('City Hospital').first);
+    await t.pumpAndSettle();
+    expect(find.text('Directions'), findsOneWidget);
+    expect(find.text('Call'), findsOneWidget);
   });
 
   testWidgets('approving a suggestion calls the approve endpoint', (t) async {
@@ -158,12 +168,66 @@ void main() {
     expect(find.text('Nothing to approve'), findsOneWidget);
   });
 
-  testWidgets('a goal is created for a chosen biomarker', (t) async {
+  testWidgets('confirming a report sends only the fields the server accepts', (
+    t,
+  ) async {
+    Map<String, dynamic>? sent;
+    final api = _api((r) {
+      if (r.url.path.endsWith('/approve')) {
+        sent = jsonDecode(r.body) as Map<String, dynamic>;
+        return _json({'status': 'approved'});
+      }
+      if (r.url.path.contains('/documents/d1')) {
+        return _json({
+          'id': 'd1',
+          'file_name': 'labs.pdf',
+          'status': 'review_required',
+          'extraction': {
+            'biomarkers': [
+              {
+                'id': 'c1',
+                'name': 'Hemoglobin',
+                'value': 15,
+                'unit': 'g/dL',
+                'page': 2,
+                'biomarker_code': 'HEMOGLOBIN',
+                'reference_range': '13 - 17',
+              },
+            ],
+          },
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const DocumentScreen('d1')));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Confirm and save'));
+    await t.pumpAndSettle();
+    final row = (sent!['biomarkers'] as List).single as Map;
+    expect(row.containsKey('id'), isFalse);
+    expect(row['candidate_id'], 'c1');
+    expect(row['biomarker_code'], 'HEMOGLOBIN');
+  });
+
+  testWidgets('a goal can be set for any catalog test, even with no results', (
+    t,
+  ) async {
     Map? body;
     final api = _api((r) {
-      if (r.url.path.endsWith('/biomarkers/summary')) {
+      if (r.url.path.endsWith('/biomarkers')) {
         return _json([
-          {'biomarker_code': 'HBA1C', 'display_name': 'HbA1c', 'unit': '%'},
+          {
+            'code': 'HBA1C',
+            'display_name': 'HbA1c',
+            'synonyms': ['glycated haemoglobin'],
+            'supported_units': ['%', 'mmol/mol'],
+          },
+          {
+            'code': 'LDL',
+            'display_name': 'LDL cholesterol',
+            'synonyms': [],
+            'supported_units': ['mg/dL'],
+          },
         ]);
       }
       if (r.url.path.endsWith('/goals') && r.method == 'POST') {
@@ -174,16 +238,117 @@ void main() {
     }, token: 'tok');
     await t.pumpWidget(_app(api, home: const GoalForm()));
     await t.pumpAndSettle();
-    await t.tap(find.byType(DropdownButtonFormField<Json>));
+    await t.enterText(
+      find.widgetWithText(TextField, 'Search for a test'),
+      'hba',
+    );
     await t.pumpAndSettle();
-    await t.tap(find.text('HbA1c (%)').last);
+    expect(find.text('LDL cholesterol'), findsNothing);
+    await t.tap(find.text('HbA1c'));
     await t.pumpAndSettle();
-    await t.enterText(find.widgetWithText(TextField, 'At most'), '5.7');
+    await t.tap(find.text('mmol/mol'));
+    await t.enterText(find.widgetWithText(TextField, 'Upper limit'), '39');
     await t.tap(find.text('Save goal'));
     await t.pumpAndSettle();
     expect(body?['biomarker_code'], 'HBA1C');
-    expect(body?['target_max'], 5.7);
+    expect(body?['unit'], 'mmol/mol');
+    expect(body?['target_max'], 39);
     expect(body?.containsKey('target_min'), isFalse);
+  });
+
+  Json overview({List attention = const []}) => {
+    'profile': {'display_name': 'Asha Rao'},
+    'summary': {'open_follow_ups': 1, 'documents': 2, 'biomarkers_tracked': 5},
+    'attention': attention,
+    'goals': [],
+    'recent_changes': [],
+    'suggested_follow_ups': [],
+    'reminders': [],
+    'completeness': {'score': 50, 'items': []},
+  };
+
+  testWidgets('summary stays calm and puts urgent items in a strip', (t) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/overview')) {
+        return _json(
+          overview(
+            attention: [
+              {
+                'kind': 'overdue_follow_up',
+                'severity': 'action',
+                'title': 'Repeat HbA1c is overdue',
+                'detail': 'Due 2026-10-01',
+                'ref_id': 'f1',
+              },
+              {
+                'kind': 'out_of_range',
+                'severity': 'info',
+                'title': 'LDL is above its reference range',
+                'detail': '',
+                'ref_id': 'l1',
+              },
+            ],
+          ),
+        );
+      }
+      if (r.url.path.endsWith('/follow-ups')) {
+        return _json([
+          {'id': 'f1', 'title': 'Repeat HbA1c', 'status': 'open'},
+        ]);
+      }
+      return _json(<String, dynamic>{});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const Scaffold(body: TodayTab())));
+    await t.pumpAndSettle();
+    expect(find.text('Hello, Asha'), findsOneWidget);
+    expect(find.text('Repeat HbA1c is overdue'), findsOneWidget);
+    expect(find.text('+1 more'), findsOneWidget);
+    expect(find.text('LDL is above its reference range'), findsNothing);
+    expect(find.textContaining('1 follow-ups pending'), findsOneWidget);
+  });
+
+  testWidgets('notifications list everything and can be dismissed', (t) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/overview')) {
+        return _json(
+          overview(
+            attention: [
+              {
+                'kind': 'out_of_range',
+                'severity': 'info',
+                'title': 'LDL is above its reference range',
+                'detail': 'Latest 150 mg/dL',
+                'ref_id': 'l1',
+              },
+            ],
+          ),
+        );
+      }
+      return _json(<String, dynamic>{});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const NotificationsScreen()));
+    await t.pumpAndSettle();
+    expect(find.text('LDL is above its reference range'), findsOneWidget);
+    await t.tap(find.byTooltip('Dismiss'));
+    await t.pumpAndSettle();
+    expect(find.text('You are all caught up'), findsOneWidget);
+  });
+
+  testWidgets('care plan lists an open follow-up that has no due date', (
+    t,
+  ) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/follow-ups')) {
+        return _json([
+          {'id': 'f1', 'title': 'Book dental checkup', 'status': 'open'},
+        ]);
+      }
+      return _json([]);
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const CarePlanScreen()));
+    await t.pumpAndSettle();
+    expect(find.text('Book dental checkup'), findsOneWidget);
+    expect(find.text('No due date'), findsOneWidget);
   });
 
   testWidgets('emergency shows the local number and medical id', (t) async {
@@ -422,4 +587,112 @@ void main() {
     expect(find.text('metformin 500 MG Oral Tablet'), findsOneWidget);
     expect(find.textContaining('not an Indian brand list'), findsOneWidget);
   });
+
+  testWidgets('medicines today lets you tick a dose off', (t) async {
+    var taken = false;
+    Map<String, dynamic>? posted;
+    final api = _api((r) {
+      if (r.url.path.endsWith('/prescriptions/doses')) {
+        posted = jsonDecode(r.body) as Map<String, dynamic>;
+        taken = posted!['taken'] == true;
+        return _json({'taken': taken});
+      }
+      if (r.url.path.endsWith('/prescriptions/schedule')) {
+        return _json({
+          'slots': [
+            {
+              'slot': 'morning',
+              'label': 'Morning',
+              'time': '23:59',
+              'items': [
+                {
+                  'id': 'i1',
+                  'name': 'Metformin',
+                  'strength': '500 mg',
+                  'taken': taken,
+                },
+              ],
+            },
+          ],
+        });
+      }
+      return _json({});
+    }, token: 'tok');
+    await t.pumpWidget(
+      _app(api, home: const Scaffold(body: MedicinesTodayCard())),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('0 of 1 taken'), findsOneWidget);
+    await t.tap(find.text('Metformin 500 mg'));
+    await t.pumpAndSettle();
+    expect(posted?['item_id'], 'i1');
+    expect(posted?['slot'], 'morning');
+    expect(find.text('1 of 1 taken'), findsOneWidget);
+  });
+
+  testWidgets(
+    'summary shows the wellbeing score and a plan that can be ticked',
+    (t) async {
+      final api = _api((r) {
+        if (r.url.path.endsWith('/agent/wellbeing')) {
+          return _json({
+            'score': 72,
+            'parts': [
+              {'key': 'labs', 'score': 85, 'weight': 40},
+              {'key': 'habits', 'score': 60, 'weight': 40},
+            ],
+            'habits': [
+              {
+                'code': 'sleep',
+                'name': 'Sleep',
+                'unit': 'h',
+                'avg_7': 5.5,
+                'baseline': 7.5,
+                'direction': 'slipping',
+                'projected_7d': 5.1,
+                'daily': [
+                  {'d': '2026-11-04', 'v': 5.0},
+                  {'d': '2026-11-05', 'v': 6.0},
+                ],
+              },
+            ],
+            'tasks': [
+              {
+                'id': 'habit-sleep',
+                'kind': 'habit',
+                'title': 'Bring your sleep back toward 7.5 h',
+                'why':
+                    'Your 7-day average is 5.5 h, down from your usual 7.5 h.',
+                'action': {'type': 'log', 'ref': 'sleep'},
+              },
+            ],
+            'basis': 'Built from your own labs, habit logs and care plan.',
+          });
+        }
+        return _json({});
+      }, token: 'tok');
+      await t.pumpWidget(
+        _app(
+          api,
+          home: const Scaffold(
+            body: SingleChildScrollView(
+              child: Column(
+                children: [WellbeingCard(), TodaysPlan(), HabitTrends()],
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Wellbeing score'), findsOneWidget);
+      expect(find.text('72'), findsOneWidget);
+      expect(find.text('Lab results'), findsOneWidget);
+      expect(find.text('0 of 1 done'), findsOneWidget);
+      expect(find.text('Slipping'), findsOneWidget);
+      expect(find.textContaining('Next wk'), findsOneWidget);
+      await t.tap(find.byIcon(Icons.radio_button_unchecked));
+      await t.pumpAndSettle();
+      expect(find.text('1 of 1 done'), findsOneWidget);
+    },
+  );
 }

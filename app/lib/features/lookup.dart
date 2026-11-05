@@ -10,7 +10,8 @@ const _note = TextStyle(fontSize: 10.5, color: Pal.mut);
 
 /// Looks up a medicine by name: RxNorm matches and the FDA prescribing text.
 class MedicineScreen extends ConsumerStatefulWidget {
-  const MedicineScreen({super.key});
+  const MedicineScreen({super.key, this.initialQuery});
+  final String? initialQuery;
   @override
   ConsumerState<MedicineScreen> createState() => _MedicineState();
 }
@@ -21,6 +22,16 @@ class _MedicineState extends ConsumerState<MedicineScreen> {
   Json? _label;
   Object? _error;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final q = widget.initialQuery;
+    if (q != null && q.isNotEmpty) {
+      _c.text = q;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _go());
+    }
+  }
 
   Future<void> _go() async {
     final q = _c.text.trim();
@@ -61,7 +72,7 @@ class _MedicineState extends ConsumerState<MedicineScreen> {
         .where((s) => '${s['text']}'.isNotEmpty)
         .toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Medicine lookup')),
+      appBar: AppBar(title: const Text('Drug Information')),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -131,3 +142,35 @@ class _MedicineState extends ConsumerState<MedicineScreen> {
     );
   }
 }
+
+/// First sentence of the official "What it is used for" text for a medicine, or null when no
+/// label is published for it.
+final medicineUseProvider = FutureProvider.family<String?, String>((
+  ref,
+  name,
+) async {
+  try {
+    final l = await ref
+        .read(apiProvider)
+        .map('/medications/label?name=${Uri.encodeQueryComponent(name)}');
+    for (final s in (l['sections'] as List? ?? []).cast<Json>()) {
+      if (s['title'] == 'What it is used for') {
+        var t = '${s['text']}'
+            .replaceAll(
+              RegExp(
+                r'^\s*(INDICATIONS?( AND |\s*&\s*)USAGE:?)\s*',
+                caseSensitive: false,
+              ),
+              '',
+            )
+            .replaceAll(RegExp(r'^\d+(\.\d+)?\s+'), '')
+            .trim();
+        final dot = t.indexOf(RegExp(r'\.\s'));
+        if (dot > 20 && dot < 220) t = t.substring(0, dot + 1);
+        if (t.length > 220) t = '${t.substring(0, 217)}…';
+        return t.isEmpty ? null : t;
+      }
+    }
+  } catch (_) {}
+  return null;
+});

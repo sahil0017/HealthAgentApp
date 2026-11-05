@@ -213,13 +213,13 @@ const consentPurposes = [
   (
     'document_processing',
     'Read my documents',
-    'Extract lab values from reports.',
+    'Extract lab values and medicines from reports. With AI answers on, the report text is read by a cloud AI model after your name, phone, email and ID numbers are removed.',
     false,
   ),
   (
     'ai_processing',
     'AI answers',
-    'Answer questions using your records.',
+    'Sehat uses a cloud AI model to answer questions and write insights from your results, symptoms and habits. Your name and contact details are never sent.',
     false,
   ),
   ('notifications', 'Reminders', 'Follow-up and checkup reminders.', false),

@@ -277,7 +277,7 @@ func TestCategoriesComeFromReviewedCatalogEntriesAndGroupTheSummary(t *testing.T
 	for _, s := range data[[]biomarkers.BiomarkerSummary](t, env) {
 		cats[s.BiomarkerCode] = s.Category
 	}
-	if cats["GLUCOSE"] != "glucose" || cats["HBA1C"] != "other" {
+	if cats["GLUCOSE"] != "glucose" || cats["HBA1C"] != "glucose" {
 		t.Fatalf("categories %v", cats)
 	}
 }

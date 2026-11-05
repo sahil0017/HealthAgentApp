@@ -70,6 +70,8 @@
 	<string>Sehat uses the camera to scan medical reports.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Sehat reads photos you choose to add reports to your vault.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Choose the people to call in an emergency. Contacts stay on this phone.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Sehat uses your approximate location to show alerts and hospitals near you. Your exact position is never sent.</string>
 	<key>NSFaceIDUsageDescription</key>

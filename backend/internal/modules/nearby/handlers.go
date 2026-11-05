@@ -20,8 +20,9 @@ import (
 
 var tagRE = regexp.MustCompile(`<[^>]*>`)
 
-// roundCoord snaps a coordinate to a ~5 km grid so the server never works with a precise position.
-func roundCoord(v float64) float64 { return math.Round(v/0.05) * 0.05 }
+// roundCoord snaps a coordinate to ~100 m: accurate enough for distances to the nearest hospital or
+// doctor, without keeping an exact position. Nothing here is stored per user.
+func roundCoord(v float64) float64 { return math.Round(v*1000) / 1000 }
 
 func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 	const r = 6371.0
@@ -123,6 +124,7 @@ type hospital struct {
 	Lng        float64 `json:"lng"`
 	DistanceKm float64 `json:"distance_km"`
 	Emergency  bool    `json:"emergency"`
+	Speciality string  `json:"speciality,omitempty"`
 	Phone      string  `json:"phone,omitempty"`
 	Address    string  `json:"address,omitempty"`
 }
@@ -140,14 +142,18 @@ func (m *Module) hospitals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lat, lng = roundCoord(lat), roundCoord(lng)
-	key := fmt.Sprintf("h:%.2f:%.2f:%.0f", lat, lng, radius)
+	key := fmt.Sprintf("h:%.3f:%.3f:%.0f", lat, lng, radius)
 	if v, ok := m.fromCache(key); ok {
 		httpx.WriteJSON(w, 200, map[string]any{"hospitals": v, "source": "OpenStreetMap"})
 		return
 	}
 	query := fmt.Sprintf(`[out:json][timeout:25];nwr[amenity=hospital](around:%d,%.5f,%.5f);out center 60;`, int(radius*1000), lat, lng)
-	body, err := m.post(r.Context(), m.OverpassURL, url.Values{"data": {query}})
+	body, err := m.fetchArea(r.Context(), query, lat, lng, radius, []string{"hospital"}, map[string]string{"amenity": "hospital"})
 	if err != nil {
+		if v, ok := m.stale(key); ok {
+			httpx.WriteJSON(w, 200, map[string]any{"hospitals": v, "source": "OpenStreetMap"})
+			return
+		}
 		httpx.WriteError(w, 502, "HOSPITALS_UNAVAILABLE", "Nearby hospitals could not be loaded right now.", nil)
 		return
 	}
@@ -184,7 +190,7 @@ func (m *Module) hospitals(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, hospital{ID: fmt.Sprintf("%s/%d", e.Type, e.ID), Name: name, Lat: la, Lng: lo,
 			DistanceKm: math.Round(haversineKm(lat, lng, la, lo)*10) / 10, Emergency: e.Tags["emergency"] == "yes",
-			Phone: phone, Address: strings.Join(nonEmpty(e.Tags["addr:street"], e.Tags["addr:city"]), ", ")})
+			Speciality: strings.ReplaceAll(strings.TrimSpace(firstTag(e.Tags, "healthcare:speciality", "speciality")), ";", ", "), Phone: phone, Address: strings.Join(nonEmpty(e.Tags["addr:street"], e.Tags["addr:city"]), ", ")})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].DistanceKm < out[j].DistanceKm })
 	if len(out) > 30 {
@@ -192,6 +198,15 @@ func (m *Module) hospitals(w http.ResponseWriter, r *http.Request) {
 	}
 	m.toCache(key, out)
 	httpx.WriteJSON(w, 200, map[string]any{"hospitals": out, "source": "OpenStreetMap"})
+}
+
+func firstTag(tags map[string]string, keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(tags[k]); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func nonEmpty(v ...string) []string {
@@ -210,6 +225,45 @@ func (m *Module) get(ctx context.Context, u string) ([]byte, error) {
 		return nil, err
 	}
 	return m.do(req)
+}
+
+// overpass runs a query against the primary server and then the mirrors. The public servers often
+// answer 502 or 504, or are unreachable from some networks, so attempts are short and an outage is
+// remembered for a few minutes so that callers go straight to the fallback.
+func (m *Module) overpass(ctx context.Context, query string) ([]byte, error) {
+	m.mu.Lock()
+	down := time.Now().Before(m.overpassDownUntil)
+	m.mu.Unlock()
+	if down {
+		return nil, fmt.Errorf("overpass recently unreachable")
+	}
+	urls := append([]string{m.OverpassURL}, m.Mirrors...)
+	var last error
+	for round := 0; round < 2; round++ {
+		for _, u := range urls {
+			actx, cancel := context.WithTimeout(ctx, 6*time.Second)
+			body, err := m.post(actx, u, url.Values{"data": {query}})
+			cancel()
+			if err == nil {
+				return body, nil
+			}
+			last = err
+			if ctx.Err() != nil {
+				return nil, last
+			}
+		}
+		if round == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}
+	m.mu.Lock()
+	m.overpassDownUntil = time.Now().Add(overpassBackoff)
+	m.mu.Unlock()
+	return nil, last
 }
 
 func (m *Module) post(ctx context.Context, u string, form url.Values) ([]byte, error) {
@@ -234,4 +288,113 @@ func (m *Module) do(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("upstream status %d", resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+}
+
+// searchFallback answers an area query from Nominatim, in the Overpass response shape, when every
+// Overpass server is unreachable. Each term is a Nominatim category such as "hospital".
+func (m *Module) searchFallback(ctx context.Context, lat, lng, radius float64, terms []string, tags map[string]string) ([]byte, error) {
+	if m.SearchURL == "" {
+		return nil, fmt.Errorf("no fallback configured")
+	}
+	dLat := radius / 111.0
+	dLng := radius / (111.0 * math.Max(math.Cos(lat*math.Pi/180), 0.1))
+	box := fmt.Sprintf("%.5f,%.5f,%.5f,%.5f", lng-dLng, lat+dLat, lng+dLng, lat-dLat)
+	type element struct {
+		Type string            `json:"type"`
+		ID   int64             `json:"id"`
+		Lat  float64           `json:"lat"`
+		Lon  float64           `json:"lon"`
+		Tags map[string]string `json:"tags"`
+	}
+	elements := []element{}
+	var last error
+	for i, term := range terms {
+		if i > 0 {
+			time.Sleep(1100 * time.Millisecond)
+		}
+		u := m.SearchURL + "?" + url.Values{"q": {term}, "format": {"jsonv2"}, "extratags": {"1"},
+			"limit": {"40"}, "bounded": {"1"}, "viewbox": {box}}.Encode()
+		body, err := m.get(ctx, u)
+		if err != nil {
+			last = err
+			continue
+		}
+		var res []struct {
+			OSMType   string            `json:"osm_type"`
+			OSMID     int64             `json:"osm_id"`
+			Lat       string            `json:"lat"`
+			Lon       string            `json:"lon"`
+			Name      string            `json:"name"`
+			ExtraTags map[string]string `json:"extratags"`
+		}
+		if err := json.Unmarshal(body, &res); err != nil {
+			last = err
+			continue
+		}
+		for _, r := range res {
+			la, e1 := strconv.ParseFloat(r.Lat, 64)
+			lo, e2 := strconv.ParseFloat(r.Lon, 64)
+			if e1 != nil || e2 != nil || strings.TrimSpace(r.Name) == "" {
+				continue
+			}
+			t := map[string]string{"name": r.Name}
+			for k, v := range tags {
+				t[k] = v
+			}
+			for _, k := range []string{"phone", "contact:phone", "website", "opening_hours", "emergency", "healthcare:speciality"} {
+				if v := r.ExtraTags[k]; v != "" {
+					t[k] = v
+				}
+			}
+			elements = append(elements, element{Type: r.OSMType, ID: r.OSMID, Lat: la, Lon: lo, Tags: t})
+		}
+	}
+	if len(elements) == 0 && last != nil {
+		return nil, last
+	}
+	return json.Marshal(map[string]any{"elements": elements})
+}
+
+// fetchArea races Overpass against the Nominatim fallback and returns whichever answers first. The
+// fallback starts at once when Overpass is known to be down, otherwise after a short head start.
+func (m *Module) fetchArea(ctx context.Context, query string, lat, lng, radius float64, terms []string, tags map[string]string) ([]byte, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		body []byte
+		err  error
+	}
+	ch := make(chan result, 2)
+	m.mu.Lock()
+	down := time.Now().Before(m.overpassDownUntil)
+	m.mu.Unlock()
+	pending := 1
+	if !down {
+		pending = 2
+		go func() { b, err := m.overpass(ctx, query); ch <- result{b, err} }()
+	}
+	go func() {
+		if !down {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1500 * time.Millisecond):
+			}
+		}
+		b, err := m.searchFallback(ctx, lat, lng, radius, terms, tags)
+		ch <- result{b, err}
+	}()
+	var last error
+	for i := 0; i < pending; i++ {
+		select {
+		case res := <-ch:
+			if res.err == nil {
+				return res.body, nil
+			}
+			last = res.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, last
 }

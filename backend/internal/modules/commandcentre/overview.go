@@ -232,7 +232,7 @@ var timelineKinds = []string{"document", "observation", "history", "follow_up", 
 const timelineSQL = `
 WITH items AS (
   SELECT 'document' AS kind,id::text AS id,file_name AS title,replace(status,'_',' ') AS detail,created_at AS at FROM medical_documents WHERE profile_id=$1 AND owner_id=$2 AND status NOT IN ('deleting','deleted')
-  UNION ALL SELECT 'observation',id::text,name||' '||value::float8::text||' '||unit,lower(verification_status),COALESCE(observed_at::timestamptz,created_at) FROM observations WHERE profile_id=$1 AND owner_id=$2
+  UNION ALL SELECT 'observation',COALESCE(max(document_id::text),'day-'||COALESCE(observed_at,created_at::date)::text),CASE WHEN count(*)=1 THEN min(name)||' '||min(value)::float8::text||' '||min(unit) ELSE count(*)||' results recorded' END,left(string_agg(name||' '||value::float8::text||' '||unit,' · ' ORDER BY name),400),COALESCE(observed_at,created_at::date)::timestamptz FROM observations WHERE profile_id=$1 AND owner_id=$2 GROUP BY document_id,COALESCE(observed_at,created_at::date),CASE WHEN document_id IS NULL THEN id::text END
   UNION ALL SELECT 'history',id::text,title,replace(kind,'_',' ')||' · '||status,COALESCE(started_on::timestamptz,created_at) FROM history_entries WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'follow_up',id::text,title,kind||' · '||status,COALESCE(due_on::timestamptz,created_at) FROM follow_ups WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'goal',id::text,title,status,created_at FROM goals WHERE profile_id=$1 AND owner_id=$2

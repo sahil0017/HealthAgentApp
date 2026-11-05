@@ -153,6 +153,9 @@ func (w *DocumentWorker) process(ctx context.Context, eventID, documentID string
 	if err != nil {
 		return err
 	}
+	catalog := w.loadCatalog(ctx)
+	w.readWithAI(ctx, d, &result, catalog)
+	w.standardise(ctx, d, &result, catalog)
 	if err := w.persist(ctx, eventID, d, result); err != nil {
 		return err
 	}
@@ -222,7 +225,15 @@ func (w *DocumentWorker) persist(ctx context.Context, eventID string, d document
 		textPreview = textPreview[:maxTextPreview]
 	}
 	classification := processing.Classify(result.Text)
-	extraction, err := json.Marshal(map[string]any{"classification": classification, "biomarkers": result.Candidates, "text_preview": textPreview, "warnings": result.Warnings, "pipeline_version": processing.PipelineVersion, "page_count": result.PageCount})
+	meta := map[string]any{"classification": classification, "biomarkers": result.Candidates, "text_preview": textPreview, "warnings": result.Warnings, "pipeline_version": processing.PipelineVersion, "page_count": result.PageCount}
+	if ai := result.AI; ai != nil {
+		if classification.Type == "OTHER" && ai.DocumentType != "" {
+			classification = processing.Classification{Type: ai.DocumentType, Confidence: 0.7}
+			meta["classification"] = classification
+		}
+		meta["ai"] = map[string]any{"provider": ai.Provider, "report_date": ai.ReportDate, "doctor": ai.Doctor, "medicines": ai.Medicines, "added": result.AIAdded}
+	}
+	extraction, err := json.Marshal(meta)
 	if err != nil {
 		return err
 	}

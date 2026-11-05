@@ -7,13 +7,74 @@ import '../core/api.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'agent_chat.dart' show AgentChatScreen;
 
 String _base(WidgetRef ref) => '/profiles/${ref.read(profileIdProvider)}/agent';
 
+String _localDay() {
+  final n = DateTime.now();
+  return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+}
+
 final _briefingProvider = FutureProvider.autoDispose<Json>((ref) {
   final id = ref.watch(profileIdProvider);
-  return ref.read(apiProvider).map('/profiles/$id/agent/briefing');
+  return ref
+      .read(apiProvider)
+      .map('/profiles/$id/agent/briefing?day=${_localDay()}');
 });
+
+/// The Copilot agent's written briefing. Empty unless the cloud model is allowed; it can take a few seconds.
+final _briefingSummaryProvider = FutureProvider.autoDispose<Json>((ref) {
+  final id = ref.watch(profileIdProvider);
+  return ref.read(apiProvider).map('/profiles/$id/agent/briefing/summary');
+});
+
+class _CopilotBrief extends ConsumerWidget {
+  const _CopilotBrief();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(_briefingSummaryProvider);
+    final d = s.asData?.value;
+    if (s.isLoading) {
+      return const SCard(
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('Sehat is preparing today’s briefing…', style: _note),
+            ),
+          ],
+        ),
+      );
+    }
+    final text = '${d?['summary'] ?? ''}';
+    if (text.isEmpty) return const SizedBox.shrink();
+    return SCard(
+      color: Pal.priBg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: Pal.pri, size: 16),
+              const SizedBox(width: 6),
+              const Pill('Sehat AI'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(text, style: const TextStyle(fontSize: 13, height: 1.35)),
+          const SizedBox(height: 4),
+          const Text('Based on your own records', style: _note),
+        ],
+      ),
+    );
+  }
+}
 
 final _permissionsProvider = FutureProvider.autoDispose<List<Json>>((ref) {
   final id = ref.watch(profileIdProvider);
@@ -67,7 +128,7 @@ class AgentHubCard extends ConsumerWidget {
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
-                  'Daily briefing',
+                  'Daily Health Brief',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -125,86 +186,195 @@ class BriefingCard extends ConsumerWidget {
     ];
     final attention = items.where((i) => i['tone'] == 'attention').toList();
     final pending = numOf(b['pending_approvals'])?.toInt() ?? 0;
-    return SCard(
-      onTap: () => _open(context, const BriefingScreen()),
-      child: Row(
-        children: [
-          const Icon(Icons.auto_awesome, color: Pal.pri, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Daily briefing',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+    return Column(
+      children: [
+        const _CopilotBrief(),
+        SCard(
+          onTap: () => _open(context, const BriefingScreen()),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: Pal.pri, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Daily Health Brief',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (attention.isEmpty)
+                      Text(
+                        items.isEmpty
+                            ? 'Nothing new today.'
+                            : '${items.length} items from your record. Tap for the full briefing.',
+                        style: _note,
+                      )
+                    else
+                      for (final a in attention.take(3))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.circle,
+                                  size: 7,
+                                  color: Pal.warn,
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: Text(
+                                  '${a['text']}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    if (attention.length > 3)
+                      Text('+${attention.length - 3} more', style: _note),
+                    if (pending > 0)
+                      Text('$pending waiting for your approval', style: _note),
+                  ],
                 ),
-                Text(
-                  attention.isNotEmpty
-                      ? '${attention.first['text']}'
-                      : items.isEmpty
-                      ? 'Nothing new today.'
-                      : '${items.length} items from your record.',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: _note,
-                ),
-                if (pending > 0)
-                  Text('$pending waiting for your approval', style: _note),
-              ],
-            ),
+              ),
+              const Icon(Icons.chevron_right, color: Pal.mut),
+            ],
           ),
-          const Icon(Icons.chevron_right, color: Pal.mut),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
+
+const _sectionIcons = {
+  'labs': Icons.biotech_outlined,
+  'follow_ups': Icons.event_repeat,
+  'symptoms': Icons.sick_outlined,
+  'medicines': Icons.medication_outlined,
+  'documents': Icons.description_outlined,
+};
 
 class BriefingScreen extends ConsumerWidget {
   const BriefingScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => _page(
-    'Daily briefing',
+    'Daily Health Brief',
     AsyncBody<Json>(
       ref.watch(_briefingProvider),
       onRetry: () => ref.invalidate(_briefingProvider),
       builder: (b) {
         final sections = (b['sections'] as List? ?? []).cast<Json>();
         final pending = numOf(b['pending_approvals'])?.toInt() ?? 0;
+        final filled = sections
+            .where((s) => (s['items'] as List? ?? []).isNotEmpty)
+            .toList();
+        final clear = sections
+            .where((s) => (s['items'] as List? ?? []).isEmpty)
+            .map((s) => '${s['title']}'.toLowerCase())
+            .toList();
+        final attention = filled
+            .expand((s) => (s['items'] as List).cast<Json>())
+            .where((i) => i['tone'] == 'attention')
+            .length;
         return ListView(
           padding: const EdgeInsets.all(14),
           children: [
+            const _CopilotBrief(),
+            SCard(
+              child: Row(
+                children: [
+                  Icon(
+                    attention == 0
+                        ? Icons.check_circle_outline
+                        : Icons.priority_high,
+                    color: attention == 0 ? Pal.ok : Pal.warn,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      attention == 0
+                          ? 'Nothing needs attention today.'
+                          : '$attention ${attention == 1 ? 'item needs' : 'items need'} your attention today.',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (pending > 0)
               SCard(
                 color: Pal.priBg,
                 onTap: () => _open(context, const ApprovalsScreen()),
-                child: Text(
-                  '$pending suggestion(s) waiting for your approval',
-                  style: const TextStyle(fontSize: 12, color: Pal.pri),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.fact_check_outlined,
+                      color: Pal.pri,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '$pending ${pending == 1 ? 'suggestion is' : 'suggestions are'} waiting for your approval',
+                        style: const TextStyle(fontSize: 12, color: Pal.pri),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, color: Pal.pri),
+                  ],
                 ),
               ),
-            for (final s in sections) ...[
+            for (final s in filled) ...[
               SectionTitle('${s['title']}'),
-              if ((s['items'] as List? ?? []).isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 6),
-                  child: Text('Nothing here.', style: _note),
-                ),
-              for (final i in (s['items'] as List? ?? []).cast<Json>())
+              for (final i in (s['items'] as List).cast<Json>())
                 SCard(
-                  child: Text(
-                    '${i['text']}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: i['tone'] == 'attention' ? Pal.warn : null,
-                    ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        _sectionIcons['${s['key']}'] ?? Icons.circle_outlined,
+                        size: 16,
+                        color: i['tone'] == 'attention' ? Pal.warn : Pal.mut,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${i['text']}',
+                          style: const TextStyle(fontSize: 12.5, height: 1.35),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text('${b['note'] ?? ''}', style: _note),
+            if (clear.isNotEmpty) ...[
+              const SectionTitle('All clear'),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final c in clear) Pill(c, fg: Pal.ok, bg: Pal.okBg),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => _open(context, const AgentChatScreen()),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Ask Sehat about today'),
             ),
           ],
         );

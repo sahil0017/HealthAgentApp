@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -12,6 +13,7 @@ import '../core/hardware.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'find_care.dart';
 import 'nearby.dart';
 
 const _note = TextStyle(fontSize: 10.5, color: Pal.mut);
@@ -141,6 +143,27 @@ class NeedsAreaState extends ConsumerState<NeedsArea> {
 
 // ------------------------------------------------------------ Health news
 
+final newsProvider = FutureProvider.autoDispose
+    .family<List<Json>, (String, String)>(
+      (ref, k) => ref
+          .read(apiProvider)
+          .list(
+            '/nearby/news?city=${Uri.encodeQueryComponent(k.$1)}&country_code=${k.$2}',
+            key: 'news',
+          ),
+    );
+
+String _ago(Object? iso) {
+  final t = DateTime.tryParse('$iso');
+  if (t == null) return '';
+  final d = DateTime.now().difference(t);
+  if (d.inMinutes < 60) return '${d.inMinutes.clamp(1, 59)} min ago';
+  if (d.inHours < 24) return '${d.inHours} h ago';
+  if (d.inDays < 7) return '${d.inDays} d ago';
+  return '$iso'.substring(0, 10);
+}
+
+/// Health alerts and news: stories for the user's city, worldwide news, and official outbreak notices.
 class HealthNewsScreen extends ConsumerStatefulWidget {
   const HealthNewsScreen({super.key});
   @override
@@ -148,79 +171,232 @@ class HealthNewsScreen extends ConsumerStatefulWidget {
 }
 
 class _NewsState extends ConsumerState<HealthNewsScreen> {
-  String _scope = 'All';
+  bool _locating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The Near you tab is about place, so ask for it as soon as the screen opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(areaProvider) == null) _locate();
+    });
+  }
+
+  Future<void> _locate() async {
+    setState(() => _locating = true);
+    await ref.read(areaProvider.notifier).detect();
+    if (mounted) setState(() => _locating = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final country = ref.watch(areaProvider)?.country ?? '';
+    final area = ref.watch(areaProvider);
+    final city = (area?.city?.isNotEmpty ?? false)
+        ? area!.city!
+        : (area?.region ?? '');
+    final cc = area?.countryCode ?? '';
+    final country = area?.country ?? '';
+    final news = ref.watch(newsProvider((city, cc)));
     final alerts = ref.watch(alertsProvider(country));
-    return Scaffold(
-      appBar: AppBar(title: const Text('Health news')),
-      body: AsyncBody<List<Json>>(
-        alerts,
-        onRetry: () => ref.invalidate(alertsProvider(country)),
-        builder: (all) {
-          final list = switch (_scope) {
-            'Local' => all.where((a) => a['in_country'] == true).toList(),
-            'Global' => all.where((a) => a['in_country'] != true).toList(),
-            _ => all,
-          };
-          return ListView(
-            padding: const EdgeInsets.all(14),
-            children: [
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (final k in const ['All', 'Local', 'Global'])
-                    ChoiceChip(
-                      label: Text(k),
-                      selected: _scope == k,
-                      onSelected: (_) => setState(() => _scope = k),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'From the WHO Disease Outbreak News feed. Each item shows its source and date.',
-                style: _note,
-              ),
-              const SizedBox(height: 8),
-              if (list.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: Text(
-                      _scope == 'Local' && country.isEmpty
-                          ? 'Turn on approximate location to see news for your country.'
-                          : 'Nothing here right now.',
-                      style: _note,
-                    ),
-                  ),
-                ),
-              for (final a in list)
-                SCard(
-                  onTap: () => _open(context, AlertScreen(a)),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${a['title']}', style: _bold),
-                            Text(
-                              '${a['source']} · ${'${a['published_at']}'.substring(0, 10)}',
-                              style: _note,
-                            ),
-                          ],
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Public Health Alerts'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Near you'),
+              Tab(text: 'World'),
+              Tab(text: 'Outbreaks'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _NewsList(
+              news,
+              scope: 'local',
+              onRetry: () => ref.invalidate(newsProvider((city, cc))),
+              empty: area == null
+                  ? Empty(
+                      Icons.place_outlined,
+                      'See health news for your city',
+                      body: 'Allow location to get local stories and alerts.',
+                      action: FilledButton(
+                        onPressed: _locating ? null : _locate,
+                        child: Text(
+                          _locating ? 'Locating…' : 'Use my location',
                         ),
                       ),
-                      if (a['in_country'] == true) const Pill('Your country'),
+                    )
+                  : const Empty(
+                      Icons.newspaper,
+                      'No local stories right now',
+                      body: 'Pull down to refresh, or check the World tab.',
+                    ),
+              header: area == null
+                  ? null
+                  : Row(
+                      children: [
+                        const Icon(Icons.place, size: 14, color: Pal.pri),
+                        const SizedBox(width: 4),
+                        Text(
+                          area.label.isEmpty ? 'Near you' : area.label,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            _NewsList(
+              news,
+              scope: 'global',
+              onRetry: () => ref.invalidate(newsProvider((city, cc))),
+              empty: const Empty(Icons.public, 'No world news right now'),
+            ),
+            AsyncBody<List<Json>>(
+              alerts,
+              onRetry: () => ref.invalidate(alertsProvider(country)),
+              builder: (all) => ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  const Text(
+                    'WHO Disease Outbreak News. Notices for your country come first.',
+                    style: _note,
+                  ),
+                  const SizedBox(height: 8),
+                  if (all.isEmpty)
+                    const Empty(Icons.verified_outlined, 'No active notices'),
+                  for (final a in all) _OutbreakCard(a),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NewsList extends StatelessWidget {
+  const _NewsList(
+    this.news, {
+    required this.scope,
+    required this.onRetry,
+    required this.empty,
+    this.header,
+  });
+  final AsyncValue<List<Json>> news;
+  final String scope;
+  final VoidCallback onRetry;
+  final Widget empty;
+  final Widget? header;
+
+  @override
+  Widget build(BuildContext context) => AsyncBody<List<Json>>(
+    news,
+    onRetry: onRetry,
+    builder: (all) {
+      final list = all.where((n) => n['scope'] == scope).toList();
+      if (list.isEmpty) return empty;
+      return ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          if (header != null)
+            Padding(padding: const EdgeInsets.only(bottom: 8), child: header),
+          for (var i = 0; i < list.length; i++)
+            SCard(
+              onTap: () => _launch(context, Uri.parse('${list[i]['url']}')),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${list[i]['title']}',
+                    maxLines: i == 0 ? 4 : 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: i == 0 ? 15 : 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Pill('${list[i]['source']}'),
+                      const SizedBox(width: 8),
+                      Text(_ago(list[i]['published_at']), style: _note),
+                      const Spacer(),
+                      const Icon(Icons.open_in_new, size: 14, color: Pal.mut),
                     ],
                   ),
-                ),
-            ],
-          );
-        },
+                ],
+              ),
+            ),
+          const Padding(
+            padding: EdgeInsets.all(6),
+            child: Text(
+              'Headlines link to the publisher. Sehat does not edit them.',
+              style: _note,
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _OutbreakCard extends StatelessWidget {
+  const _OutbreakCard(this.a);
+  final Json a;
+
+  @override
+  Widget build(BuildContext context) {
+    final yours = a['in_country'] == true;
+    return SCard(
+      onTap: () => _open(context, AlertScreen(a)),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: yours ? Pal.warn : Pal.line,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${a['title']}', style: _bold),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (yours)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Pill(
+                            'Your country',
+                            fg: Pal.warn,
+                            bg: Pal.warnBg,
+                          ),
+                        ),
+                      Text(
+                        '${a['source']} · ${_ago(a['published_at'])}',
+                        style: _note,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Pal.mut),
+          ],
+        ),
       ),
     );
   }
@@ -245,13 +421,14 @@ const _kinds = [
 
 /// Doctors, clinics, pharmacies and labs around the phone's approximate location.
 class DoctorsScreen extends ConsumerStatefulWidget {
-  const DoctorsScreen({super.key});
+  const DoctorsScreen({super.key, this.initialKind = 'doctor'});
+  final String initialKind;
   @override
   ConsumerState<DoctorsScreen> createState() => _DoctorsState();
 }
 
 class _DoctorsState extends ConsumerState<DoctorsScreen> {
-  String _kind = 'doctor';
+  late String _kind = widget.initialKind;
   bool _map = false;
 
   @override
@@ -583,9 +760,19 @@ class _HospitalsMapState extends ConsumerState<HospitalsMapScreen> {
                                         '${fmtNum(numOf(x['distance_km']))} km${x['address'] == null ? '' : ' · ${x['address']}'}',
                                         style: _note,
                                       ),
+                                      if (x['speciality'] != null)
+                                        Text(
+                                          '${x['speciality']}',
+                                          style: _note,
+                                        ),
                                     ],
                                   ),
                                 ),
+                                if (x['reason'] != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Pill('${x['reason']}'),
+                                  ),
                                 if (x['emergency'] == true)
                                   const Pill(
                                     'Emergency',
@@ -713,15 +900,35 @@ final medicalIdProvider = FutureProvider.autoDispose<Json>((ref) async {
   try {
     final profile = await ref.watch(profileMapProvider('').future);
     final history = await ref.watch(profileListProvider('/history').future);
+    final rx = await ref.watch(profileListProvider('/prescriptions').future);
+    // Saved prescriptions are the source of truth for current medicines; history entries add the rest.
+    final meds = <String, String>{};
+    for (final p in rx) {
+      for (final i in ((p['items'] as List?) ?? []).whereType<Map>()) {
+        if (i['active'] == false) continue;
+        final label = [
+          i['name'],
+          i['strength'],
+        ].where((e) => '${e ?? ''}'.isNotEmpty).join(' ');
+        meds[('${i['name']}').toLowerCase()] = 'medication: $label';
+      }
+    }
+    for (final e in history) {
+      if (e['status'] == 'active' && e['kind'] == 'medication') {
+        meds.putIfAbsent(
+          ('${e['title']}').toLowerCase(),
+          () => 'medication: ${e['title']}',
+        );
+      }
+    }
     final id = <String, dynamic>{
       'blood_group': profile['blood_group'],
       'items': [
         for (final e in history)
           if (e['status'] == 'active' &&
-              (e['kind'] == 'allergy' ||
-                  e['kind'] == 'condition' ||
-                  e['kind'] == 'medication'))
+              (e['kind'] == 'allergy' || e['kind'] == 'condition'))
             '${e['kind']}: ${e['title']}',
+        ...meds.values,
       ],
       'cached': false,
     };
@@ -777,7 +984,35 @@ class EmergencyScreen extends ConsumerWidget {
     );
   }
 
+  /// Picks from the phone's address book. The system picker needs no contacts permission, and it
+  /// is unavailable in a browser, where the caller falls back to typing.
+  Future<Json?> _pickFromContacts() async {
+    try {
+      final c = await FlutterContacts.native.showPicker(
+        properties: {ContactProperty.name, ContactProperty.phone},
+      );
+      if (c == null || c.phones.isEmpty) return null;
+      return {'name': c.displayName, 'phone': c.phones.first.number};
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _addContact(BuildContext context, WidgetRef ref) async {
+    final picked = await _pickFromContacts();
+    if (picked != null) {
+      await _saveContacts([
+        ...await ref.read(emergencyContactsProvider.future),
+        picked,
+      ]);
+      ref.invalidate(emergencyContactsProvider);
+      return;
+    }
+    if (!context.mounted) return;
+    toast(
+      context,
+      'Pick from contacts is not available here. Enter the number.',
+    );
     final name = TextEditingController(), phone = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -830,11 +1065,9 @@ class EmergencyScreen extends ConsumerWidget {
     final hospitals = area == null
         ? const AsyncValue<List<Json>>.data([])
         : ref.watch(hospitalsProvider(area));
-    final ers = (hospitals.asData?.value ?? [])
-        .where((h) => h['emergency'] == true)
-        .toList();
+    final nearest = nearestEmergency(hospitals.asData?.value ?? []);
     return Scaffold(
-      appBar: AppBar(title: const Text('Emergency')),
+      appBar: AppBar(title: const Text('Emergency Profile')),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -860,7 +1093,11 @@ class EmergencyScreen extends ConsumerWidget {
                 style: _note,
               ),
             ),
-          const SectionTitle('Nearest emergency hospital'),
+          SectionTitle(
+            nearest != null && nearest['emergency'] != true
+                ? 'Nearest hospital'
+                : 'Nearest emergency hospital',
+          ),
           if (area == null)
             SCard(
               onTap: () => _open(context, const HospitalsMapScreen()),
@@ -869,7 +1106,7 @@ class EmergencyScreen extends ConsumerWidget {
                 style: _note,
               ),
             )
-          else if (ers.isEmpty)
+          else if (nearest == null)
             Text(
               hospitals.isLoading
                   ? 'Looking…'
@@ -878,12 +1115,12 @@ class EmergencyScreen extends ConsumerWidget {
             )
           else
             SCard(
-              onTap: () => _directions(context, ers.first),
+              onTap: () => _open(context, HospitalScreen(nearest)),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      '${ers.first['name']} · ${fmtNum(numOf(ers.first['distance_km']))} km',
+                      '${nearest['name']} · ${fmtNum(numOf(nearest['distance_km']))} km',
                       style: _bold,
                     ),
                   ),
@@ -922,9 +1159,10 @@ class EmergencyScreen extends ConsumerWidget {
           ),
           SectionTitle(
             'Emergency contacts',
-            trailing: TextButton(
+            trailing: TextButton.icon(
               onPressed: () => _addContact(context, ref),
-              child: const Text('Add'),
+              icon: const Icon(Icons.contacts_outlined, size: 16),
+              label: const Text('Choose from contacts'),
             ),
           ),
           if (contacts.isEmpty)
@@ -940,14 +1178,27 @@ class EmergencyScreen extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.call, size: 16, color: Pal.pri),
-                  const SizedBox(width: 8),
-                  Expanded(
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Pal.priBg,
                     child: Text(
-                      '${contacts[i]['name']} · ${contacts[i]['phone']}',
-                      style: _bold,
+                      '${contacts[i]['name']}'.characters.firstOrNull
+                              ?.toUpperCase() ??
+                          '?',
+                      style: const TextStyle(color: Pal.pri, fontSize: 13),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${contacts[i]['name']}', style: _bold),
+                        Text('${contacts[i]['phone']}', style: _note),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.call, size: 16, color: Pal.pri),
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.close, size: 16, color: Pal.mut),
@@ -977,3 +1228,23 @@ class EmergencyScreen extends ConsumerWidget {
     );
   }
 }
+
+/// The closest hospital that offers emergency care; many map entries carry no emergency tag, so the
+/// closest hospital of any kind is used when none does.
+Json? nearestEmergency(List<Json> all) {
+  final byDistance = [...all]
+    ..sort(
+      (a, b) => (numOf(a['distance_km']) ?? 0).compareTo(
+        numOf(b['distance_km']) ?? 0,
+      ),
+    );
+  return byDistance.where((h) => h['emergency'] == true).firstOrNull ??
+      byDistance.firstOrNull;
+}
+
+Future<void> openDirections(BuildContext c, Json h) => _directions(c, h);
+Future<void> dial(BuildContext c, String number) =>
+    _launch(c, Uri(scheme: 'tel', path: number));
+String emergencyNumber(Area? a) => _ambulance[a?.countryCode] ?? '112';
+Future<void> shareMyLocation(BuildContext c, WidgetRef r) =>
+    const EmergencyScreen()._shareLocation(c, r);

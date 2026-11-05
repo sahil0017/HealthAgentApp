@@ -45,3 +45,47 @@ def test_record_tool_lookup_matches_name_and_reports_missing():
     assert copilot_agent._find_trend(snap, "ldl cholesterol") == "LDL fact"
     assert copilot_agent._find_trend(snap, "LDL") == "LDL fact"
     assert "no verified result" in copilot_agent._find_trend(snap, "Ferritin")
+
+
+def test_standardise_unavailable_without_token(monkeypatch):
+    monkeypatch.setattr(config, "COPILOT_TOKEN", "")
+    r = client.post("/v1/labs/standardise", json={"labels": ["Cholesterol - Total"]})
+    assert r.status_code == 503 and r.json()["reason"] == "model_not_configured"
+
+
+def test_standardise_returns_names(monkeypatch):
+    async def fake(labels):
+        return {"tests": [{"label": labels[0], "name": "Total Cholesterol", "panel": "Lipid Profile"}], "model": "m"}
+
+    monkeypatch.setattr(copilot_agent, "standardise_labs", fake)
+    r = client.post("/v1/labs/standardise", json={"labels": ["Cholesterol - Total"]})
+    assert r.status_code == 200 and r.json()["tests"][0]["name"] == "Total Cholesterol"
+
+
+def test_standardise_validates_input():
+    assert client.post("/v1/labs/standardise", json={"labels": []}).status_code == 422
+
+
+def test_care_plan_tool_is_exposed():
+    calls: list[dict] = []
+    names = [getattr(t, "name", None) for t in copilot_agent._record_tools({"get_care_plan": "x"}, calls)]
+    assert "get_care_plan" in names
+
+
+def test_document_extract_unavailable_without_token(monkeypatch):
+    monkeypatch.setattr(config, "COPILOT_TOKEN", "")
+    r = client.post("/v1/documents/extract", json={"text": "Haemoglobin 13.2 g/dL 12 - 15" * 2})
+    assert r.status_code == 503 and r.json()["reason"] == "model_not_configured"
+
+
+def test_document_extract_returns_tests_and_medicines(monkeypatch):
+    async def fake(text):
+        return {"document_type": "LAB_REPORT", "tests": [{"name": "Haemoglobin", "value": "13.2"}], "medicines": [], "model": "m"}
+
+    monkeypatch.setattr(copilot_agent, "extract_document", fake)
+    r = client.post("/v1/documents/extract", json={"text": "Haemoglobin 13.2 g/dL 12 - 15 range"})
+    assert r.status_code == 200 and r.json()["tests"][0]["name"] == "Haemoglobin"
+
+
+def test_document_extract_validates_input():
+    assert client.post("/v1/documents/extract", json={"text": "short"}).status_code == 422

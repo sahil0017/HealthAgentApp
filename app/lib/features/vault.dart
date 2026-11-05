@@ -7,6 +7,8 @@ import 'package:http_parser/http_parser.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'insights.dart';
+import 'prescriptions.dart' show PrescriptionReview;
 
 const _status = {
   'queued': 'Reading…',
@@ -28,6 +30,7 @@ class _VaultState extends ConsumerState<VaultTab> {
   final _q = TextEditingController();
   List<Json>? _hits;
   bool _busy = false;
+  String? _type;
 
   @override
   void dispose() {
@@ -55,7 +58,10 @@ class _VaultState extends ConsumerState<VaultTab> {
             ],
           );
       ref.invalidate(profileListProvider('/documents'));
-      if (mounted) toast(context, 'Uploaded. Reading your document…');
+      for (final k in ['uploads', 'labs', 'history', 'research']) {
+        ref.invalidate(profileMapProvider('/agent/insights/$k'));
+      }
+      if (mounted) toast(context, 'Uploaded. Reading your report…');
     } catch (e) {
       if (mounted) toast(context, friendly(e));
     } finally {
@@ -117,7 +123,7 @@ class _VaultState extends ConsumerState<VaultTab> {
             decoration: InputDecoration(
               isDense: true,
               prefixIcon: const Icon(Icons.search, size: 18),
-              hintText: 'Search inside your documents',
+              hintText: 'Search your reports',
               suffixIcon: _q.text.isEmpty
                   ? null
                   : IconButton(
@@ -196,13 +202,87 @@ class _VaultState extends ConsumerState<VaultTab> {
                       if (list.isEmpty) {
                         return const Empty(
                           Icons.folder_open,
-                          'Your vault is empty',
+                          'No reports yet',
                           body: 'Scan or upload a lab report to get started.',
                         );
                       }
+                      final stats =
+                          ref
+                                  .watch(
+                                    profileMapProvider(
+                                      '/agent/insights/uploads',
+                                    ),
+                                  )
+                                  .value?['documents']
+                              as Map? ??
+                          const {};
+                      final types = {
+                        for (final d in list) '${d['document_type']}',
+                      };
+                      final shown = _type == null
+                          ? list
+                          : list
+                                .where((d) => '${d['document_type']}' == _type)
+                                .toList();
+                      final children = <Widget>[
+                        if (list.any((d) => d['status'] == 'approved'))
+                          const InsightPanel(
+                            path: '/agent/insights/labs',
+                            title: 'Summary across all reports',
+                            icon: Icons.insights,
+                            maxItems: 5,
+                          ),
+                        if (types.length > 1)
+                          SizedBox(
+                            height: 40,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: ChoiceChip(
+                                    label: Text(
+                                      'All · ${list.length}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    selected: _type == null,
+                                    onSelected: (_) =>
+                                        setState(() => _type = null),
+                                  ),
+                                ),
+                                for (final t in types)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      label: Text(
+                                        '${docTypeName(t)} · ${list.where((d) => '${d['document_type']}' == t).length}',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      selected: _type == t,
+                                      onSelected: (_) =>
+                                          setState(() => _type = t),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ];
+                      String? month;
+                      for (final d in shown) {
+                        final at = DateTime.tryParse('${d['created_at']}')
+                            ?.toLocal();
+                        final m = at == null
+                            ? ''
+                            : '${_monthNames[at.month - 1]} ${at.year}';
+                        if (m != month) {
+                          month = m;
+                          children.add(SectionTitle(m));
+                        }
+                        children.add(_DocTile(d, stats['${d['id']}'] as Map?));
+                      }
                       return ListView(
                         padding: const EdgeInsets.fromLTRB(14, 4, 14, 16),
-                        children: [for (final d in list) _DocTile(d)],
+                        children: children,
                       );
                     },
                   ),
@@ -213,9 +293,27 @@ class _VaultState extends ConsumerState<VaultTab> {
   }
 }
 
+const _monthNames = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
 class _DocTile extends ConsumerWidget {
-  const _DocTile(this.d);
+  const _DocTile(this.d, [this.stat]);
   final Json d;
+  final Map? stat;
+  String get _provider =>
+      '${((d['extraction'] as Map?)?['ai'] as Map?)?['provider'] ?? ''}';
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = '${d['status']}';
@@ -245,9 +343,39 @@ class _DocTile extends ConsumerWidget {
                   ),
                 ),
                 Text(
-                  '${d['document_type'] ?? ''}'.replaceAll('_', ' '),
+                  [
+                    docTypeName('${d['document_type'] ?? ''}'),
+                    if (_provider.isNotEmpty) _provider,
+                  ].join(' · '),
                   style: const TextStyle(fontSize: 10, color: Pal.mut),
                 ),
+                if (stat != null && (stat!['results'] ?? 0) > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Pill(
+                          '${stat!['results']} results',
+                          fg: Pal.mut,
+                          bg: Pal.line,
+                        ),
+                        if ((stat!['out_of_range'] ?? 0) > 0)
+                          Pill(
+                            '${stat!['out_of_range']} outside range',
+                            fg: Pal.bad,
+                            bg: Pal.badBg,
+                          )
+                        else
+                          const Pill('All in range', fg: Pal.ok, bg: Pal.okBg),
+                        for (final n in (stat!['flagged'] as List? ?? []).take(
+                          2,
+                        ))
+                          Pill('$n', fg: Pal.warn, bg: Pal.warnBg),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -260,6 +388,9 @@ class _DocTile extends ConsumerWidget {
                       '/profiles/${ref.read(profileIdProvider)}/documents/${d['id']}/retry',
                     );
                 ref.invalidate(profileListProvider('/documents'));
+                for (final k in ['uploads', 'labs', 'history', 'research']) {
+                  ref.invalidate(profileMapProvider('/agent/insights/$k'));
+                }
               },
               child: const Text('Retry'),
             )
@@ -287,6 +418,11 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
   List<Json> _rows = [];
   Object? _error;
   bool _busy = false;
+
+  int get _medicines =>
+      (((_doc?['extraction'] as Map?)?['ai'] as Map?)?['medicines'] as List? ??
+              [])
+          .length;
 
   @override
   void initState() {
@@ -325,9 +461,27 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
     try {
       await ref.read(apiProvider).post(
         '/profiles/${ref.read(profileIdProvider)}/documents/${widget.id}/approve',
-        {'biomarkers': _rows},
+        {
+          'biomarkers': [
+            for (final r in _rows)
+              {
+                'candidate_id': ?r['id'] ?? r['candidate_id'],
+                'biomarker_code': ?r['biomarker_code'],
+                'page': ?r['page'],
+                'evidence': ?r['evidence'],
+                'name': r['name'],
+                'value': r['value'],
+                'unit': r['unit'],
+                'observed_at': ?r['observed_at'],
+                'reference_range': ?r['reference_range'],
+              },
+          ],
+        },
       );
       ref.invalidate(profileListProvider('/documents'));
+      for (final k in ['uploads', 'labs', 'history', 'research']) {
+        ref.invalidate(profileMapProvider('/agent/insights/$k'));
+      }
       ref.invalidate(profileListProvider('/biomarkers/summary'));
       ref.invalidate(profileMapProvider('/overview'));
       if (mounted) Navigator.pop(context);
@@ -388,15 +542,49 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
               children: [
                 if (!approved)
                   const Text(
-                    'Check each value against your report. Tap a value to correct it.',
+                    'Check each result against your report. Tap a result to correct it.',
                     style: TextStyle(fontSize: 11, color: Pal.mut),
+                  ),
+                if (approved)
+                  InsightPanel(
+                    path: '/agent/insights/document/${widget.id}',
+                    title: 'Report summary',
+                    icon: Icons.summarize_outlined,
+                  ),
+                if (_medicines > 0)
+                  SCard(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            PrescriptionReview(documentId: widget.id),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.medication_outlined, color: Pal.pri),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            '$_medicines medicine${_medicines == 1 ? '' : 's'} found in this document',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          'Review & save',
+                          style: TextStyle(fontSize: 11, color: Pal.pri),
+                        ),
+                      ],
+                    ),
                   ),
                 const SizedBox(height: 8),
                 if (_rows.isEmpty)
                   const Empty(
                     Icons.search_off,
-                    'No values found',
-                    body: 'Nothing was extracted from this document.',
+                    'No results found',
+                    body: 'No lab results were found in this report.',
                   ),
                 for (var i = 0; i < _rows.length; i++)
                   SCard(
@@ -475,3 +663,14 @@ class _DocumentState extends ConsumerState<DocumentScreen> {
     );
   }
 }
+
+/// Standard name for a document type.
+String docTypeName(String t) => switch (t) {
+  'LAB_REPORT' => 'Lab report',
+  'PRESCRIPTION' => 'Prescription',
+  'DISCHARGE_SUMMARY' => 'Discharge summary',
+  'RADIOLOGY' || 'IMAGING' => 'Imaging report',
+  'INVOICE' || 'BILL' => 'Bill',
+  'OTHER' || '' => 'Other document',
+  _ => '${t[0]}${t.substring(1).toLowerCase().replaceAll('_', ' ')}',
+};

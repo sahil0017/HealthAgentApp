@@ -67,12 +67,16 @@ class Pill extends StatelessWidget {
   );
 
   factory Pill.flag(String? f) => switch (f) {
+    'above_range' ||
     'high' ||
     'critical_high' ||
-    'abnormal' => const Pill('High', fg: Pal.bad, bg: Pal.badBg),
-    'low' || 'critical_low' => const Pill('Low', fg: Pal.warn, bg: Pal.warnBg),
+    'abnormal' => const Pill('Above range', fg: Pal.bad, bg: Pal.badBg),
+    'below_range' ||
+    'low' ||
+    'critical_low' => const Pill('Below range', fg: Pal.warn, bg: Pal.warnBg),
+    'within_range' ||
     'normal' => const Pill('In range', fg: Pal.ok, bg: Pal.okBg),
-    _ => const Pill('—', fg: Pal.mut, bg: Pal.line),
+    _ => const Pill('No range', fg: Pal.mut, bg: Pal.line),
   };
 }
 
@@ -344,3 +348,16 @@ String fmtNum(num? n) => n == null
     : (n == n.roundToDouble()
           ? n.toInt().toString()
           : n.toStringAsFixed(n.abs() < 10 ? 2 : 1));
+
+/// True when a result sits outside its reference range. Results with no range are neither in nor out.
+bool outOfRange(String? flag) => const {
+  'above_range',
+  'below_range',
+  'high',
+  'low',
+  'critical_high',
+  'critical_low',
+  'abnormal',
+}.contains(flag);
+
+bool inRange(String? flag) => flag == 'within_range' || flag == 'normal';
