@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -52,13 +54,32 @@ class IdentityService {
         'not_configured',
         'Google sign-in is not configured on the server.',
       );
-    await GoogleSignIn.instance.initialize(serverClientId: id, nonce: nonce);
+    await GoogleSignIn.instance.initialize(
+      clientId: kIsWeb ? id : null,
+      serverClientId: kIsWeb ? null : id,
+      nonce: nonce,
+    );
     _googleReady = true;
+    _nonceUsed = nonce;
+    if (kIsWeb) return;
     final acct = await GoogleSignIn.instance.authenticate();
     final token = acct.authentication.idToken;
     if (token == null)
       throw ApiError(401, 'no_token', 'Google did not return an ID token.');
     await _api.signIn('google', token, nonce);
+  }
+
+  String? _nonceUsed;
+
+  /// Web only: prepares Google's rendered button, which hands back the account through [GoogleSignIn.authenticationEvents].
+  Future<void> prepareWebGoogle() => google();
+
+  Future<void> completeGoogle(GoogleSignInAccount acct) async {
+    final token = acct.authentication.idToken;
+    if (token == null) {
+      throw ApiError(401, 'no_token', 'Google did not return an ID token.');
+    }
+    await _api.signIn('google', token, _nonceUsed ?? '');
   }
 
   // Test-only: compiled in when built with --dart-define=SEHAT_TEST_LOGIN=true; the dev proxy mints a token for the test IdP.

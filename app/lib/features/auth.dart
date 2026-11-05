@@ -1,6 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+import '../core/google_button_stub.dart'
+    if (dart.library.js_interop) '../core/google_button_web.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
@@ -13,7 +19,36 @@ class SignInScreen extends ConsumerStatefulWidget {
 
 class _SignInState extends ConsumerState<SignInScreen> {
   bool _busy = false;
+  bool _webReady = false;
   String? _error;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _events;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) _prepareWeb();
+  }
+
+  Future<void> _prepareWeb() async {
+    final id = ref.read(identityProvider);
+    try {
+      await id.prepareWebGoogle();
+      _events = GoogleSignIn.instance.authenticationEvents.listen((e) {
+        if (e is GoogleSignInAuthenticationEventSignIn) {
+          _run(() => id.completeGoogle(e.user));
+        }
+      });
+      if (mounted) setState(() => _webReady = true);
+    } catch (e) {
+      if (mounted) setState(() => _error = friendly(e));
+    }
+  }
+
+  @override
+  void dispose() {
+    _events?.cancel();
+    super.dispose();
+  }
 
   Future<void> _run(Future<void> Function() f) async {
     setState(() {
@@ -67,11 +102,21 @@ class _SignInState extends ConsumerState<SignInScreen> {
                     style: const TextStyle(color: Pal.bad, fontSize: 12),
                   ),
                 ),
-              FilledButton.icon(
-                onPressed: _busy ? null : () => _run(id.google),
-                icon: const Icon(Icons.g_mobiledata, size: 26),
-                label: const Text('Continue with Google'),
-              ),
+              if (kIsWeb)
+                SizedBox(
+                  height: 48,
+                  child: Center(
+                    child: _webReady
+                        ? googleWebButton()
+                        : const CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: _busy ? null : () => _run(id.google),
+                  icon: const Icon(Icons.g_mobiledata, size: 26),
+                  label: const Text('Continue with Google'),
+                ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _busy ? null : () => _run(id.apple),
