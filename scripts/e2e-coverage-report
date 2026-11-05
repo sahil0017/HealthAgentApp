@@ -38,7 +38,8 @@ py_total=$(awk '/^TOTAL/ {gsub("%","",$NF); print $NF}' .cover/out/py-report.txt
   echo "<details><summary>Go: least-covered functions</summary>"
   echo
   echo '```'
-  sort -k3 -n .cover/out/go-func.txt | awk '$3+0 < 80 {print}' | head -60
+  # head closes the pipe early; under pipefail that must not fail the report
+  sort -k3 -n .cover/out/go-func.txt | awk '$3+0 < 80 {print}' | head -60 || true
   echo '```'
   echo "</details>"
   echo

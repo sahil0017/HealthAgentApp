@@ -153,6 +153,14 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
+      # The runner's NDK download is flaky, so fetch it up front and retry.
+      - run: |
+          for i in 1 2 3 4; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" && exit 0
+            rm -rf "$ANDROID_HOME/ndk" "$ANDROID_HOME/.temp"; sleep 10
+          done
+          exit 1
+        working-directory: .
       - run: flutter build apk --release --dart-define=SEHAT_API=https://web-production-baefd.up.railway.app
       - uses: actions/upload-artifact@v4
         with:
