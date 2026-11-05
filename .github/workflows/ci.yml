@@ -135,6 +135,30 @@ jobs:
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
 
+  # Installable Android build pointed at the Railway API; download it from the run's artifacts.
+  app-apk:
+    name: package · Android APK
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults: { run: { working-directory: app } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release --dart-define=SEHAT_API=https://web-production-baefd.up.railway.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sehat-android-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+
   # Each image is built once here (instrumented for coverage, which is harmless at runtime) and handed to the e2e job as an
   # artifact, so nothing downstream rebuilds it. A failed build cancels the run immediately.
   docker-build:
