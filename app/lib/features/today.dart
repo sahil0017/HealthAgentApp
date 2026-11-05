@@ -5,6 +5,7 @@ import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'agent_screens.dart';
+import 'dashboard.dart';
 import 'health.dart';
 import 'notifications.dart';
 import 'find_care.dart';
@@ -206,11 +207,14 @@ class _Body extends ConsumerWidget {
         ),
         const UrgentStrip(),
         const BriefingCard(),
+        const SnapshotRow(),
+        const InsightCards(),
         const WellbeingCard(),
         const TodaysPlan(),
         const MedicinesTodayCard(),
         const HabitTrends(),
         const _KeyResults(),
+        const WhatChanged(),
         const SizedBox(height: 4),
         IntrinsicHeight(
           child: Row(
