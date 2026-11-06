@@ -2,6 +2,8 @@
 
 Companion to [requirements.md](./requirements.md) and [full-architecture.md](./full-architecture.md). **In use** means it exists in this repository today. **Proposed** means a recommended choice that still needs a decision record.
 
+The diagram and product-area table below describe the **target architecture**, not a deployment inventory. HealthKit, VisionKit, DICOMweb, provider integrations and a curator console are not implied to be shipped. For current implementation see [modules/README.md](../modules/README.md) and [data-model.md](../docs/data-model.md).
+
 ## 1. System view
 
 ```mermaid
@@ -55,7 +57,7 @@ flowchart TB
 
 **Boundaries that never change**
 - Go owns identity, consent, authorization, audit and all database access.
-- Python is stateless and isolated. It reaches user data only through scoped, short-lived MCP tokens bound to one owner and one profile.
+- Python does not directly access the health database; Go supplies operation-specific data, and MCP provides separately scoped, short-lived read-only access where used.
 - Only public terms leave for research. Anything involving personal data and an external model needs its own consent.
 - Everything learned is stored as `pending` until a human approves it.
 
@@ -65,7 +67,7 @@ flowchart TB
 |---|---|---|---|
 | 01 Command centre | `timeline` and `goals` modules; read models over observations, documents, visits; notification scheduler | Prioritisation of "what needs attention" by deterministic rules first, model second | Today tab, timeline, goal cards, local and push notifications |
 | 02 Vault | Existing upload and review flow; add OCR stage, classifier, full-text plus vector search, correction history | Document classifier (small HF model, evaluated); layout-aware extraction | VisionKit scanner, side-by-side review, versions view |
-| 03 Biomarkers | Observations plus learned catalog; unit normaliser using UCUM; learned ranges per lab | Trend and change detection (statistical, explainable); frequency gaps | Swift Charts with range band, source badges |
+| 03 Biomarkers | Observations plus learned catalog; unit normaliser using UCUM; learned ranges per lab | Trend and change detection (statistical, explainable); frequency gaps | Flutter charts with range band, source badges |
 | 04 Body observation | Encrypted image storage, region tags, comparison jobs | On-device quality checks and pose estimation first; server models only with consent | Camera capture guides, body map, side-by-side comparison |
 | 05 Connected devices | HealthKit sync endpoint with idempotent upserts, device registry, source-type field | Anomaly summaries are descriptive only | HealthKit permissions per data type, sync status |
 | 06 Imaging | Orthanc (DICOMweb) behind Go authorization; report-to-study links | Later, validated models only (MONAI) | Embedded OHIF viewer in a web view |
@@ -140,9 +142,9 @@ Capture is a persistent "+" action (scan, upload, add reading, log symptom, take
 |---|---|---|
 | Identity | OIDC with Sign in with Apple, plus a self-hosted provider (Keycloak or Ory) for admin and web | Replaces dev-token sessions; standard and auditable |
 | Job queue | River (Go, Postgres-backed) or a transactional outbox | Durable retries without new infrastructure |
-| OCR | Apple Vision / VisionKit on-device for capture; server-side docTR or PaddleOCR for uploaded scans | Keeps raw images on the device when possible |
+| OCR | Evaluate existing Tesseract pipeline and alternatives | Improve accuracy while preserving review and privacy |
 | Document classification | Small Hugging Face classifier, evaluated and pinned | Cheap, auditable |
-| Charts | Swift Charts | Native, accessible |
+| Charts | Extend existing Flutter charts | Consistent cross-platform, accessible visualization |
 | Health data | HealthKit, Apple Health Records (FHIR) | Standard device and record source |
 | Imaging | Orthanc (DICOMweb), OHIF viewer; MONAI later | Open standard stack |
 | Terminologies | LOINC, UCUM now; RxNorm and ATC for medicines; ICD-10 and SNOMED CT (licence review) | Learned and reviewed, never shipped |
@@ -166,14 +168,9 @@ Capture is a persistent "+" action (scan, upload, add reading, log symptom, take
 
 ## 7. Delivery order (summary)
 
-1. Verify the learned-knowledge flow on the rebuilt stack; compile and run the iOS app.
-2. Identity (OIDC) and governance basics: access log, export, deletion.
-3. Command centre, timeline and biomarker trends with learned ranges.
-4. OCR, classification and cross-document search.
-5. Personal AI upgrades: summaries, comparison, consultation prep; MCP client.
-6. Research investigations, guideline sources, evidence grading.
-7. HealthKit and devices; lifestyle and symptom journal; environment.
-8. Care navigation and sharing.
-9. Body observation, then medical imaging, each as a separately reviewed domain.
+1. Validate existing document, summary, identity and governance flows end to end.
+2. Design and implement user-confirmed concern grouping and source-aware cross-feature views.
+3. Evaluate evidence, explainers and analytics with clinical and privacy review.
+4. Scope external health integrations and medical imaging separately.
 
 Detailed checklists are in [milestones.md](./milestones.md).

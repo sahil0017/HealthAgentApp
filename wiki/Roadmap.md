@@ -2,15 +2,11 @@
 
 Detailed checklist: `architecture/milestones.md`.
 
-**Next**
-- iOS parity: token refresh, devices screen, `X-Cortex-Client: ios`, Google URL scheme, tests
-- Web screens: devices, goals, history, biomarker compare and manual entry, admin knowledge review
-- Unit tests inside `biomarkers`, `governance` and `vault`
-- Clear TODOs in `healthai` and `vault`
+**Proposals, not yet shipped**
+- User-confirmed health-concern threads connecting existing records and prescriptions; undecided data remains accessible without a link.
+- Expand the existing Today summary into a 360 view, with provenance, missing-data states and links to source records.
+- Clinician-reviewed visual explainers and India-relevant evidence, with licensing and language review.
+- Evaluate evidence retrieval and groundedness; clinical forecasts and risk calculators require independent validation and regulatory assessment before any release.
+- External wearable connectors, imaging and ABDM as separately consented integrations.
 
-**Later**
-- Observability: metrics, tracing, alerts
-- Real device integrations (HealthKit and vendors)
-- Notification delivery for follow-ups
-- Lifestyle and symptoms, environment, care navigation, imaging
-- Optional Firebase Auth for phone OTP and email sign-in
+Existing OCR, lifestyle, environment, insights and care-navigation features still require end-to-end testing and production-readiness review. See `architecture/milestones.md` and `modules/README.md` for detail.

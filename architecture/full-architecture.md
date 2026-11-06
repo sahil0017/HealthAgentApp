@@ -50,22 +50,22 @@ flowchart LR
     API -. future consented workflows .-> Vision
 ```
 
-The diagram includes the intended extension points. Today, the Go API serves a read-only MCP endpoint (scoped tokens) and pgvector retrieval over the user's verified records; the AI service embeds text and can use Ollama for explanations. The AI service does not yet act as an MCP client, and external research, HealthKit, camera analysis, and medical imaging are not connected.
+The diagram includes intended extension points. The Go API serves read-only MCP endpoints and profile-scoped retrieval; the AI service supports embeddings, configurable model integrations and public research fetchers. Camera analysis, external wearable connectors and medical imaging are not established production integrations.
 
 ## Major components and boundaries
 
 | Component | Responsibility | Current status |
 |---|---|---|
-| iOS application | Profile selection, consent controls, report upload and review, observation timeline, and question interface. Store the local bootstrap token in Keychain. | **Implemented** SwiftUI shell; HealthKit and camera integrations are not wired. |
-| Go API | Own the authenticated API boundary, profile ownership checks, consent enforcement, document and observation workflows, and database/object-store access. | **Implemented** with a local development bearer identity only. |
-| Go document worker | Claim queued documents, read private objects, call the extraction service, and persist processing state and extraction candidates. | **Implemented** as an in-process polling worker using row locks and `SKIP LOCKED`; it is not a transactional outbox or a separate deployable worker yet. |
-| Python AI service | Provide a separately deployable boundary for document extraction and question responses. | **Implemented** as FastAPI with conservative text extraction and a transparent records summary; no LLM is enabled. |
-| Agent orchestration | Run explicit, stateful workflows; route to specialist capabilities; collect evidence; apply validation and abstention; compose a sourced response. | **Planned**. LangGraph is the preferred candidate, not an installed dependency today. |
-| MCP clients and servers | Expose narrowly scoped tools and resources to workflows through a standard protocol. | **Planned**. MCP is not a job queue and must not grant unrestricted database or filesystem access. |
-| Model registry and runtimes | Track evaluated model versions and route tasks to replaceable inference backends. | **Partially represented** by the Python model-record contract; no models are registered or loaded. |
+| Flutter application | Profile selection, consent, report review, trends and assistant UI. | **Implemented** mobile client; not a claim of production validation. |
+| Go API | Own authentication, profile ownership checks, consent, document workflows and data access. | **Implemented**; Google and Apple identity and local development configuration exist. |
+| Go worker | Process document and research jobs and persist state. | **Implemented** as a separate service with a durable outbox and retries. |
+| Python AI service | Provide extraction, retrieval and question workflows. | **Implemented** as FastAPI; configured model availability varies by deployment. |
+| Agent orchestration | Bound workflows, collect evidence and compose responses. | **Partial**: LangGraph workflows and a Copilot SDK agent exist; clinical validation remains open. |
+| MCP clients and servers | Expose narrowly scoped tools and resources. | **Partial**: read-only, scoped API tools exist; MCP is not a job queue. |
+| Model registry and runtimes | Track model versions and route inference. | **Partial**: configuration supports multiple runtimes; deployment and evaluation are separate work. |
 | PostgreSQL | Store profiles, consents, document metadata, extracted observations, and audit events. Add durable workflow and retrieval records as those capabilities are built. | **Implemented** with `pgvector` enabled. |
 | Private object storage | Store original reports and other private binary assets; expose them only through authorized API paths. | **Implemented** with SeaweedFS (S3-compatible) for local development. |
-| External research and device integrations | Retrieve approved evidence or consented measurements through bounded adapters. | **Planned**. |
+| External research and device integrations | Retrieve public evidence or consented measurements through bounded adapters. | **Partial**: research fetchers and device data APIs exist; vendor integrations need separate onboarding. |
 | Observability | Correlate API, worker, AI, tool, model, and research activity without leaking health content into logs. | **Planned**; structured application logs exist in the Go service. |
 
 ### Service ownership
@@ -74,20 +74,20 @@ The diagram includes the intended extension points. Today, the Go API serves a r
 - **Python is an execution boundary, not a second system of record.** It receives only the data needed for a specific operation and returns candidates, evidence, and workflow results.
 - **PostgreSQL is the durable source of truth.** Redis may be introduced for caching or ephemeral coordination only when justified; it must not become the source of truth for health data or durable jobs.
 - **Object storage holds binary content.** The database stores object keys and metadata, not public object URLs.
-- **The iOS client is untrusted.** Client-side consent UX is not a replacement for server-side authorization and consent enforcement.
+- **The client is untrusted.** Client-side consent UX is not a replacement for server-side authorization and consent enforcement.
 
 ## Technology direction
 
 | Layer | Direction | Notes |
 |---|---|---|
-| iOS | Swift 6, SwiftUI; HealthKit when implemented | HealthKit access is separately permissioned and must preserve source and measurement metadata. |
+| Client | Flutter and Dart | Health integrations need separate permissions and must preserve source and measurement metadata. |
 | Core API | Go + Chi | Profile-scoped business APIs, authorization, consent, audit, and durable data access. |
-| AI API and workflows | Python + FastAPI; LangGraph candidate | Keep workflow definitions explicit and versioned. Do not introduce autonomous agent-to-agent loops. |
+| AI API and workflows | Python + FastAPI and LangGraph | Keep workflow definitions explicit and versioned. Do not introduce autonomous agent-to-agent loops. |
 | Tool protocol | MCP | Use for bounded tool/resource discovery and invocation, not persistence or background scheduling. |
 | Model ecosystem | Hugging Face Hub, Transformers, Sentence Transformers | The Hub is a discovery and artifact ecosystem, not an inference runtime or clinical validation. |
 | Inference | Transformers, vLLM, or Ollama candidates | Select a runtime per deployment and hardware profile; keep the application behind a model adapter. |
 | Retrieval | PostgreSQL + pgvector; BGE/E5 embedding candidates; cross-encoder reranker candidate | Pin embedding and reranker revisions and evaluate retrieval quality. |
-| Document processing | Existing selectable-text extraction; OCR/layout-aware processing candidates such as PaddleOCR | OCR and layout models are not currently wired. Extracted content remains untrusted until reviewed. |
+| Document processing | Selectable-text extraction and Tesseract OCR | OCR depends on installed tools; extracted content remains untrusted until reviewed. |
 | Vision | PyTorch, OpenCV, MediaPipe candidates | No disease diagnosis from ordinary phone images. Image processing requires a specific, consented, evaluated use case. |
 | Medical imaging | DICOM, MONAI, and OHIF candidates | Separate future capability; not implied by ordinary document upload. |
 | Data and storage | PostgreSQL/pgvector and S3-compatible private storage (SeaweedFS locally) | Keep original files private and all access owner/profile scoped. |
@@ -100,17 +100,17 @@ Technology names in this table are design candidates unless identified as curren
 
 The repository currently supports this path:
 
-1. The iOS app connects to the Go API using a local bootstrap bearer token.
+1. The Flutter app authenticates with the Go API and creates or selects a profile.
 2. The user creates or selects a profile and records health-data and AI-processing consent.
-3. Go checks profile ownership and both consent purposes before accepting a PDF or plain-text report.
+3. Go checks profile ownership and applicable consent before accepting a report.
 4. The original file is stored in the private object-store bucket. PostgreSQL stores its metadata and a `queued` status.
-5. The Go worker claims a queued document, reads the object, and sends it to the Python extraction endpoint.
-6. Python extracts selectable PDF/plain text and proposes a small set of biomarker candidates. It does not interpret clinical meaning.
-7. Go stores the extraction result as `review_required`. The user can inspect and edit candidates in the iOS app.
+5. The Go worker claims a queued document, extracts text and can use Tesseract for scanned PDFs and images.
+6. Extraction produces biomarker candidates and warnings; OCR availability and input quality affect the result.
+7. Go stores the extraction result for review. The user can inspect and edit candidates in the Flutter app.
 8. On explicit approval, Go writes observations and the approval state in a transaction and records an audit event.
-9. For questions, Go supplies the profile's approved observations to Python. Python returns a deterministic summary, sources, limitations, and workflow labels. It does not call an LLM or external research source.
+9. The schema supports report-sourced history, but the history worker currently skips automatic scans. Questions and insights use profile-scoped records; configured workflows may use models or public research, subject to their consent and safety checks.
 
-The API currently has profile, consent, document, observation, and question routes under `/v1`, plus health and readiness endpoints. Users sign in with Google or Apple; the API verifies the OIDC ID token and issues a session.
+The API exposes profile, consent, document, observation and question routes under `/api/v1`, plus health and readiness endpoints. Users sign in with Google or Apple; the API verifies the OIDC ID token and issues a session.
 
 ## Target request and workflow architecture
 
@@ -216,6 +216,8 @@ External research MCP integrations should be treated as untrusted input. Retriev
 - **Medical document:** owner/profile-scoped metadata, private object key, processing status, extraction JSON, and error code.
 - **Observation:** structured value, unit, date, reference range, optional source document, and review-derived provenance.
 - **Audit event:** owner/profile context, action, resource, and limited structured details.
+- **History and tracking:** history entries, report-linked history scans, goals, follow-ups, lifestyle and symptoms.
+- **Prescriptions and research:** prescription items and dose logs; investigations can contain approved sources, notes or web-source metadata.
 
 The Go API is the only service that reads or writes these health-record tables. Python receives request-scoped inputs and returns results to Go.
 
@@ -226,9 +228,9 @@ As capabilities are implemented, add durable representations for:
 - Workflow/job runs: workflow and policy versions, status, timestamps, retry/attempt data, and safe error codes.
 - Agent/tool execution records: tool and schema version, bounded inputs/outputs or references, authorization outcome, and correlation ID.
 - Model registry and evaluation results: immutable model revision, license, intended use, runtime, quantization, evaluation dataset/version, safety results, approval state, and rollback target.
-- Research sources and citations: canonical identifier/URL, publisher/source type, publication date, retrieval time, source text/abstract reference, and citation-to-answer linkage.
-- Retrieval metadata: embedding model/revision, chunking configuration, source reference, and vector; embeddings are derived data and must be rebuildable.
-- Device measurements and imaging metadata only when a specific consented integration is designed.
+- Expand provenance, evaluation and lifecycle management for existing research and retrieval data.
+- Condition/concern threads and user-confirmed links between records; no such cross-record link table exists today.
+- Imaging metadata only when a specific consented integration is designed.
 
 Keep documents and other large binaries in private object storage. Do not place model weights, raw records, or user files in the source repository. Apply retention, deletion, backup, and encryption policies to both database rows and referenced objects.
 
@@ -305,7 +307,7 @@ Clinical reference data is learned, never shipped. The AI service exposes `POST 
 | Phase | Scope | Exit condition |
 |---|---|---|
 | 1. Secure foundation | Go API, iOS shell, PostgreSQL, private object storage, profile ownership, consent, and local identity boundary. | The local vertical slice works; production identity is explicitly required before shared deployment. |
-| 2. Reliable document workflow | Harden upload/extraction/review; add OCR only after choosing and evaluating a use case; define durable job/outbox semantics before scaling workers. | Processing is recoverable and observable; extracted candidates remain user-reviewed. |
+| 2. Reliable document workflow | Harden and evaluate upload, OCR, extraction and review; validate outbox behavior under load. | Processing is recoverable and observable; extracted candidates remain user-reviewed. |
 | 3. Retrieval and model governance | Model registry, evaluation harness, embedding/retrieval pipeline, source provenance, and local inference experiments. | A pinned model/retriever has measurable evaluation results and documented limitations; inference stays disabled otherwise. |
 | 4. Controlled orchestration | Add bounded LangGraph workflows and internal MCP tools with backend-enforced identity, consent, and audit. | Tool calls are allowlisted, scope-checked, bounded, and covered by security and workflow tests. |
 | 5. Records and lab intelligence | Add records and lab workflows over approved data; preserve units, dates, source documents, and uncertainty. | Responses cite user records and abstain on unsupported conclusions. |

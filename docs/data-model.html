@@ -79,7 +79,7 @@
 <header>
   <h1>CORTEX DATA MODEL</h1>
   <button class="only-small" id="toggleList">☰ Tables</button>
-  <span class="subtitle" style="color:var(--mute)">39 tables · from migrations 001–023</span>
+  <span class="subtitle" style="color:var(--mute)">Selected tables · migrations 001–025</span>
   <span class="sp"></span>
   <label class="chk"><input type="checkbox" id="own"> Show profile ownership links</label>
   <button id="reset">Reset layout</button>
@@ -121,7 +121,7 @@ const GROUPS = {
 const T = [
  ['users','identity','Authenticated accounts. The id is the owner identity used throughout the system.',['id:pk','status','created_at','updated_at']],
  ['api_sessions','identity','Bearer sessions. Only the SHA-256 hash of the token is stored.',['token_hash:pk','id','user_id','device','user_agent','started_at','last_seen_at','expires_at','revoked_at','created_at']],
- ['profiles','identity','Root of all personal health data. One account can hold several profiles. Children reference (id, owner_id) so cross-owner links are impossible.',['id:pk','owner_id','display_name','timezone','measurement_system','date_of_birth','sex','blood_group','height_cm','created_at']],
+ ['profiles','identity','Root of personal health data. One account can hold several profiles. Some, but not all, child tables enforce composite profile-owner foreign keys.',['id:pk','owner_id','display_name','timezone','measurement_system','date_of_birth','sex','blood_group','height_cm','created_at']],
  ['consents','identity','Purpose-based, revocable consent (e.g. report storage, document processing, AI processing).',['id:pk','profile_id','purpose','granted','policy_version','recorded_at','expires_at','revoked_at']],
  ['audit_events','identity','Append-only record of security-relevant actions, with limited structured details.',['id:pk','owner_id','profile_id','action','resource_type','resource_id','details','created_at']],
  ['retention_policies','identity','Per-profile retention windows for AI history and device readings.',['profile_id:pk','ai_history_days','device_readings_days','updated_at','last_applied_at']],
@@ -147,9 +147,10 @@ const T = [
  ['reference_ranges','knowledge','Approved reference ranges per biomarker, unit, sex and age band.',['id:pk','biomarker_code','unit','sex','age_min','age_max','low','high','source','knowledge_entry_id','approved_by','approved_at']],
  ['unit_conversions','knowledge','Approved unit conversion factors per biomarker.',['id:pk','biomarker_code','from_unit','to_unit','factor','source','knowledge_entry_id','approved_by','approved_at']],
  ['research_investigations','knowledge','A person\'s saved research question about their health.',['id:pk','profile_id','owner_id','title','question','status','created_at','updated_at','last_refreshed_at']],
- ['research_investigation_items','knowledge','Evidence pinned to an investigation: sources, excerpts and notes.',['id:pk','investigation_id','kind','source_id','excerpt','note','created_at']],
+ ['research_investigation_items','knowledge','Evidence pinned to an investigation: approved sources, notes or discovered web sources.',['id:pk','investigation_id','kind','source_id','excerpt','note','web_title','web_url','web_publisher','web_year','web_kind','created_at']],
 
- ['history_entries','tracking','Medical history: conditions, procedures and the like, with dates.',['id:pk','owner_id','profile_id','kind','title','notes','started_on','ended_on','status','created_at','updated_at']],
+ ['history_entries','tracking','Medical history entered by a person or found in a report; source_document_id is optional.',['id:pk','owner_id','profile_id','kind','title','notes','started_on','ended_on','status','source','source_document_id','created_at','updated_at']],
+ ['history_scans','tracking','Report-history scan queue; the current worker skips automatic inference.',['id:pk','document_id','profile_id','owner_id','status','attempts','run_after','created_at','updated_at']],
  ['goals','tracking','Target ranges a person sets for a biomarker.',['id:pk','owner_id','profile_id','biomarker_code','title','target_min','target_max','unit','status','created_at','updated_at']],
  ['follow_ups','tracking','Reminders and follow-up tasks with due dates.',['id:pk','owner_id','profile_id','kind','title','notes','due_on','status','completed_at','created_at','updated_at']],
  ['symptom_entries','tracking','Symptoms with severity and timing.',['id:pk','profile_id','owner_id','name','severity','started_at','ended_at','notes','created_at','updated_at']],
@@ -187,6 +188,9 @@ const FK = [
  ['unit_conversions','knowledge_entry_id','knowledge_entries','id',0,'evidence (SET NULL)'],
  ['research_investigation_items','investigation_id','research_investigations','id',0,'item of'],
  ['research_investigation_items','source_id','research_sources','id',0,'cites'],
+ ['history_entries','source_document_id','medical_documents','id',0,'found in'],
+ ['history_scans','document_id','medical_documents','id',0,'scans'],
+ ['history_scans','profile_id','profiles','id',0,'belongs to'],
  ['goals','biomarker_code','biomarker_catalog','code',0,'targets'],
  ['device_readings','device_id','devices','id',0,'reading from'],
  ['device_syncs','device_id','devices','id',0,'sync of'],
@@ -225,7 +229,7 @@ const POS = {
   reference_ranges:[900,520], unit_conversions:[900,590], knowledge_entries:[1180,520], research_tasks:[1180,440],
   research_sources:[1180,600], research_chunks:[1180,680], research_investigations:[620,700], research_investigation_items:[900,700],
   // tracking (bottom)
-  history_entries:[330,560], follow_ups:[330,630], symptom_entries:[330,700], lifestyle_logs:[330,770],
+  history_entries:[330,560], history_scans:[620,560], follow_ups:[330,630], symptom_entries:[330,700], lifestyle_logs:[330,770],
   health_questions:[330,840], goals:[620,860], devices:[620,950], device_readings:[900,930], device_syncs:[900,1000],
   prescriptions:[40,880], prescription_items:[40,960], dose_logs:[40,1040],
 };
@@ -372,7 +376,7 @@ const tour = [...T].map(t => t[0]);
 const tourOrder = ['profiles','users','api_sessions','consents','audit_events','retention_policies','profile_shares','agent_permissions','agent_actions',
  'medical_documents','outbox_events','document_extraction_runs','document_extraction_pages','document_extraction_candidates','document_page_chunks','biomarker_catalog','observations','observation_revisions','record_chunks',
  'knowledge_entries','research_tasks','research_sources','research_chunks','reference_ranges','unit_conversions','research_investigations','research_investigation_items',
- 'history_entries','goals','follow_ups','symptom_entries','lifestyle_logs','health_questions','devices','device_readings','device_syncs','prescriptions','prescription_items','dose_logs'];
+ 'history_entries','history_scans','goals','follow_ups','symptom_entries','lifestyle_logs','health_questions','devices','device_readings','device_syncs','prescriptions','prescription_items','dose_logs'];
 let ti = -1;
 function tourGo(i) { ti = Math.max(0, Math.min(tourOrder.length-1, i)); document.getElementById('tourpos').textContent = `${ti+1} / ${tourOrder.length}`; select(tourOrder[ti], true); }
 document.getElementById('startTour').onclick = () => { document.getElementById('tour').style.display = 'flex'; view.k = Math.max(view.k, 0.9); tourGo(0); };

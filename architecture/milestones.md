@@ -1,5 +1,7 @@
 # CORTEX milestones
 
+This document combines historical checklists and future milestones. Older unchecked entries are not authoritative evidence that a feature is missing; compare the current implementation in [modules/README.md](../modules/README.md). Clinical validation and production readiness are separate from implementation.
+
 Tracks what remains to deliver the end-to-end system in [full-architecture.md](./full-architecture.md). Status: `[x]` done and tested, `[~]` built but not verified end to end, `[ ]` not started. Update this file in the same commit that changes a status.
 
 ## M1. Secure foundation: done
@@ -14,9 +16,9 @@ Tracks what remains to deliver the end-to-end system in [full-architecture.md](.
 - [x] Signed upload, worker extraction, review, approve into observations
 - [x] Catalog-driven extraction with reference range and report date read from the report
 - [x] Unknown labels queue research
-- [ ] OCR for images and scanned PDFs (choose engine, evaluate, add review warnings)
-- [ ] Durable job/outbox semantics before scaling workers
-- [ ] Go tests for the worker and object-store packages
+- [~] OCR for images and scanned PDFs uses Tesseract; evaluate accuracy and review warnings
+- [~] Durable job/outbox semantics exist; validate behavior before scaling workers
+- [~] Worker and object-store tests exist; assess end-to-end coverage
 
 ## M3. Retrieval and models: done
 
@@ -183,12 +185,11 @@ Maps the 12 product areas in [requirements.md](./requirements.md) to milestones.
 
 ## Suggested order
 
-1. Verify M4 on the rebuilt stack, then commit any fixes.
-2. Compile and run the iOS app (M9), since nothing there has been tested.
-3. Identity (M6) before any real user data.
-4. Learned reference ranges (M4) and range comparison (M7).
-5. OCR (M2), MCP client (M5), observability and CI (M11).
-6. Devices, vision and imaging (M10, M12) last, each as a separate consented domain.
+1. Validate the existing report, history, prescription, insight and consent flows end to end on supported devices.
+2. Resolve privacy, security, clinical evaluation and deployment requirements before handling real patient data.
+3. Design user-confirmed concern threads and record links before implementing an integrated dashboard.
+4. Evaluate evidence retrieval and model outputs with clinician review; treat lab prediction and risk scores as research until validated.
+5. Scope external devices, imaging and ABDM separately, including consent and provenance.
 
 ## M18. Web app (React + TypeScript): superseded by M9 (Flutter)
 

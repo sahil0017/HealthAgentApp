@@ -10,7 +10,7 @@
 
 # Sehat (CORTEX) — your personal health record, explained
 
-Sehat helps people keep their own medical records in one place and understand them. You upload lab reports and prescriptions, review what was read from them, and then ask questions in plain language. Every answer cites your records or a named source, and says how sure it is.
+Sehat helps people organize and understand their medical records. Upload reports, review extracted values and ask questions in plain language. Answer workflows can include sources, confidence and limitations; generated content can be incomplete or incorrect.
 
 It is built for patients and families, with India in mind: one profile per family member and plain-language explanations. It explains and organizes. It does not diagnose, prescribe or change doses.
 
@@ -34,7 +34,7 @@ It is built for patients and families, with India in mind: one profile per famil
 | **Understand** | Ask questions using approved records and retrieved research sources. |
 | **Stay in control** | Manage data permissions; keep original reports in private object storage. |
 
-### Architecture, modules 01–22
+### Architecture
 
 Status per module lives in [`modules/README.md`](./modules/README.md).
 
@@ -63,12 +63,14 @@ The Go service is the authorization and data-access boundary. Python receives on
 
 ### Flutter app (iOS + Android)
 
-- `app/` is one Flutter codebase for iPhone and Android, covering the 46-screen design in `design/screens.html`.
+- `app/` is a Flutter client for iPhone and Android. [`design/screens.html`](./design/screens.html) is a design reference, not a guarantee of implemented screens.
 - Real Google / Apple sign-in, Face ID / biometric app lock, skeleton loading and an offline banner.
 - Today, Vault (scan or upload, review with evidence, approve), Health (biomarkers, Vitals, phone health data), Ask AI with cited answers, Lifestyle with patterns (correlation, not cause), care plan, visit prep and summary (PDF export), Privacy centre.
 - Agent tab: starter questions built from your own record (flagged labs, latest result, active symptom), not fixed text.
 - Prescriptions: save a prescription, see each medicine's daily schedule and log doses.
-- Nearby care and alerts using GPS (approximate by default; precise only for directions and sharing, never sent to Sehat), emergency contacts and offline Medical ID.
+- Lab results can be viewed by report or by test. The schema supports report-sourced history, but the history worker currently skips automatic scans.
+- The Today summary combines wellbeing, habit trends, lab results and care-plan information. Its score and simple habit projections are descriptive product features, not validated clinical predictions.
+- Nearby care and alerts, emergency contacts and offline Medical ID. Location features require user permission; review each flow and its data handling before deployment.
 - Air and weather, and medicine look-up screens.
 - Run it with `cd app && flutter pub get && flutter run` on a connected phone; test with `flutter analyze && flutter test`.
 
@@ -98,12 +100,12 @@ Wearables (Oura, Withings, Google Health), ABDM and FHIR need developer credenti
 ### AI and research
 
 - FastAPI service with LangGraph workflows for Medical Records, Lab Intelligence, and Health Research.
-- Conservative text-based report extraction; scanned-document OCR is not wired up.
+- The Go worker extracts text and can use Tesseract for images and scanned PDFs; OCR availability and document quality affect results, which require review.
 - 384-dimensional embeddings with a deterministic fallback or pinned Hugging Face model; optional reranking.
 - Emergency and self-harm wording is triaged before any retrieval or model call; answers carry a confidence level and uncertainty note.
 - Profile-scoped record retrieval and curated research retrieval with source metadata and limitations.
 - Optional local explanation generation with safety checks; recorded facts remain separate from generated explanations.
-- Optional agent mode using the GitHub Copilot SDK (`CORTEX_COPILOT_GITHUB_TOKEN`, `CORTEX_COPILOT_MODEL`) or a local Ollama model (`CORTEX_OLLAMA_URL`, `CORTEX_OLLAMA_MODEL`). The Copilot agent can only call read-only record tools.
+- Optional Copilot SDK and Ollama integrations are configured separately (`CORTEX_COPILOT_GITHUB_TOKEN`, `CORTEX_COPILOT_MODEL`, `CORTEX_OLLAMA_URL`, `CORTEX_OLLAMA_MODEL`). Availability and consent depend on the workflow; the Copilot agent's record tools are read-only.
 - Allowlisted lookups for public sources such as MedlinePlus, LOINC, UCUM, and PubMed. New knowledge remains pending until administrator review.
 
 ## Architecture
@@ -121,7 +123,7 @@ Wearables (Oura, Withings, Google Health), ABDM and FHIR need developer credenti
 ## Privacy and current limits
 
 - Owner/profile authorization and consent checks are enforced by the API.
-- Original reports stay in private object storage. External research lookups use public terms, not uploaded report text.
+- Original reports stay in private object storage. Review the inputs, consent and provider handling of every external research and model workflow before using real patient data.
 - Extracted values require human approval before they become health observations.
 - Local development authentication must be replaced with a verified identity provider before any shared deployment.
 - Wearable sync, camera analysis, medical imaging, ABDM and FHIR are not connected yet.
@@ -129,7 +131,7 @@ Wearables (Oura, Withings, Google Health), ABDM and FHIR need developer credenti
 
 ## Run locally
 
-**Requirements:** Docker Compose, Go 1.22+, Python 3.11+, and Flutter 3.x (with Xcode for iPhone or the Android SDK for Android).
+**Requirements:** Docker Compose, the Go version in [`backend/go.mod`](./backend/go.mod), Python and Flutter (see [`wiki/Getting-Started.md`](./wiki/Getting-Started.md)), with Xcode for iPhone or the Android SDK for Android.
 
 1. Generate local secrets: `scripts/bootstrap-env`
 2. Start the services: `docker compose up --build`
@@ -145,7 +147,7 @@ For a physical phone, set `S3_PUBLIC_ENDPOINT` to an address reachable from the 
 - [`backend/`](./backend/) — Go API, worker, OpenAPI contract, and migrations.
 - [`cortex-ai/`](./cortex-ai/) — FastAPI service, workflows, retrieval, safety checks, and tests.
 - [`app/`](./app/) — Flutter client for iOS and Android.
-- [`design/screens.html`](./design/screens.html) — the 46-screen design.
+- [`design/screens.html`](./design/screens.html) — screen design reference and current navigation overview.
 - [`e2e/`](./e2e/) — end-to-end tests against the Docker stack.
 - [`docs/assets/cortex-workflow.svg`](./docs/assets/cortex-workflow.svg) — animated technical workflow.
 - [`.github/workflows/`](./.github/workflows/) — parallel CI (Go matrix, Python, Docker builds, Flutter analyze and tests, end-to-end) and nightly regression.
@@ -164,12 +166,12 @@ Contributions are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local
 
 ## Roadmap (designed, not built)
 
-These are design proposals. None of them is implemented yet; the mockups are not in the repository.
+These are proposals, not commitments or finished capabilities. Some underlying dashboard, insight and evidence features already exist; the integrated additions below do not.
 
 - **Condition threads:** group labs, reports, prescriptions, symptoms and follow-ups under one condition (existing or new), with user-confirmed links. Allergies, vaccinations and family history stay person-level.
-- **360 dashboard:** one Health-tab view with trends, range bars, a body map, dose adherence, lifestyle and insights that link to the records behind them.
+- **Expanded 360 dashboard:** integrate condition threads, trends, a body map and dose adherence with existing summary and insight views.
 - **Visual explainers:** what each organ and test does, why a doctor orders it, and how each medicine works, in English and Hindi, with reviewed content.
-- **Analytics and forecasts:** Python trend forecasts of a person's own results with a range and sample size, shown only when there is enough data. No diagnosis prediction.
+- **Analytics and forecasts:** explore lab forecasts only after clinical validation, calibration, privacy and regulatory review. Existing simple habit projections are not clinical forecasts.
 - **Evidence-based answers:** live lookups to public sources with citations, a groundedness check on generated text, and a small reviewed set of Indian guidance. No large local corpus.
 - **Model options:** Copilot first with a small open-model fallback (for example MedGemma 4B on CPU), subject to licence and terms checks.
 
@@ -177,4 +179,4 @@ Task breakdown: [`architecture/flutter-technical-tasks.md`](./architecture/flutt
 
 ## Planned, not shipped
 
-Scanned-document OCR, HealthKit and device integrations, camera/vision features, medical imaging, and production identity need separate consent, provenance, evaluation, and security work before they can be considered product capabilities.
+External wearable connectors, camera/vision analysis, medical imaging, ABDM, FHIR and production deployment require additional consent, provenance, evaluation and security work. OCR is implemented but requires review and validation for real-world documents.

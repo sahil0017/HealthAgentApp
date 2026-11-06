@@ -1,8 +1,8 @@
 # CORTEX data model
 
-Derived from [`backend/internal/store/migrations/`](../backend/internal/store/migrations/) (001–023). Key columns only.
+Derived from [`backend/internal/store/migrations/`](../backend/internal/store/migrations/) through 025. Key columns only.
 
-**Ownership rule:** `profiles` is the root of all personal health data. Child tables carry `(profile_id, owner_id)` with a composite FK to `profiles(id, owner_id)` (cascade delete), so a row can never point at a profile owned by someone else. `owner_id` is the identity string from `users.id`; it is a logical link, not a foreign key.
+**Ownership:** `profiles` is the root of personal health data. Many profile-scoped tables have a composite `(profile_id, owner_id)` foreign key to `profiles(id, owner_id)`; some child tables instead reference a parent record or have a profile-only foreign key. Check each migration rather than assuming identical database constraints. `owner_id` is the identity string from `users.id`; the profile ownership relationship is a logical link, not a foreign key.
 
 ## 1. Identity, consent and audit
 
@@ -196,4 +196,12 @@ erDiagram
         text slot }
 ```
 
-`history_entries`, `follow_ups`, `symptom_entries` and `lifestyle_logs` have no links beyond the profile.
+### Report-derived history and investigations
+
+Migration [`025_history_from_reports.sql`](../backend/internal/store/migrations/025_history_from_reports.sql) adds `history_entries.source` (`user` or `report`) and nullable `source_document_id`. A `history_scans` row tracks a document's scan status, attempts and retry time; the current worker marks queued scans as skipped, so it does not automatically infer history. Entries are deduplicated by profile, kind and normalized title. Deleting a source document clears the history entry's document reference; it does not delete the entry.
+
+Migration [`024_research_web_sources.sql`](../backend/internal/store/migrations/024_research_web_sources.sql) extends `research_investigation_items` with `web_title`, `web_url`, `web_publisher`, `web_year` and `web_kind`. Items may represent an approved source, a note or a discovered web source; a web URL is unique within an investigation.
+
+`prescription_items` belong to a prescription, and `dose_logs` identify a taken dose by item, day and slot. These records are profile-scoped, but are not currently grouped by diagnosis. Apart from the report provenance above, history, follow-ups, symptoms and lifestyle entries do not have a general cross-record condition link. Condition threads and encounter grouping remain proposals, not database tables.
+
+The migrations under [`backend/internal/store/migrations/`](../backend/internal/store/migrations/) are authoritative; this document and the [interactive diagram](./data-model.html) summarize them rather than listing every column and constraint.

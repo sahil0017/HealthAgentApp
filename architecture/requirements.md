@@ -2,7 +2,7 @@
 
 The twelve product areas the full platform must provide. Each area lists its capabilities, the status today, and the hard constraints. Delivery order and tracking live in [milestones.md](./milestones.md); how it is built lives in [technical-architecture.md](./technical-architecture.md).
 
-Status: **Built** (works and tested), **Partial**, **Not started**.
+The lists below are product requirements, not a live implementation checklist. Historical section labels and "Missing" bullets may be stale; see [modules/README.md](../modules/README.md) and [milestones.md](./milestones.md) for implementation status. Feature existence does not imply clinical validation or production readiness.
 
 ## Cross-cutting rules
 
@@ -17,7 +17,7 @@ These apply to every area and are acceptance criteria, not features.
 7. **Private by default.** Health content never appears in logs; only public terms leave the system for research; external model calls require explicit consent.
 8. **Audited.** Access, AI use, tool calls and sharing are recorded and visible to the user.
 
-## 01. Personal Health Command Centre — Not started
+## 01. Personal Health Command Centre — Partial
 
 - Unified overview ("Today"): latest key values, what changed, what needs attention
 - Personal profile and medical history (conditions, allergies, surgeries, family history)
@@ -32,14 +32,14 @@ These apply to every area and are acceptance criteria, not features.
 Built: signed upload, private storage, versions, worker extraction, review and approval, audit.
 
 - Lab, pathology, radiology reports; prescriptions and medication history; discharge summaries; consultation notes; certificates
-- **Missing:** OCR for scans and photos, automatic document classification, cross-document search, correction history view, medication and history extraction
+- **Current:** OCR for scans and photos, document search and medication extraction have implementations. Automatic report-history inference is disabled; accuracy, broader classification and review UX need further validation.
 
 ## 03. Biomarker & Longitudinal Intelligence — Partial
 
 Built: observations, history, catalog learned by the research agent, units validated against UCUM, reference range captured from the report.
 
 - CBC, glucose, HbA1c, lipids, liver, kidney, vitamins, hormones, others
-- **Missing:** trend comparison charts, learned lab-specific ranges, unit normalisation, change detection across tests and dates, measurement-frequency and missing-data detection, source confidence display
+- **Current:** trend and report comparison, range and unit support have implementations; lab-specific coverage and clinical validation remain ongoing.
 
 ## 04. Multimodal Body Observation Intelligence — Not started
 
@@ -48,7 +48,7 @@ Built: observations, history, catalog learned by the research agent, units valid
 - Image-quality assessment, body-region mapping, photo comparison over time
 - **Constraint:** non-diagnostic observations only. The camera cannot replace imaging or laboratory testing. Separate consent, on-device processing first, and a deletion path.
 
-## 05. Connected Diagnostics Intelligence — Not started
+## 05. Connected Diagnostics Intelligence — Partial
 
 - Apple HealthKit; smartwatch and activity data
 - Blood pressure monitors, glucose meters, pulse oximeters, ECG-capable devices, scales, thermometers
@@ -67,29 +67,29 @@ Built: observations, history, catalog learned by the research agent, units valid
 
 Built: LangGraph workflow, hybrid retrieval over approved records, deterministic lab facts, safety policy, optional Ollama explanation, citations, abstention.
 
-- **Missing:** history summaries, report-to-report comparison, missing-information detection, doctor consultation summaries, conflicting-evidence explanation, MCP-client tool use
+- **Current:** visit summaries, report comparisons and read-only MCP tools exist. Evidence conflict handling and clinical evaluation need further work.
 
 ## 08. Agentic Health Research Intelligence — Partial
 
 Built: allowlisted research agent (LOINC, UCUM, MedlinePlus, PubMed), review queue, approved literature cited as `[R#]`.
 
-- **Missing:** guideline sources, study comparison, systematic-review summaries, evidence-quality grading, publication-date and emerging-finding tracking, contradiction detection, cited research reports, saved investigations
+- **Current:** saved investigations and live web-source metadata exist; systematic evidence grading and contradiction detection remain future work.
 
-## 09. Lifestyle & Symptom Intelligence — Not started
+## 09. Lifestyle & Symptom Intelligence — Partial
 
 - Symptom journal; nutrition and food diary; sleep; exercise and activity; stress and wellbeing
 - Medication and supplement records
 - Contextual correlations across available data, labelled as correlation not cause
 - Personal goals and routines
 
-## 10. Environmental Health Intelligence — Not started
+## 10. Environmental Health Intelligence — Partial
 
 - AQI, pollution, weather and temperature
 - Location-based context and historical exposure
 - Optional correlation with symptoms and activity; environmental alerts
 - **Constraint:** coarse location only, separate consent, no precise location stored by default.
 
-## 11. Care Navigation & Coordination — Not started
+## 11. Care Navigation & Coordination — Partial
 
 - Doctor visit preparation and question lists
 - Appointment scheduling and reminders; follow-up tracking
@@ -102,4 +102,4 @@ Built: allowlisted research agent (LOINC, UCUM, MedlinePlus, PubMed), review que
 
 Built: purpose-based consent, audit events, scoped short-lived MCP tokens.
 
-- **Missing:** access-history screen, export, account and data deletion (including embeddings and objects), family sharing controls, model and agent activity history, retention controls, provenance viewer
+- **Current:** access history, export, profile deletion, sharing and retention controls have implementations; end-to-end privacy and operational validation remain necessary.

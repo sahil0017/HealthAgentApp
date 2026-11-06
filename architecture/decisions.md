@@ -1,6 +1,8 @@
 # Architecture decisions
 
-## Initial implementation boundary
+## Initial implementation boundary (historical)
+
+The original decisions below describe the first slice, not current implementation. The client is now Flutter, local object storage is SeaweedFS, OIDC sessions and a persistent outbox exist, OCR and external research adapters are implemented, and the API exposes scoped read-only MCP tools. See [full-architecture.md](full-architecture.md) and [modules/README.md](../modules/README.md) for current context. Production security, source licensing and clinical review remain open work.
 
 The first vertical slice covers a SwiftUI app, Go + Chi API, a separate FastAPI service, PostgreSQL with pgvector enabled, and MinIO for private local object storage. It includes owner-scoped profile and consent records, report upload, queued extraction, document preview/download, human review, and approved lab observations. The Go API applies versioned transactional migrations, profile-owner composite foreign keys, extraction retries, separate liveness/readiness checks, bounded pagination and JSON requests, request IDs, and auditable state changes. The app can ask a question using approved observations.
 

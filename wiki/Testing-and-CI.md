@@ -1,6 +1,6 @@
 # Testing and CI
 
-All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run as ordered stages (1 Static analysis, 2 Unit tests, 3 Package, 4 Integration, 5 Quality gate, 6 Deploy to Railway on main, 7 Release, 8 Publish), in parallel within a stage; the `gate` job is the single required check for merging.
+The main workflow is `.github/workflows/ci.yml`. It runs static checks, unit tests, packaging, integration and a quality gate, followed by eligible release and wiki jobs. Consult the workflow for current dependencies and deployment configuration; branch protection is configured separately.
 
 | Job | What it checks |
 |---|---|
@@ -9,16 +9,11 @@ All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run as ordered
 | ai-test | Python tests for `cortex-ai` |
 | app-test | Flutter format, analyze and widget tests |
 | docker-build | api, worker and cortex-ai images build |
-| docker-integration | Full-stack smoke test |
-| e2e | Pytest end-to-end suite with 90% coverage thresholds,  |
+| e2e | Full-stack end-to-end tests with configurable coverage thresholds |
 | flaky-check | Nightly or `full=true`: repeated shuffled Go runs |
 | gate | Green only if all of the above pass |
 | wiki-sync | On `main`: publishes the `wiki/` folder to the GitHub wiki |
 
 Nightly (02:00 IST) and `workflow_dispatch` with `full=true` add the race detector and the real embedding model. Dispatch also accepts `go_min` and `py_min` coverage thresholds.
 
-Branch protection: require only `5 · Quality gate / required check`.
-
-Deploy (stage 6) runs only on pushes to `main` after the gate passes. Add a Railway project token as the `RAILWAY_TOKEN` repository secret (and a `production` environment); without it the deploy step is skipped with a warning. It deploys `cortex-ai`, `api` and `worker` with `railway up`.
-
-Release (stage 7) runs on `main` after the gate and deploy. Every green build gets a tag `v<version>-build.<run number>` (small features and fixes). A GitHub Release `v<version>` with the APK and `SHA256SUMS.txt` is created only when the pubspec version has no release yet, so bump `version:` in `app/pubspec.yaml` for a major change. The APK's versionName is the pubspec version and versionCode is the run number. Optional secrets for a real signing key: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` (otherwise the debug key is used and a warning is logged).
+Release jobs on eligible main pushes can tag builds and publish an APK release. Signing requires configured Android signing secrets; a debug-signed APK is not suitable for production distribution. Review the workflow and Railway configuration before deploying.

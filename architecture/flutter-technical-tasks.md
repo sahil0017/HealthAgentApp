@@ -1,20 +1,31 @@
 # Flutter app: technical tasks
 
-Source of truth for screens: [`design/screens.html`](../design/screens.html). Code: `app/` (Riverpod, `http`, secure storage, fl_chart).
+This is a historical design backlog, not a current implementation checklist. The mockups in [`design/screens.html`](../design/screens.html) contain proposals as well as shipped features. Verify each task against `app/`, the API and tests before using it.
 Milestones M9, M9a, M19 and M20 in [`milestones.md`](milestones.md) point here for the detail.
 
 Legend: ✅ API exists today · 🔧 API needs a change · 🆕 new backend work · 📱 phone-only (no backend).
 Sizes: S under a day, M 1 to 3 days, L 3 to 5 days.
 
-Five tabs only: Today · Vault · Health · Agent · More. Everything else is a screen reached from a card or from More.
-One profile switcher applies to every tab. The agent is reachable from every screen through a floating Ask button.
+The current shell uses five tabs: Today · Vault · Health · Agent · More, with a profile switcher. A universal floating Ask button is a design proposal, not a guarantee of current navigation.
 
 ## Current state of `app/`
 
-A scaffold exists (about 2,300 lines): `core/{api,state,theme,widgets,hardware}.dart` and `features/{auth,today,vault,health,agent,more}.dart`.
-Screens named in code: SignIn, CreateProfile, Consent, Today, Vault, Document, Health, Biomarker, Agent, More, Nearby, Lifestyle, Timeline, Goals, Investigations, Privacy.
-Nothing has been run against the live API, and there are no tests. Treat every item below as unverified until it has a widget test and a run against the compose stack.
-Xcode is not installed on the dev machine, so iOS builds are verified by CI only; use Chrome or Android for local runs.
+The Flutter app includes report review, results by report and by test, prescriptions, a wellbeing summary, insights, history, research and other screens in `app/lib/features/`. Flutter tests and CI checks exist; their presence does not establish device or production validation.
+
+## Proposed integrated health journey
+
+The following is a backlog, not a description of existing functionality. Confirm scope and data-model choices before implementation.
+
+1. **Baseline and contracts:** inspect the latest code and migrations, preserve concurrent work, and inventory ownership, consent, API routes, current data and tests. Do not assume a migration number.
+2. **Concerns and linking:** decide whether to reuse condition history entries or introduce a concern entity, including undiagnosed concerns and recurrent episodes. Design many-to-many links for documents, observations, prescriptions and individual items, symptoms and follow-ups. Enforce existence, ownership and same-profile integrity for every link, including deletes and concurrent writes. Treat allergies and other person-wide history separately from a diagnosis.
+3. **Linking flow:** after relevant saves, offer existing concerns, a new concern, or decide later. Suggestions are visibly tentative and require explicit confirmation; don't preselect a suggestion as an implicit decision. Support an unlinked inbox, correction, unlinking and rejection. Specify multi-select and prescription-item behavior. Preserve all records when a concern is removed.
+4. **Existing records and episodes:** decide whether to generate optional suggestions for existing records, with no silent confirmation. Design audit, merge, hierarchy, deduplication and rollback before enabling them; do not assume same doctor or date establishes a diagnosis.
+5. **Thread API and contract:** implement profile-scoped reads and transactional writes, audit changes, update OpenAPI and route tests, and enforce share scopes and agent permissions for each record type. Avoid duplicate counts and distinguish missing records from missing care.
+6. **Unified views:** extend existing summary, timeline, by-report labs, prescriptions and history with explicit source provenance and confirmed links. Provide per-section loading, permission, error and empty states. Do not fabricate medication indications, assert causation from timing, or classify an organ as healthy from a limited set of tests.
+7. **Visual education:** prototype organ, test and medicine explainers with actual source links, dates and reviewed content, accessible text alternatives and localized copy. A clinician must review medical claims, ranges, translations and scope before release.
+8. **Evidence and agent:** add scoped context only after permissions are verified. Evaluate licensed Indian and global sources, freshness, citation provenance, external-model privacy and provider terms. Treat groundedness models as an additional imperfect check, not proof of truth.
+9. **Analytics research:** define intended use, prospective evaluation, sample adequacy, uncertainty, calibration, privacy and clinical/regulatory review before exposing lab forecasts or risk scores. Existing habit projections are descriptive heuristics; do not imply they validate clinical prediction.
+10. **Verification and release:** test cross-profile isolation, partial permissions, create/link/skip/error paths, concurrent changes and deletion, provenance, UI navigation, accessibility and offline/error handling. Add integration and end-to-end coverage; obtain clinical, security and product review before rollout.
 
 ## A. Foundation (blocks everything)
 
