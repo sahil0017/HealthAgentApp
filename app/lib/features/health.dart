@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import 'places.dart';
 import 'plan.dart';
-import 'records.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,15 +36,6 @@ class _HealthState extends ConsumerState<HealthTab> {
           onSelectionChanged: (s) => setState(() => _seg = s.first),
         ),
       ),
-      if (_seg == 0)
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: () => showAddBiomarker(context, ref),
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add a result'),
-          ),
-        ),
       Expanded(
         child: switch (_seg) {
           0 => const _Labs(),

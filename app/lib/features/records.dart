@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../core/state.dart';
 import '../core/theme.dart';
 import '../core/widgets.dart';
+import 'vault.dart' show DocumentScreen;
 
 Widget _page(String title, Widget body, {List<Widget>? actions}) => Scaffold(
   appBar: AppBar(title: Text(title), actions: actions),
@@ -698,6 +699,22 @@ const _kinds = {
   'vaccination': 'Vaccination',
 };
 
+final _historyDocumentsProvider = FutureProvider.autoDispose<List<Json>>((
+  ref,
+) async {
+  final id = ref.watch(profileIdProvider);
+  if (id == null) return [];
+  final documents = <Json>[];
+  for (var offset = 0; offset <= 1000000; offset += 100) {
+    final page = await ref
+        .read(apiProvider)
+        .list('/profiles/$id/documents?limit=100&offset=$offset');
+    documents.addAll(page.where((d) => d['status'] == 'approved'));
+    if (page.length < 100) return documents;
+  }
+  throw StateError('Too many documents to load.');
+});
+
 class HistoryScreen extends ConsumerWidget {
   const HistoryScreen({super.key});
 
@@ -755,6 +772,7 @@ class HistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final h = ref.watch(profileListProvider('/history'));
+    final documents = ref.watch(_historyDocumentsProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Medical History')),
       floatingActionButton: FloatingActionButton.small(
@@ -788,7 +806,7 @@ class HistoryScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-                Pill('${e['status']}'),
+                Pill(e['source'] == 'report' ? 'Unverified' : '${e['status']}'),
                 IconButton(
                   tooltip: 'Remove',
                   icon: const Icon(Icons.delete_outline, size: 18),
@@ -803,7 +821,11 @@ class HistoryScreen extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(profileListProvider('/history'));
-              await ref.read(profileListProvider('/history').future);
+              ref.invalidate(_historyDocumentsProvider);
+              await Future.wait([
+                ref.read(profileListProvider('/history').future),
+                ref.read(_historyDocumentsProvider.future),
+              ]);
             },
             child: ListView(
               padding: const EdgeInsets.all(14),
@@ -815,7 +837,7 @@ class HistoryScreen extends ConsumerWidget {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Each time you verify a report, Sehat reads it in the background and adds new conditions here. Pull down to refresh.',
+                          'Your verified reports are listed below. Automatic history extraction is paused. Earlier AI-generated findings are unverified, not diagnoses.',
                           style: TextStyle(
                             fontSize: 12,
                             color: Pal.mut,
@@ -830,16 +852,69 @@ class HistoryScreen extends ConsumerWidget {
                   const Empty(
                     Icons.medical_information_outlined,
                     'Nothing saved yet',
-                    body: 'Verify a report and Sehat fills this in, or add conditions, allergies and surgeries yourself.',
+                    body: 'Add conditions, allergies and surgeries yourself. Your verified reports are listed below.',
                   ),
                 if (fromReports.isNotEmpty) ...[
-                  const SectionTitle('From your reports'),
+                  const SectionTitle('Report-generated findings · review'),
                   for (final e in fromReports) row(e),
                 ],
                 if (byYou.isNotEmpty) ...[
                   const SectionTitle('Added by you'),
                   for (final e in byYou) row(e),
                 ],
+                const SectionTitle('Verified reports'),
+                AsyncBody<List<Json>>(
+                  documents,
+                  onRetry: () => ref.invalidate(_historyDocumentsProvider),
+                  builder: (docs) {
+                    if (docs.isEmpty) {
+                      return const Text(
+                        'No verified reports yet.',
+                        style: _small,
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final d in docs)
+                          SCard(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => DocumentScreen('${d['id']}'),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.description_outlined,
+                                  color: Pal.pri,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('${d['file_name']}', style: _bold),
+                                      if (DateTime.tryParse(
+                                            '${d['created_at']}',
+                                          ) !=
+                                          null)
+                                        Text(
+                                          'Uploaded ${'${d['created_at']}'.substring(0, 10)}',
+                                          style: _small,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right, color: Pal.mut),
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           );
@@ -923,64 +998,4 @@ class _McpState extends ConsumerState<McpScreen> {
       ],
     ),
   );
-}
-
-// ------------------------------------------------- Add biomarker value (labs)
-
-Future<void> showAddBiomarker(BuildContext context, WidgetRef ref) async {
-  final name = TextEditingController();
-  final value = TextEditingController();
-  final unit = TextEditingController();
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Add a lab value'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: name,
-            decoration: const InputDecoration(labelText: 'Test, e.g. HbA1c'),
-          ),
-          TextField(
-            controller: value,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Value'),
-          ),
-          TextField(
-            controller: unit,
-            decoration: const InputDecoration(labelText: 'Unit, e.g. %'),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-  if (ok != true) return;
-  final v = double.tryParse(value.text.trim());
-  if (v == null || name.text.trim().isEmpty || unit.text.trim().isEmpty) {
-    if (context.mounted) toast(context, 'Enter a test, a number and a unit.');
-    return;
-  }
-  try {
-    await ref.read(apiProvider).post('/profiles/${_pid(ref)}/observations', {
-      'display_name': name.text.trim(),
-      'value_numeric': v,
-      'unit': unit.text.trim(),
-      'observed_at': DateTime.now().toUtc().toIso8601String(),
-    });
-    ref.invalidate(profileListProvider('/biomarkers/summary'));
-    if (context.mounted) toast(context, 'Saved');
-  } catch (e) {
-    if (context.mounted) toast(context, friendly(e));
-  }
 }

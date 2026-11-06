@@ -233,12 +233,12 @@ const timelineSQL = `
 WITH items AS (
   SELECT 'document' AS kind,id::text AS id,file_name AS title,replace(status,'_',' ') AS detail,created_at AS at FROM medical_documents WHERE profile_id=$1 AND owner_id=$2 AND status NOT IN ('deleting','deleted')
   UNION ALL SELECT 'observation',COALESCE(max(document_id::text),'day-'||COALESCE(observed_at,created_at::date)::text),CASE WHEN count(*)=1 THEN min(name)||' '||min(value)::float8::text||' '||min(unit) ELSE count(*)||' results recorded' END,left(string_agg(name||' '||value::float8::text||' '||unit,' · ' ORDER BY name),400),COALESCE(observed_at,created_at::date)::timestamptz FROM observations WHERE profile_id=$1 AND owner_id=$2 GROUP BY document_id,COALESCE(observed_at,created_at::date),CASE WHEN document_id IS NULL THEN id::text END
-  UNION ALL SELECT 'history',id::text,title,replace(kind,'_',' ')||' · '||status,COALESCE(started_on::timestamptz,created_at) FROM history_entries WHERE profile_id=$1 AND owner_id=$2
+  UNION ALL SELECT 'history',id::text,title,replace(kind,'_',' ')||' · '||status,COALESCE(started_on::timestamptz,created_at) FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND source='user'
   UNION ALL SELECT 'follow_up',id::text,title,kind||' · '||status,COALESCE(due_on::timestamptz,created_at) FROM follow_ups WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'goal',id::text,title,status,created_at FROM goals WHERE profile_id=$1 AND owner_id=$2
   UNION ALL SELECT 'device','sync-'||s.id::text,d.name,s.accepted||' readings synced',COALESCE(s.last_measured_at,s.created_at) FROM device_syncs s JOIN devices d ON d.id=s.device_id WHERE s.profile_id=$1 AND s.owner_id=$2 AND s.accepted>0
 )
-SELECT kind,id,title,detail,at FROM items WHERE (cardinality($3::text[])=0 OR kind=ANY($3)) AND ($6::text::date IS NULL OR at >= $6::text::date) AND ($7::text::date IS NULL OR at < $7::text::date + 1) ORDER BY at DESC,id LIMIT $4 OFFSET $5`
+SELECT kind,id,title,detail,at FROM items WHERE (cardinality($3::text[])=0 OR kind=ANY($3)) AND ($6::text::date IS NULL OR at >= $6::text::date) AND ($7::text::date IS NULL OR at < $7::text::date + 1) ORDER BY at DESC,id,kind LIMIT $4 OFFSET $5`
 
 func (m *Module) timeline(w http.ResponseWriter, r *http.Request) {
 	if !m.ProfileReadable(w, r) {
@@ -357,7 +357,7 @@ func (m *Module) fillOverview(ctx context.Context, out *Overview, ownerID, profi
 	if err := m.DB.Pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE verification_status='PENDING_REVIEW') FROM observations WHERE profile_id=$1 AND owner_id=$2`, profileID, ownerID).Scan(&out.Summary.Observations, &pending); err != nil {
 		return err
 	}
-	if err := m.DB.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM history_entries WHERE profile_id=$1 AND owner_id=$2),(SELECT count(*) FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active'),(SELECT count(*) FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open')`, profileID, ownerID).Scan(&out.Summary.HistoryEntries, &out.Summary.ActiveGoals, &out.Summary.OpenFollowUps); err != nil {
+	if err := m.DB.Pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND source='user'),(SELECT count(*) FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active'),(SELECT count(*) FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open')`, profileID, ownerID).Scan(&out.Summary.HistoryEntries, &out.Summary.ActiveGoals, &out.Summary.OpenFollowUps); err != nil {
 		return err
 	}
 	facts.StorageConsent = m.HasConsent(ctx, profileID, "medical_record_storage") || m.HasConsent(ctx, profileID, "health_data")

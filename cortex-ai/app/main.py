@@ -311,6 +311,16 @@ async def research_discover(req: DiscoverRequest) -> JSONResponse:
     return JSONResponse({"sources": await discover.discover(_fetcher, req.question)})
 
 
+@app.post("/v1/research/general-answer")
+async def research_general_answer(req: DiscoverRequest) -> JSONResponse:
+    """Uncited general information; no profile records are sent."""
+    try:
+        answer = await copilot_agent.research_answer(req.question)
+    except copilot_agent.CopilotUnavailable as exc:
+        return JSONResponse(status_code=503, content={"error": "copilot_unavailable", "reason": str(exc)})
+    return JSONResponse({"answer": answer, "source": "copilot"})
+
+
 @app.post("/v1/agent/step")
 def agent_step(step: AgentStep) -> JSONResponse:
     """One model turn of the agent loop: either tool calls to run or a final answer."""

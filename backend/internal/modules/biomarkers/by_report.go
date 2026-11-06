@@ -21,6 +21,7 @@ type ReportResult struct {
 	CategoryLabel string               `json:"category_label"`
 	Value         float64              `json:"value"`
 	Unit          string               `json:"unit"`
+	ObservedAt    string               `json:"observed_at"`
 	Flag          string               `json:"flag"`
 	Range         *biomarker.RangeInfo `json:"range"`
 	Previous      *float64             `json:"previous_value"`
@@ -89,9 +90,8 @@ func (m *Module) byReport(w http.ResponseWriter, r *http.Request) {
 			if p.ObservedAt > g.ReportDate {
 				g.ReportDate = p.ObservedAt
 			}
-			res := ReportResult{BiomarkerCode: code, DisplayName: t.DisplayName, Category: cat, CategoryLabel: biomarker.CategoryLabel(cat), Value: p.Value, Unit: p.Unit, Flag: p.Flag, Range: p.Range}
-			if i > 0 {
-				prev := t.Points[i-1]
+			res := ReportResult{BiomarkerCode: code, DisplayName: t.DisplayName, Category: cat, CategoryLabel: biomarker.CategoryLabel(cat), Value: p.Value, Unit: p.Unit, ObservedAt: p.ObservedAt, Flag: p.Flag, Range: p.Range}
+			if prev, ok := previousReportPoint(t.Points, i); ok {
 				change := p.Value - prev.Value
 				res.Previous, res.Change, res.PreviousOn = &prev.Value, &change, prev.ObservedAt
 				g.Changed++
@@ -166,4 +166,29 @@ func reportTitle(g *ReportGroup) string {
 		return "Lab report"
 	}
 	return name
+}
+
+// previousReportPoint compares laboratory readings from different, dated reports.
+// Same-day reports have no reliable ordering.
+func previousReportPoint(points []biomarker.TrendPoint, index int) (biomarker.TrendPoint, bool) {
+	current := points[index]
+	if current.DocumentID == "" || current.MeasurementKind != "lab" || current.ObservedAt == "" || current.DateInferred {
+		return biomarker.TrendPoint{}, false
+	}
+	var best biomarker.TrendPoint
+	found := false
+	for i := index - 1; i >= 0; i-- {
+		p := points[i]
+		if p.DocumentID != "" && p.DocumentID != current.DocumentID && !p.DateInferred &&
+			p.MeasurementKind == "lab" && p.ObservedAt < current.ObservedAt {
+			if !found {
+				best, found = p, true
+			} else if p.ObservedAt < best.ObservedAt {
+				break
+			} else if p.DocumentID != best.DocumentID || p.Value != best.Value {
+				return biomarker.TrendPoint{}, false
+			}
+		}
+	}
+	return best, found
 }

@@ -8,7 +8,7 @@ import (
 	"cortex/backend/internal/store"
 )
 
-func TestSkippedScanIsQueuedAgainOnceAIIsOn(t *testing.T) {
+func TestPendingHistoryScanIsSkippedWithoutCreatingConditions(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -31,7 +31,7 @@ func TestSkippedScanIsQueuedAgainOnceAIIsOn(t *testing.T) {
 	if err := db.Pool.QueryRow(ctx, `INSERT INTO medical_documents(profile_id,owner_id,object_key,file_name,content_type,byte_size,status) VALUES($1,$2,'k/hs','r.pdf','application/pdf',10,'processing') RETURNING id::text`, profileID, owner).Scan(&docID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Pool.Exec(ctx, `INSERT INTO history_scans(document_id,profile_id,owner_id,status) VALUES($1,$2,$3,'skipped')`, docID, profileID, owner); err != nil {
+	if _, err := db.Pool.Exec(ctx, `INSERT INTO history_scans(document_id,profile_id,owner_id,status) VALUES($1,$2,$3,'pending')`, docID, profileID, owner); err != nil {
 		t.Fatal(err)
 	}
 	w := NewHistoryWorker(db)
@@ -40,20 +40,16 @@ func TestSkippedScanIsQueuedAgainOnceAIIsOn(t *testing.T) {
 		_ = db.Pool.QueryRow(ctx, `SELECT status FROM history_scans WHERE document_id=$1`, docID).Scan(&s)
 		return s
 	}
-	w.catchUp(ctx)
-	if status() != "skipped" {
-		t.Fatalf("with AI off the scan must stay skipped, got %s", status())
+	did, err := w.ProcessOne(ctx)
+	if err != nil || !did || status() != "skipped" {
+		t.Fatalf("scan: did=%v err=%v status=%s", did, err, status())
 	}
-	if _, err := db.Pool.Exec(ctx, `INSERT INTO consents(profile_id,purpose,granted) VALUES($1,'ai_processing',true)`, profileID); err != nil {
-		t.Fatal(err)
+	var count int
+	if err := db.Pool.QueryRow(ctx, `SELECT count(*) FROM history_entries WHERE profile_id=$1`, profileID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unexpected history: count=%d err=%v", count, err)
 	}
-	for _, p := range []string{"cloud_model", "read_labs"} {
-		if _, err := db.Pool.Exec(ctx, `INSERT INTO agent_permissions(profile_id,owner_id,permission,granted) VALUES($1,$3,$2,true) ON CONFLICT (profile_id,permission) DO UPDATE SET granted=true`, profileID, p, owner); err != nil {
-			t.Fatal(err)
-		}
-	}
-	w.catchUp(ctx)
-	if status() != "pending" {
-		t.Fatalf("once AI is on the scan must be queued again, got %s", status())
+	did, err = w.ProcessOne(ctx)
+	if err != nil || did {
+		t.Fatalf("skipped scan must not requeue: did=%v err=%v", did, err)
 	}
 }

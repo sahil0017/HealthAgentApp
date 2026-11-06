@@ -26,7 +26,9 @@ final careNeedsProvider = FutureProvider.autoDispose<List<String>>((ref) async {
   try {
     final history = await ref.watch(profileListProvider('/history').future);
     for (final e in history) {
-      if (e['kind'] == 'condition' && e['status'] == 'active') {
+      if (e['source'] != 'report' &&
+          e['kind'] == 'condition' &&
+          e['status'] == 'active') {
         terms.add('${e['title']}'.toLowerCase());
       }
     }

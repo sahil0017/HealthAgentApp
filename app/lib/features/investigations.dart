@@ -44,7 +44,9 @@ final investigationIdeasProvider = FutureProvider.autoDispose<List<String>>((
     }
     final history = await ref.watch(profileListProvider('/history').future);
     for (final e in history) {
-      if (e['kind'] == 'condition' && e['status'] == 'active') {
+      if (e['source'] != 'report' &&
+          e['kind'] == 'condition' &&
+          e['status'] == 'active') {
         ideas.add('Latest guidance on managing ${e['title']}');
       }
     }
@@ -82,8 +84,22 @@ class InvestigationsScreen extends ConsumerWidget {
       if (newId != null && !known) {
         api
             .post('/profiles/$id/investigations/$newId/refresh', {})
-            .then((_) => ref.invalidate(investigationsProvider))
-            .catchError((_) {});
+            .then((result) {
+              ref.invalidate(investigationsProvider);
+              if (result is Map &&
+                  result['web_unavailable'] == true &&
+                  context.mounted) {
+                toast(
+                  context,
+                  'Online research search is unavailable. Try again later.',
+                );
+              }
+            })
+            .catchError((Object e) {
+              if (context.mounted) {
+                toast(context, 'Research search failed: ${friendly(e)}');
+              }
+            });
       }
     } catch (e) {
       if (context.mounted) toast(context, friendly(e));
@@ -249,6 +265,7 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
   Json? _data;
   Object? _error;
   bool _busy = false;
+  String? _generalAnswer;
 
   String get _base =>
       '/profiles/${ref.read(profileIdProvider)}/investigations/${widget.id}';
@@ -262,20 +279,27 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
   Future<void> _load() async {
     try {
       final d = await ref.read(apiProvider).map(_base);
-      if (mounted) setState(() => _data = d);
+      if (mounted) {
+        setState(() {
+          _data = d;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e);
     }
   }
 
-  Future<void> _run(Future<void> Function() f, [String? done]) async {
+  Future<bool> _run(Future<void> Function() f, [String? done]) async {
     setState(() => _busy = true);
     try {
       await f();
       await _load();
       if (done != null && mounted) toast(context, done);
+      return true;
     } catch (e) {
       if (mounted) toast(context, friendly(e));
+      return false;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -283,17 +307,38 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
 
   Future<void> _refreshSources() async {
     var added = 0;
-    await _run(() async {
+    var unavailable = false;
+    final success = await _run(() async {
       final r = await ref.read(apiProvider).post('$_base/refresh', {});
       added = r is Map ? (r['added'] as num?)?.toInt() ?? 0 : 0;
+      unavailable = r is Map && r['web_unavailable'] == true;
     });
-    if (!mounted) return;
+    if (!mounted || !success) return;
     toast(
       context,
-      added == 0
-          ? 'You are up to date.'
+      unavailable
+          ? 'Online search is unavailable. Try again later.'
+          : added == 0
+          ? 'No new sources found.'
           : '$added new source${added == 1 ? '' : 's'} found.',
     );
+  }
+
+  Future<void> _askCopilot() async {
+    setState(() => _busy = true);
+    try {
+      final result = await ref
+          .read(apiProvider)
+          .post('$_base/general-answer', {});
+      if (result is! Map || result['answer'] is! String) {
+        throw StateError('Copilot returned an invalid answer.');
+      }
+      if (mounted) setState(() => _generalAnswer = result['answer'] as String);
+    } catch (e) {
+      if (mounted) toast(context, friendly(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _addNote() async {
@@ -401,9 +446,38 @@ class _InvestigationState extends ConsumerState<InvestigationScreen> {
                   ),
                 SectionTitle('Sources · ${sources.length}'),
                 if (sources.isEmpty)
-                  const Text(
-                    'No sources yet. Tap “Find new research” and Sehat will look for papers and health guides.',
-                    style: _note,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'No sources yet. Search again, or ask Copilot for general information. Only your question is sent; AI consent and cloud model permission are required.',
+                        style: _note,
+                      ),
+                      TextButton.icon(
+                        onPressed: _busy ? null : _askCopilot,
+                        icon: const Icon(Icons.auto_awesome),
+                        label: const Text('Ask Copilot'),
+                      ),
+                      if (_generalAnswer != null)
+                        SCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Copilot · uncited general information',
+                                style: _bold,
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Not a research source or medical advice. Verify with a clinician.',
+                                style: _note,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(_generalAnswer!),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 for (final s in sources)
                   SCard(

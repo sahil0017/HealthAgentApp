@@ -46,7 +46,7 @@ func (m *Module) news(w http.ResponseWriter, r *http.Request) {
 	}
 	key := "news:" + strings.ToLower(city) + ":" + country
 	if v, ok := m.fromCache(key); ok {
-		httpx.WriteJSON(w, 200, map[string]any{"news": v})
+		httpx.WriteJSON(w, 200, v)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -55,10 +55,15 @@ func (m *Module) news(w http.ResponseWriter, r *http.Request) {
 		items []newsItem
 		err   error
 	}
-	global, local := make(chan result, 1), make(chan result, 1)
+	global, google, local := make(chan result, 1), make(chan result, 1), make(chan result, 1)
 	go func() {
 		i, err := m.feed(ctx, m.NewsURL, "WHO", "global", "")
 		global <- result{i, err}
+	}()
+	go func() {
+		params := url.Values{"q": {"public health when:7d"}, "hl": {"en-US"}, "gl": {"US"}, "ceid": {"US:en"}}
+		i, err := m.feed(ctx, m.LocalNewsURL+"?"+params.Encode(), "", "global", "")
+		google <- result{i, err}
 	}()
 	go func() {
 		if city == "" && country == "" {
@@ -80,15 +85,19 @@ func (m *Module) news(w http.ResponseWriter, r *http.Request) {
 		}
 		local <- result{i, err}
 	}()
-	g, l := <-global, <-local
-	if g.err != nil && l.err != nil {
+	g, gn, l := <-global, <-google, <-local
+	if g.err != nil && gn.err != nil && (l.err != nil || city == "" && country == "") {
 		httpx.WriteError(w, 502, "NEWS_UNAVAILABLE", "Health news could not be loaded right now.", nil)
 		return
 	}
-	out := append(firstN(l.items, 12), firstN(g.items, 12)...)
+	out := append(firstN(l.items, 12), firstN(gn.items, 12)...)
+	out = append(out, firstN(g.items, 12)...)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Scope == "local" && out[j].Scope != "local" })
-	m.toCache(key, out)
-	httpx.WriteJSON(w, 200, map[string]any{"news": out})
+	response := map[string]any{"news": out, "local_unavailable": l.err != nil, "global_unavailable": g.err != nil && gn.err != nil}
+	if g.err == nil && gn.err == nil && l.err == nil {
+		m.toCache(key, response)
+	}
+	httpx.WriteJSON(w, 200, response)
 }
 
 func firstN(in []newsItem, n int) []newsItem {

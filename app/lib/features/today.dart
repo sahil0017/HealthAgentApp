@@ -25,6 +25,9 @@ class TodayTab extends ConsumerWidget {
         refreshCarePlan(ref);
         ref.invalidate(wellbeingProvider);
         ref.invalidate(doseScheduleProvider);
+        ref.invalidate(profileListProvider('/biomarkers/summary'));
+        ref.invalidate(profileMapProvider('/agent/insights/labs'));
+        ref.invalidate(profileMapProvider('/agent/insights/lifestyle'));
         await ref.read(profileMapProvider('/overview').future);
       },
       child: AsyncBody<Json>(
@@ -58,30 +61,43 @@ class _KeyResults extends ConsumerWidget {
         outOfRange((b['latest'] as Map?)?['flag'] as String?) ? 0 : 1;
     final top = [...list]..sort((a, b) => rank(a) - rank(b));
     final flagged = list.where((b) => rank(b) == 0).length;
+    final inRangeCount = list
+        .where((b) => inRange((b['latest'] as Map?)?['flag'] as String?))
+        .length;
+    final unrated = list.length - flagged - inRangeCount;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionTitle(
           'Latest lab results',
-          trailing: flagged == 0
-              ? const Pill('All in range', fg: Pal.ok, bg: Pal.okBg)
-              : Pill('$flagged outside range', fg: Pal.warn, bg: Pal.warnBg),
+          trailing: flagged > 0
+              ? Pill('$flagged outside range', fg: Pal.warn, bg: Pal.warnBg)
+              : unrated > 0
+              ? Text(
+                  '$unrated without a range',
+                  style: const TextStyle(fontSize: 10.5, color: Pal.mut),
+                )
+              : const Pill('All in range', fg: Pal.ok, bg: Pal.okBg),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
           child: Row(
             children: [
-              Expanded(
-                flex: list.length - flagged == 0 ? 1 : list.length - flagged,
-                child: Container(height: 6, color: Pal.ok),
-              ),
-              if (flagged > 0) ...[
-                const SizedBox(width: 2),
+              if (inRangeCount > 0)
+                Expanded(
+                  flex: inRangeCount,
+                  child: Container(height: 6, color: Pal.ok),
+                ),
+              if (flagged > 0)
                 Expanded(
                   flex: flagged,
                   child: Container(height: 6, color: Pal.warn),
                 ),
-              ],
+              if (unrated > 0)
+                Expanded(
+                  flex: unrated,
+                  child: Container(height: 6, color: Pal.line),
+                ),
             ],
           ),
         ),
@@ -206,15 +222,23 @@ class _Body extends ConsumerWidget {
           ),
         ),
         const UrgentStrip(),
-        const BriefingCard(),
-        const SnapshotRow(),
-        const InsightCards(),
         const WellbeingCard(),
         const TodaysPlan(),
         const MedicinesTodayCard(),
-        const HabitTrends(),
-        const _KeyResults(),
-        const WhatChanged(),
+        const SectionTitle('Explore your health'),
+        _SummaryLink(
+          icon: Icons.wb_sunny_outlined,
+          title: 'Daily health brief',
+          subtitle: 'A closer look at your health today',
+          onTap: () => _go(context, const BriefingScreen()),
+        ),
+        _SummaryLink(
+          icon: Icons.insights_outlined,
+          title: 'Insights and trends',
+          subtitle: 'Your results, changes and habits',
+          onTap: () => _go(context, const _InsightsScreen()),
+        ),
+        const SectionTitle('Your health'),
         const SizedBox(height: 4),
         IntrinsicHeight(
           child: Row(
@@ -336,6 +360,80 @@ class _Body extends ConsumerWidget {
       ],
     );
   }
+}
+
+class _InsightsScreen extends StatelessWidget {
+  const _InsightsScreen();
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Insights and trends')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
+      children: const [
+        Padding(
+          padding: EdgeInsets.fromLTRB(2, 0, 2, 12),
+          child: Text(
+            'Explore insights from your results and daily habits.',
+            style: TextStyle(fontSize: 12, color: Pal.mut),
+          ),
+        ),
+        InsightCards(),
+        _KeyResults(),
+        WhatChanged(),
+        HabitTrends(),
+      ],
+    ),
+  );
+}
+
+class _SummaryLink extends StatelessWidget {
+  const _SummaryLink({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => SCard(
+    onTap: onTap,
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 19,
+          backgroundColor: Pal.priBg,
+          child: Icon(icon, size: 19, color: Pal.pri),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 11, color: Pal.mut),
+              ),
+            ],
+          ),
+        ),
+        const Icon(Icons.chevron_right, color: Pal.mut),
+      ],
+    ),
+  );
 }
 
 class _Service extends StatelessWidget {

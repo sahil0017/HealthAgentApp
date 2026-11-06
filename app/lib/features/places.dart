@@ -143,15 +143,13 @@ class NeedsAreaState extends ConsumerState<NeedsArea> {
 
 // ------------------------------------------------------------ Health news
 
-final newsProvider = FutureProvider.autoDispose
-    .family<List<Json>, (String, String)>(
-      (ref, k) => ref
-          .read(apiProvider)
-          .list(
-            '/nearby/news?city=${Uri.encodeQueryComponent(k.$1)}&country_code=${k.$2}',
-            key: 'news',
-          ),
-    );
+final newsProvider = FutureProvider.autoDispose.family<Json, (String, String)>(
+  (ref, k) => ref
+      .read(apiProvider)
+      .map(
+        '/nearby/news?city=${Uri.encodeQueryComponent(k.$1)}&country_code=${k.$2}',
+      ),
+);
 
 String _ago(Object? iso) {
   final t = DateTime.tryParse('$iso');
@@ -232,7 +230,7 @@ class _NewsState extends ConsumerState<HealthNewsScreen> {
                   : const Empty(
                       Icons.newspaper,
                       'No local stories right now',
-                      body: 'Pull down to refresh, or check the World tab.',
+                      body: 'Try again, or check the World tab.',
                     ),
               header: area == null
                   ? null
@@ -288,19 +286,38 @@ class _NewsList extends StatelessWidget {
     required this.empty,
     this.header,
   });
-  final AsyncValue<List<Json>> news;
+  final AsyncValue<Json> news;
   final String scope;
   final VoidCallback onRetry;
   final Widget empty;
   final Widget? header;
 
   @override
-  Widget build(BuildContext context) => AsyncBody<List<Json>>(
+  Widget build(BuildContext context) => AsyncBody<Json>(
     news,
     onRetry: onRetry,
-    builder: (all) {
+    builder: (data) {
+      if (data['${scope}_unavailable'] == true) {
+        return ErrorView(
+          'Health news is temporarily unavailable.',
+          onRetry: onRetry,
+        );
+      }
+      final all = (data['news'] as List? ?? []).whereType<Map>();
       final list = all.where((n) => n['scope'] == scope).toList();
-      if (list.isEmpty) return empty;
+      if (list.isEmpty) {
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            empty,
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try again'),
+            ),
+          ],
+        );
+      }
       return ListView(
         padding: const EdgeInsets.all(14),
         children: [
@@ -877,7 +894,7 @@ const _ambulance = {
 };
 
 const _contactsKey = 'emergency_contacts';
-const _medicalIdKey = 'medical_id_cache';
+const _medicalIdKey = 'medical_id_cache_confirmed';
 
 /// Contacts are kept on the phone only, so they work offline and are never uploaded.
 final emergencyContactsProvider = FutureProvider.autoDispose<List<Json>>((
@@ -914,7 +931,9 @@ final medicalIdProvider = FutureProvider.autoDispose<Json>((ref) async {
       }
     }
     for (final e in history) {
-      if (e['status'] == 'active' && e['kind'] == 'medication') {
+      if (e['source'] != 'report' &&
+          e['status'] == 'active' &&
+          e['kind'] == 'medication') {
         meds.putIfAbsent(
           ('${e['title']}').toLowerCase(),
           () => 'medication: ${e['title']}',
@@ -925,7 +944,8 @@ final medicalIdProvider = FutureProvider.autoDispose<Json>((ref) async {
       'blood_group': profile['blood_group'],
       'items': [
         for (final e in history)
-          if (e['status'] == 'active' &&
+          if (e['source'] != 'report' &&
+              e['status'] == 'active' &&
               (e['kind'] == 'allergy' || e['kind'] == 'condition'))
             '${e['kind']}: ${e['title']}',
         ...meds.values,

@@ -121,10 +121,12 @@ paths:
     parameters: [{ $ref: '#/components/parameters/profileID' }]
     get:
       summary: List medical history entries
+      description: Report-generated entries are unverified legacy suggestions, not confirmed conditions. Automatic inference from lab results is paused.
       responses:
         '200': { $ref: '#/components/responses/Success' }
     post:
       summary: Add a medical history entry (needs storage consent)
+      description: A user-created entry matching a legacy report suggestion replaces that suggestion with the user's own entry.
       requestBody: { $ref: '#/components/requestBodies/JSON' }
       responses:
         '201': { $ref: '#/components/responses/Success' }
@@ -331,7 +333,7 @@ paths:
     parameters: [{ $ref: '#/components/parameters/profileID' }]
     get:
       summary: Every verified result grouped under the report it was read from, newest report first
-      description: 'Each group has the lab, report date, counts (in range, outside range, no range), and its results with the previous value of the same test from an earlier report and the change.'
+      description: 'Each group has the lab, report date, counts and results. A change is provided only for a comparable laboratory result from a different report with an earlier known observation date; same-day and undated results are not compared. The previous result may be from an older report rather than the immediately preceding report.'
       responses:
         '200': { $ref: '#/components/responses/Success' }
   /profiles/{profileID}/biomarkers/summary:
@@ -602,11 +604,20 @@ paths:
         '204': { description: Removed }
   /profiles/{profileID}/investigations/{investigationID}/refresh:
     post:
-      summary: Attach newly matching approved sources
-      description: Searches only human-approved research for the question. Never the open web and never the profile's own records. `data.added` is the number of new sources.
+      summary: Attach matching approved sources and discover public research
+      description: Searches approved research and public sources using the question, not the profile's records. `data.added` is the number of new sources; `data.web_unavailable` reports online discovery failure.
       parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }]
       responses:
         '200': { $ref: '#/components/responses/Success' }
+  /profiles/{profileID}/investigations/{investigationID}/general-answer:
+    post:
+      summary: Request uncited general information from Copilot
+      description: Sends only the saved question to Copilot. Requires AI processing consent and cloud model permission. This answer is not a research source or medical advice.
+      parameters: [{ $ref: '#/components/parameters/profileID' }, { name: investigationID, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { description: AI consent or cloud model permission required }
+        '502': { description: Copilot unavailable }
   /profiles/{profileID}/retention:
     get:
       summary: Retention policy (null means keep indefinitely)
@@ -895,8 +906,8 @@ paths:
         '502': { description: Source unavailable }
   /nearby/news:
     get:
-      summary: Health headlines from the WHO newsroom, plus local stories for the caller's city
-      description: Query `city` and `country_code`. Local stories are searched by city, widened to the country when the city has none. Only place names are sent upstream. Cached for 15 minutes. 502 when both sources fail.
+      summary: Health headlines from Google News and the WHO newsroom
+      description: Query `city` and `country_code`. Local Google stories are searched by city and widened to the country when needed. `local_unavailable` and `global_unavailable` indicate failed feeds. Only place names are sent upstream. Successful responses are cached for 15 minutes.
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '502': { description: Source unavailable }

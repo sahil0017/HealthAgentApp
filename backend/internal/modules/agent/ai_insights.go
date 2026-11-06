@@ -226,7 +226,7 @@ func (m *Module) activeSymptoms(ctx context.Context, owner, profileID string) []
 
 func (m *Module) historyTitles(ctx context.Context, owner, profileID string) []string {
 	out := []string{}
-	rows, err := m.DB.Pool.Query(ctx, `SELECT kind||': '||title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 20`, profileID, owner)
+	rows, err := m.DB.Pool.Query(ctx, `SELECT kind||': '||title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND source='user' AND status='active' ORDER BY created_at DESC LIMIT 20`, profileID, owner)
 	if err != nil {
 		return out
 	}

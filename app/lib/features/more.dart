@@ -655,18 +655,13 @@ class TimelineScreen extends ConsumerStatefulWidget {
 
 class _TimelineState extends ConsumerState<TimelineScreen> {
   String? _kind;
+  int _page = 0;
 
   @override
   Widget build(BuildContext context) {
-    final path = '/timeline?limit=100${_kind == null ? '' : '&kind=$_kind'}';
+    final path =
+        '/timeline?limit=100&offset=${_page * 100}${_kind == null ? '' : '&kind=$_kind'}';
     final t = ref.watch(profileListProvider(path));
-    final all =
-        ref.watch(profileListProvider('/timeline?limit=100')).value ??
-        const <Json>[];
-    final counts = <String, int>{for (final i in all) '${i['kind']}': 0};
-    for (final i in all) {
-      counts['${i['kind']}'] = (counts['${i['kind']}'] ?? 0) + 1;
-    }
     return Scaffold(
       appBar: AppBar(title: const Text('Clinical Timeline')),
       body: Column(
@@ -680,28 +675,27 @@ class _TimelineState extends ConsumerState<TimelineScreen> {
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text(
-                      'All · ${all.length}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
+                    label: Text('All', style: const TextStyle(fontSize: 12)),
                     selected: _kind == null,
-                    onSelected: (_) => setState(() => _kind = null),
+                    onSelected: (_) => setState(() {
+                      _kind = null;
+                      _page = 0;
+                    }),
                   ),
                 ),
                 for (final k in _timelineKinds)
-                  if ((counts[k.$1] ?? 0) > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        avatar: Icon(k.$3, size: 14, color: k.$4),
-                        label: Text(
-                          '${k.$2} · ${counts[k.$1]}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        selected: _kind == k.$1,
-                        onSelected: (_) => setState(() => _kind = k.$1),
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      avatar: Icon(k.$3, size: 14, color: k.$4),
+                      label: Text(k.$2, style: const TextStyle(fontSize: 12)),
+                      selected: _kind == k.$1,
+                      onSelected: (_) => setState(() {
+                        _kind = k.$1;
+                        _page = 0;
+                      }),
                     ),
+                  ),
               ],
             ),
           ),
@@ -710,11 +704,11 @@ class _TimelineState extends ConsumerState<TimelineScreen> {
               t,
               onRetry: () => ref.invalidate(profileListProvider(path)),
               builder: (list) {
-                if (list.isEmpty) {
+                if (list.isEmpty && _page == 0) {
                   return const Empty(
                     Icons.timeline,
-                    'Your timeline starts with your first report',
-                    body: 'Reports, results, medicines, follow-ups and goals appear here in order.',
+                    'No events to show',
+                    body: 'Reports, results, history, follow-ups and goals appear here in date order.',
                   );
                 }
                 final children = <Widget>[];
@@ -741,6 +735,31 @@ class _TimelineState extends ConsumerState<TimelineScreen> {
                       ),
                     );
                   }
+                  children.add(
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton.icon(
+                          onPressed: _page == 0
+                              ? null
+                              : () => setState(() => _page--),
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Newer'),
+                        ),
+                        Text(
+                          'Page ${_page + 1}',
+                          style: const TextStyle(color: Pal.mut),
+                        ),
+                        TextButton.icon(
+                          onPressed: list.length < 100
+                              ? null
+                              : () => setState(() => _page++),
+                          icon: const Icon(Icons.arrow_forward),
+                          label: const Text('Older'),
+                        ),
+                      ],
+                    ),
+                  );
                   children.add(
                     _TimelineEntry(
                       list[i],

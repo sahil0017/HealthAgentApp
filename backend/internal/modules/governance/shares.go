@@ -215,7 +215,7 @@ func (m *Module) viewShared(w http.ResponseWriter, r *http.Request) {
 	queries := map[string]string{
 		"summary":    `SELECT jsonb_build_object('date_of_birth',date_of_birth,'sex',sex,'blood_group',blood_group,'height_cm',height_cm) FROM profiles WHERE id=$1`,
 		"labs":       `SELECT COALESCE(jsonb_agg(x ORDER BY x.name),'[]') FROM (SELECT DISTINCT ON (name) name,value,unit,observed_at,reference_range FROM observations WHERE profile_id=$1 AND verification_status='VERIFIED' ORDER BY name,observed_at DESC NULLS LAST,created_at DESC) x`,
-		"history":    `SELECT COALESCE(jsonb_agg(jsonb_build_object('kind',kind,'title',title,'started_on',started_on) ORDER BY created_at),'[]') FROM history_entries WHERE profile_id=$1 AND status='active'`,
+		"history":    `SELECT COALESCE(jsonb_agg(jsonb_build_object('kind',kind,'title',title,'started_on',started_on) ORDER BY created_at),'[]') FROM history_entries WHERE profile_id=$1 AND source='user' AND status='active'`,
 		"follow_ups": `SELECT COALESCE(jsonb_agg(jsonb_build_object('kind',kind,'title',title,'due_on',due_on) ORDER BY due_on NULLS LAST),'[]') FROM follow_ups WHERE profile_id=$1 AND status='open'`,
 	}
 	for _, scope := range scopes {

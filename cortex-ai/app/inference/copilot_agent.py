@@ -521,6 +521,9 @@ class _Verdict(BaseModel):
 class _Verdicts(BaseModel):
     verdicts: list[_Verdict]
 
+class _ResearchAnswer(BaseModel):
+    answer: str = Field(description="A concise general explanation without citations.")
+
 
 async def _submit(system: str, prompt: str, model_cls, tool_name: str) -> dict:
     if not configured():
@@ -563,6 +566,19 @@ async def plan_queries(question: str) -> list[str]:
         f"Question: {question}", _Queries, "submit_queries",
     )
     return [q.strip() for q in out.get("queries", []) if q.strip()][:3]
+
+
+async def research_answer(question: str) -> str:
+    out = await _submit(
+        "Give a cautious, general health explanation for the question. You have no sources or personal medical records. "
+        "Do not invent citations, studies, statistics or claim to have searched. Do not diagnose or prescribe. "
+        "Mention uncertainty and suggest discussing individual decisions with a clinician. Call submit_answer exactly once.",
+        f"Question: {question}", _ResearchAnswer, "submit_answer",
+    )
+    answer = out.get("answer", "").strip()
+    if not answer:
+        raise CopilotUnavailable("no_result")
+    return answer
 
 
 async def judge_sources(question: str, candidates: list[dict]) -> list[dict]:

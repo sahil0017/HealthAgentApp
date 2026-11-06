@@ -17,6 +17,7 @@ type RangeInfo struct {
 type TrendPoint struct {
 	ObservationID   string     `json:"observation_id"`
 	ObservedAt      string     `json:"observed_at"`
+	DateInferred    bool       `json:"date_inferred,omitempty"`
 	Value           float64    `json:"value"`
 	Unit            string     `json:"unit"`
 	OriginalValue   float64    `json:"original_value"`
@@ -63,6 +64,7 @@ type ObsRow struct {
 	On                                           time.Time
 	Revision                                     int
 	DocumentID                                   string
+	DateInferred                                 bool
 }
 
 // MeasurementKind separates what a laboratory produced from what a device recorded, because the
@@ -114,7 +116,7 @@ func BuildTrend(code, name string, rows []ObsRow, includeUnverified bool, known 
 			out.Excluded = append(out.Excluded, ExcludedPoint{ObservationID: r.ID, ObservedAt: r.On.Format("2006-01-02"), Value: r.Value, Unit: r.Unit, Reason: "no_approved_conversion"})
 			continue
 		}
-		p := TrendPoint{ObservationID: r.ID, ObservedAt: r.On.Format("2006-01-02"), Value: value, Unit: canonical, OriginalValue: r.Value, OriginalUnit: r.Unit, Converted: r.Unit != canonical, MeasurementKind: MeasurementKind(r.SourceType), Verification: r.Status, Revision: r.Revision, DocumentID: r.DocumentID, Confidence: SourceConfidence(r.Status, r.SourceType)}
+		p := TrendPoint{ObservationID: r.ID, ObservedAt: r.On.Format("2006-01-02"), DateInferred: r.DateInferred, Value: value, Unit: canonical, OriginalValue: r.Value, OriginalUnit: r.Unit, Converted: r.Unit != canonical, MeasurementKind: MeasurementKind(r.SourceType), Verification: r.Status, Revision: r.Revision, DocumentID: r.DocumentID, Confidence: SourceConfidence(r.Status, r.SourceType)}
 		p.Range, p.Flag = RangeFor(r, learned, known, sex, age)
 		out.Points = append(out.Points, p)
 		kinds[p.MeasurementKind] = true

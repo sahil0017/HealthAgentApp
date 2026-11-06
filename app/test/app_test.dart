@@ -396,6 +396,73 @@ void main() {
     expect(find.textContaining('1 follow-ups pending'), findsOneWidget);
   });
 
+  testWidgets('summary keeps insights and trends in a separate screen', (
+    t,
+  ) async {
+    final api = _api((r) {
+      if (r.url.path.endsWith('/overview')) return _json(overview());
+      if (r.url.path.endsWith('/biomarkers/summary')) {
+        return _json([
+          {
+            'biomarker_code': 'LDL',
+            'display_name': 'LDL cholesterol',
+            'unit': 'mg/dL',
+            'latest': {'value': 120},
+          },
+        ]);
+      }
+      if (r.url.path.endsWith('/agent/insights/labs')) {
+        return _json({
+          'headline': 'A look at your results',
+          'items': [
+            {
+              'title': 'Review LDL',
+              'detail': 'Discuss this at your visit.',
+              'tone': 'watch',
+            },
+          ],
+        });
+      }
+      if (r.url.path.endsWith('/follow-ups')) return _json([]);
+      return _json(<String, dynamic>{});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const Scaffold(body: TodayTab())));
+    await t.pumpAndSettle();
+    expect(find.text('Review LDL'), findsNothing);
+    await t.ensureVisible(find.text('Insights and trends'));
+    await t.tap(find.text('Insights and trends'));
+    await t.pumpAndSettle();
+    expect(find.text('Review LDL'), findsOneWidget);
+    expect(find.text('Latest lab results'), findsOneWidget);
+    expect(find.text('1 without a range'), findsOneWidget);
+    expect(find.text('All in range'), findsNothing);
+    await t.tap(find.text('Review LDL'));
+    await t.pumpAndSettle();
+    expect(find.text('Add to my care plan'), findsOneWidget);
+    expect(find.text('Discuss this at your visit.'), findsWidgets);
+  });
+
+  testWidgets('summary remains usable on a narrow phone', (t) async {
+    await t.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => t.binding.setSurfaceSize(null));
+    final api = _api((r) {
+      if (r.url.path.endsWith('/overview')) return _json(overview());
+      if (r.url.path.endsWith('/follow-ups')) return _json([]);
+      return _json(<String, dynamic>{});
+    }, token: 'tok');
+    await t.pumpWidget(_app(api, home: const Scaffold(body: TodayTab())));
+    await t.pumpAndSettle();
+    expect(find.text('Hello, Asha'), findsOneWidget);
+    await t.ensureVisible(find.text('Insights and trends'));
+    await t.tap(find.text('Insights and trends'));
+    await t.pumpAndSettle();
+    expect(
+      find.text('Explore insights from your results and daily habits.'),
+      findsOneWidget,
+    );
+    expect(t.takeException(), isNull);
+  });
+
   testWidgets('notifications list everything and can be dismissed', (t) async {
     final api = _api((r) {
       if (r.url.path.endsWith('/overview')) {

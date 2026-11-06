@@ -284,7 +284,7 @@ func (m *Module) visitPrep(w http.ResponseWriter, r *http.Request) {
 	for _, s := range meds {
 		have[strings.ToLower(strings.Fields(s + " ")[0])] = true
 	}
-	for _, s := range collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind='medication' AND status='active' ORDER BY title`, profileID, owner) {
+	for _, s := range collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND source='user' AND kind='medication' AND status='active' ORDER BY title`, profileID, owner) {
 		if f := strings.Fields(s); len(f) == 0 || !have[strings.ToLower(f[0])] {
 			meds = append(meds, s)
 		}
@@ -294,7 +294,7 @@ func (m *Module) visitPrep(w http.ResponseWriter, r *http.Request) {
 		"labs_to_discuss": labs,
 		"active_symptoms": symptoms,
 		"medications":     meds,
-		"conditions":      collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND kind IN ('condition','allergy') AND status='active' ORDER BY title`, profileID, owner),
+		"conditions":      collect(`SELECT title FROM history_entries WHERE profile_id=$1 AND owner_id=$2 AND source='user' AND kind IN ('condition','allergy') AND status='active' ORDER BY title`, profileID, owner),
 		"open_follow_ups": collect(`SELECT title FROM follow_ups WHERE profile_id=$1 AND owner_id=$2 AND status='open' ORDER BY due_on NULLS LAST LIMIT 20`, profileID, owner),
 		"goals":           collect(`SELECT title FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active' ORDER BY created_at DESC LIMIT 20`, profileID, owner),
 		"questions":       visitQuestions(labs),

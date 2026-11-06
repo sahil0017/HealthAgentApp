@@ -142,6 +142,7 @@ var expectedRoutes = []string{
 	"POST /profiles/{profileID}/goals",
 	"POST /profiles/{profileID}/history",
 	"POST /profiles/{profileID}/investigations",
+	"POST /profiles/{profileID}/investigations/{investigationID}/general-answer",
 	"POST /profiles/{profileID}/investigations/{investigationID}/items",
 	"POST /profiles/{profileID}/investigations/{investigationID}/refresh",
 	"POST /profiles/{profileID}/lifestyle-logs",

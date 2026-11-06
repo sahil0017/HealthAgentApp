@@ -1,6 +1,7 @@
 """Research agent: turns a term into cited, pending proposals. It never writes to the catalog itself."""
 from __future__ import annotations
 
+import logging
 import re
 
 from app.research.sources import (
@@ -87,6 +88,7 @@ def research_literature(fetcher: Fetcher, term: str, limit: int = 3) -> list[dic
     """PubMed and Europe PMC reviews plus registered trials. One failing source never hides the others."""
     papers: list[tuple[str, str, str, int | None, str, str, str]] = []
     seen: set[str] = set()
+    failures = 0
 
     def add(ident, title, journal, year, text, url, source):
         if ident not in seen:
@@ -96,14 +98,19 @@ def research_literature(fetcher: Fetcher, term: str, limit: int = 3) -> list[dic
     try:
         for a in search_pubmed(fetcher, term, limit):
             add(f"PMID:{a.pmid}", a.title, a.journal, a.year, a.text, a.url, "PubMed")
-    except Exception:
-        pass
+    except Exception as exc:
+        failures += 1
+        logging.getLogger(__name__).warning("PubMed search failed: %s", type(exc).__name__)
     for fn, n in ((search_europepmc, limit), (search_trials, 2)):
         try:
             for p in fn(fetcher, term, n):
                 add(p.identifier, p.title, p.journal, p.year, p.text, p.url, p.source)
-        except Exception:
+        except Exception as exc:
+            failures += 1
+            logging.getLogger(__name__).warning("Literature search failed: %s", type(exc).__name__)
             continue
+    if not papers and failures:
+        raise RuntimeError("Literature sources could not be searched")
     return [
         {
             "key": ident,

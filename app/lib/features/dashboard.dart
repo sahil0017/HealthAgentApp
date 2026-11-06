@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import '../core/widgets.dart';
 import 'health.dart';
 import 'insights.dart' show insightColor, insightIcon;
+import 'lab_reports.dart' show labReportsProvider;
 import 'plan.dart';
 import 'summary.dart' show wellbeingProvider;
 
@@ -139,7 +140,31 @@ class InsightCards extends ConsumerWidget {
       (a, b) =>
           (order['${a['tone']}'] ?? 2).compareTo(order['${b['tone']}'] ?? 2),
     );
+    final failed = labs.hasError || life.hasError;
+    Widget retry() => SCard(
+      onTap: () {
+        if (labs.hasError) {
+          ref.invalidate(profileMapProvider('/agent/insights/labs'));
+        }
+        if (life.hasError) {
+          ref.invalidate(profileMapProvider('/agent/insights/lifestyle'));
+        }
+      },
+      child: const Row(
+        children: [
+          Icon(Icons.refresh, size: 18, color: Pal.mut),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Some insights could not load. Tap to retry.',
+              style: TextStyle(fontSize: 12, color: Pal.mut),
+            ),
+          ),
+        ],
+      ),
+    );
     if (items.isEmpty) {
+      if (failed) return retry();
       return labs.isLoading || life.isLoading
           ? const SCard(
               child: Row(
@@ -163,6 +188,7 @@ class InsightCards extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (failed) retry(),
         SectionTitle(
           'Insights for you',
           trailing: labs.asData?.value['source'] == 'ai'
@@ -319,19 +345,20 @@ class InsightCards extends ConsumerWidget {
   }
 }
 
-/// The tests that moved most since the previous report, with the size and direction of the move.
+/// Changes in the newest report compared with each test's earlier report result.
 class WhatChanged extends ConsumerWidget {
   const WhatChanged({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final labs =
-        ref.watch(profileListProvider('/biomarkers/summary')).asData?.value ??
-        const <Json>[];
+    final reports =
+        ref.watch(labReportsProvider).asData?.value ?? const <Json>[];
+    if (reports.isEmpty) return const SizedBox.shrink();
+    final labs = _maps(reports.first['results']);
     final moves = <(Json, double, double)>[];
     for (final b in labs) {
       final prev = numOf(b['previous_value']);
-      final now = numOf((b['latest'] as Map?)?['value']);
+      final now = numOf(b['value']);
       if (prev == null || now == null || prev == 0) continue;
       final pct = (now - prev) / prev.abs() * 100;
       if (pct.abs() >= 1) moves.add((b, pct, now.toDouble()));
@@ -343,7 +370,14 @@ class WhatChanged extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionTitle('What changed since last report'),
+        const SectionTitle('Changes in your latest report'),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Each result is compared with its most recent earlier report result.',
+            style: TextStyle(fontSize: 11, color: Pal.mut),
+          ),
+        ),
         SCard(
           child: Column(
             children: [
@@ -365,7 +399,9 @@ class WhatChanged extends ConsumerWidget {
                         Icon(
                           pct > 0 ? Icons.arrow_upward : Icons.arrow_downward,
                           size: 16,
-                          color: outOfRange(_flag(b)) ? Pal.warn : Pal.ok,
+                          color: outOfRange('${b['flag']}')
+                              ? Pal.warn
+                              : Pal.pri,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -389,6 +425,13 @@ class WhatChanged extends ConsumerWidget {
                                   color: Pal.mut,
                                 ),
                               ),
+                              Text(
+                                '${b['previous_observed_at']} → ${b['observed_at']}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Pal.mut,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -400,7 +443,9 @@ class WhatChanged extends ConsumerWidget {
                               value: (pct.abs() / biggest).clamp(0.05, 1),
                               minHeight: 6,
                               backgroundColor: Pal.line,
-                              color: outOfRange(_flag(b)) ? Pal.warn : Pal.pri,
+                              color: outOfRange('${b['flag']}')
+                                  ? Pal.warn
+                                  : Pal.pri,
                             ),
                           ),
                         ),

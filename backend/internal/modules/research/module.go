@@ -29,6 +29,7 @@ func (m *Module) Authed(r chi.Router) {
 	r.Post("/profiles/{profileID}/investigations/{investigationID}/items", m.addInvestigationItem)
 	r.Delete("/profiles/{profileID}/investigations/{investigationID}/items/{itemID}", m.deleteInvestigationItem)
 	r.Post("/profiles/{profileID}/investigations/{investigationID}/refresh", m.refreshInvestigation)
+	r.Post("/profiles/{profileID}/investigations/{investigationID}/general-answer", m.generalAnswer)
 	r.Get("/knowledge/entries", m.listKnowledge)
 	r.Post("/knowledge/research", m.requestResearch)
 	r.Post("/knowledge/entries/bulk-approve", m.bulkApproveKnowledge)

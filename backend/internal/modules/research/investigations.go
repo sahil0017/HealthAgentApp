@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -352,11 +354,71 @@ ON CONFLICT DO NOTHING RETURNING id::text`, id, refreshSourceLimit, maxItemsPerI
 	for rows.Next() {
 		added++
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		httpx.WriteError(w, 500, "REFRESH_FAILED", "The investigation could not be refreshed.", nil)
+		return
+	}
 	rows.Close()
-	added += m.discoverWeb(r.Context(), id)
+	webAdded, webErr := m.discoverWeb(r.Context(), id)
+	if webErr != nil {
+		log.Printf("research discovery unavailable for investigation %s: %v", id, webErr)
+	}
+	added += webAdded
 	_, _ = m.DB.Pool.Exec(r.Context(), `UPDATE research_investigations SET last_refreshed_at=now(),updated_at=now() WHERE id=$1`, id)
 	m.audit(r, "research.investigation_refreshed", id)
-	httpx.WriteJSON(w, 200, map[string]int{"added": added})
+	httpx.WriteJSON(w, 200, map[string]any{"added": added, "web_unavailable": webErr != nil})
+}
+
+// generalAnswer sends only the saved question to Copilot after explicit AI consent and permission.
+func (m *Module) generalAnswer(w http.ResponseWriter, r *http.Request) {
+	if !m.profileOr404(w, r) {
+		return
+	}
+	id, ok := m.ownedInvestigation(w, r)
+	if !ok {
+		return
+	}
+	profile := chi.URLParam(r, "profileID")
+	var permitted bool
+	err := m.DB.Pool.QueryRow(r.Context(), `SELECT COALESCE((SELECT granted FROM agent_permissions WHERE profile_id=$1 AND owner_id=$2 AND permission='cloud_model'),false)`, profile, httpx.Owner(r)).Scan(&permitted)
+	if err != nil {
+		httpx.WriteError(w, 500, "PERMISSION_UNAVAILABLE", "AI permission could not be checked.", nil)
+		return
+	}
+	if !m.HasConsent(r.Context(), profile, "ai_processing") || !permitted {
+		httpx.WriteError(w, 403, "PERMISSION_REQUIRED", "Enable AI consent and cloud model permission to use Copilot.", nil)
+		return
+	}
+	var question string
+	if err := m.DB.Pool.QueryRow(r.Context(), `SELECT question FROM research_investigations WHERE id=$1`, id).Scan(&question); err != nil {
+		httpx.WriteError(w, 500, "INVESTIGATION_UNAVAILABLE", "The question could not be read.", nil)
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"question": question})
+	ctx, cancel := context.WithTimeout(r.Context(), 100*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, embedding.ServiceURL()+"/v1/research/general-answer", bytes.NewReader(body))
+	if err != nil {
+		httpx.WriteError(w, 502, "COPILOT_UNAVAILABLE", "Copilot is unavailable.", nil)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		httpx.WriteError(w, 502, "COPILOT_UNAVAILABLE", "Copilot is unavailable.", nil)
+		return
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Answer string `json:"answer"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result) != nil || strings.TrimSpace(result.Answer) == "" {
+		httpx.WriteError(w, 502, "COPILOT_UNAVAILABLE", "Copilot could not provide an answer.", nil)
+		return
+	}
+	m.audit(r, "research.general_answer", id)
+	httpx.WriteJSON(w, 200, map[string]string{"answer": result.Answer, "source": "copilot"})
 }
 
 type webSource struct {
@@ -365,33 +427,33 @@ type webSource struct {
 }
 
 // discoverWeb asks the AI service for current papers and plain-language guides for the question and keeps the
-// ones it returns. It needs no personal data: only the question text is sent. Failure never fails a refresh.
-func (m *Module) discoverWeb(ctx context.Context, id string) int {
+// ones it returns. It needs no personal data: only the question text is sent.
+func (m *Module) discoverWeb(ctx context.Context, id string) (int, error) {
 	var question string
-	if m.DB.Pool.QueryRow(ctx, `SELECT question FROM research_investigations WHERE id=$1`, id).Scan(&question) != nil {
-		return 0
+	if err := m.DB.Pool.QueryRow(ctx, `SELECT question FROM research_investigations WHERE id=$1`, id).Scan(&question); err != nil {
+		return 0, err
 	}
 	body, _ := json.Marshal(map[string]string{"question": question})
 	cctx, cancel := context.WithTimeout(ctx, 70*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodPost, embedding.ServiceURL()+"/v1/research/discover", bytes.NewReader(body))
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return 0
+		return 0, fmt.Errorf("research discovery status %d", resp.StatusCode)
 	}
 	var out struct {
 		Sources []webSource `json:"sources"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out) != nil {
-		return 0
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return 0, err
 	}
 	added := 0
 	for _, s := range out.Sources {
@@ -401,9 +463,10 @@ func (m *Module) discoverWeb(ctx context.Context, id string) int {
 		tag, err := m.DB.Pool.Exec(ctx, `INSERT INTO research_investigation_items(investigation_id,kind,web_title,web_url,web_publisher,web_year,web_kind,excerpt)
 			SELECT $1,'web',$2,$3,$4,$5,$6,$7 WHERE (SELECT count(*) FROM research_investigation_items WHERE investigation_id=$1) < $8
 			ON CONFLICT DO NOTHING`, id, truncate(s.Title, 300), s.URL, truncate(s.Publisher, 120), s.Year, s.Kind, truncate(s.Summary, 1800), maxItemsPerInvestigation)
-		if err == nil {
-			added += int(tag.RowsAffected())
+		if err != nil {
+			return added, err
 		}
+		added += int(tag.RowsAffected())
 	}
-	return added
+	return added, nil
 }

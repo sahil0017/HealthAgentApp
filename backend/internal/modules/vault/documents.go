@@ -343,11 +343,6 @@ func (m *Module) approveDocument(w http.ResponseWriter, r *http.Request) {
 		_, err = tx.Exec(ctx, `INSERT INTO audit_events(owner_id,profile_id,action,resource_type,resource_id,details) VALUES($1,$2,'document.approved','medical_document',$3,jsonb_build_object('biomarker_count',$4::int))`, httpx.Owner(r), chi.URLParam(r, "profileID"), d.ID, len(in.Biomarkers))
 	}
 	if err == nil {
-		// A background worker reads the updated record and saves what it says about medical history.
-		_, err = tx.Exec(ctx, `INSERT INTO history_scans(document_id,profile_id,owner_id) VALUES($1,$2,$3)
-			ON CONFLICT (document_id) DO UPDATE SET status='pending', attempts=0, run_after=now(), updated_at=now()`, d.ID, chi.URLParam(r, "profileID"), httpx.Owner(r))
-	}
-	if err == nil {
 		err = tx.Commit(ctx)
 	}
 	if err != nil {
