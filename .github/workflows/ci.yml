@@ -1,5 +1,8 @@
-# The single pipeline. Static, unit, package and e2e jobs all start at once and run in parallel;
-# only real dependencies are chained (e2e reuses the images built once by docker-build, deploy waits for the gate).
+# The single pipeline, laid out as Jenkins-style stages. Each stage starts only when the previous one is green;
+# jobs inside a stage run in parallel:
+#   1 Static analysis -> 2 Unit tests -> 3 Package (Docker images, APK) -> 4 Integration (e2e + coverage)
+#   -> 5 Quality gate -> 6 Publish (wiki).
+# e2e reuses the images built once in stage 3.
 # A new push cancels the superseded run, and the `gate` job is the one required check.
 # Every pull request must pass the `gate` job before merging:
 #   static checks, Go tests per module, Python tests, Flutter analyze and tests, Docker image builds, a full-stack smoke test,
@@ -41,7 +44,7 @@ env:
 
 jobs:
   backend-static:
-    name: static · go-static / fmt, tidy, vet, build, architecture
+    name: 1 · Static analysis / Go fmt, tidy, vet, build, architecture
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: backend } }
     steps:
@@ -61,7 +64,8 @@ jobs:
         run: go test -count=1 ./internal/archtest/...
 
   backend-test:
-    name: unit · go-test / ${{ matrix.name }}
+    name: 2 · Unit tests / Go ${{ matrix.name }}
+    needs: [backend-static]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -104,7 +108,8 @@ jobs:
           go test $flags ${{ matrix.pkgs }}
 
   ai-test:
-    name: unit · python-test / cortex-ai
+    name: 2 · Unit tests / Python cortex-ai
+    needs: [backend-static]
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: cortex-ai } }
     steps:
@@ -121,7 +126,8 @@ jobs:
       - run: python -m pytest -q
 
   app-test:
-    name: unit · Flutter app (analyze, test)
+    name: 2 · Unit tests / Flutter analyze and test
+    needs: [backend-static]
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: app } }
     steps:
@@ -137,7 +143,8 @@ jobs:
 
   # Installable Android build pointed at the Railway API; download it from the run's artifacts.
   app-apk:
-    name: package · Android APK
+    name: 3 · Package / Android APK
+    needs: [backend-test, ai-test, app-test]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -170,7 +177,8 @@ jobs:
   # Each image is built once here (instrumented for coverage, which is harmless at runtime) and handed to the e2e job as an
   # artifact, so nothing downstream rebuilds it. A failed build cancels the run immediately.
   docker-build:
-    name: package · docker-build / ${{ matrix.service }}
+    name: 3 · Package / Docker image ${{ matrix.service }}
+    needs: [backend-test, ai-test, app-test]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -223,7 +231,7 @@ jobs:
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   e2e:
-    name: integrate · e2e / full stack and coverage
+    name: 4 · Integration / full stack e2e and coverage
     needs: [docker-build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -308,7 +316,8 @@ jobs:
         run: $COMPOSE down -v --rmi local
 
   flaky-check:
-    name: unit · repeat suite to expose flaky tests
+    name: 2 · Unit tests / repeat suite to expose flaky tests
+    needs: [backend-static]
     if: ${{ (inputs.full || github.event_name == 'schedule') }}
     runs-on: ubuntu-latest
     services:
@@ -335,7 +344,7 @@ jobs:
 
   # Single required check. Green only if every job above succeeded (skipped or cancelled counts as a failure).
   gate:
-    name: gate · required check
+    name: 5 · Quality gate / required check
     if: always()
     needs: [backend-static, backend-test, ai-test, app-test, docker-build, e2e]
     runs-on: ubuntu-latest
@@ -347,15 +356,18 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
-          labels = {"backend-static": "Go static checks", "backend-test": "Go tests (all modules)", "ai-test": "Python tests", "app-test": "Flutter app (analyze, tests)",
-                    "docker-build": "Docker images (api, worker, cortex-ai)",
-                    "e2e": "End-to-end suite and coverage"}
-          rows = ["| Check | Result |", "|---|---|"]
+          stages = {"backend-static": ("1 Static analysis", "Go fmt, tidy, vet, build, architecture"),
+                    "backend-test": ("2 Unit tests", "Go tests (all modules)"), "ai-test": ("2 Unit tests", "Python tests"),
+                    "app-test": ("2 Unit tests", "Flutter analyze and tests"),
+                    "docker-build": ("3 Package", "Docker images (api, worker, cortex-ai)"),
+                    "e2e": ("4 Integration", "End-to-end suite and coverage")}
+          rows = ["| Stage | Step | Result |", "|---|---|---|"]
           bad = False
-          for k, v in needs.items():
+          for k, v in sorted(needs.items(), key=lambda kv: stages.get(kv[0], ("9", ""))[0]):
               ok = v["result"] == "success"
               bad |= not ok
-              rows.append(f"| {labels.get(k, k)} | {'✅' if ok else '❌ ' + v['result']} |")
+              stage, step = stages.get(k, ("-", k))
+              rows.append(f"| {stage} | {step} | {'✅' if ok else '❌ ' + v['result']} |")
           out = "\n".join(rows)
           print(out)
           open(os.environ["GITHUB_STEP_SUMMARY"], "a").write(out + "\n")
@@ -363,7 +375,7 @@ jobs:
           PY
 
   wiki-sync:
-    name: wiki / publish wiki/ to the GitHub wiki
+    name: 6 · Publish / wiki to the GitHub wiki
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [gate]
     runs-on: ubuntu-latest

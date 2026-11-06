@@ -1,6 +1,6 @@
 # Testing and CI
 
-All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run in parallel; the `gate` job is the single required check for merging.
+All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run as ordered stages (1 Static analysis, 2 Unit tests, 3 Package, 4 Integration, 5 Quality gate, 6 Publish), in parallel within a stage; the `gate` job is the single required check for merging.
 
 | Job | What it checks |
 |---|---|
@@ -17,4 +17,4 @@ All checks live in one workflow, `.github/workflows/ci.yml`. Jobs run in paralle
 
 Nightly (02:00 IST) and `workflow_dispatch` with `full=true` add the race detector and the real embedding model. Dispatch also accepts `go_min` and `py_min` coverage thresholds.
 
-Branch protection: require only `gate · required check`.
+Branch protection: require only `5 · Quality gate / required check`.
