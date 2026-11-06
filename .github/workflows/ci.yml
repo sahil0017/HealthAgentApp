@@ -1,7 +1,7 @@
 # The single pipeline, laid out as Jenkins-style stages. Each stage starts only when the previous one is green;
 # jobs inside a stage run in parallel:
 #   1 Static analysis -> 2 Unit tests -> 3 Package (Docker images, APK) -> 4 Integration (e2e + coverage)
-#   -> 5 Quality gate -> 6 Publish (wiki).
+#   -> 5 Quality gate -> 6 Deploy (Railway, main only) -> 7 Publish (wiki).
 # e2e reuses the images built once in stage 3.
 # A new push cancels the superseded run, and the `gate` job is the one required check.
 # Every pull request must pass the `gate` job before merging:
@@ -374,10 +374,42 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
-  wiki-sync:
-    name: 6 · Publish / wiki to the GitHub wiki
+  # Deploys only after the gate is green, on pushes to main. Needs the RAILWAY_TOKEN repository secret (a Railway project token).
+  deploy:
+    name: 6 · Deploy / Railway ${{ matrix.service }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: railway-deploy-${{ matrix.service }}
+      cancel-in-progress: false
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - { service: cortex-ai, path: cortex-ai }
+          - { service: api, path: backend }
+          - { service: worker, path: backend }
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip when the Railway token is not configured
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then echo "::warning::RAILWAY_TOKEN secret is not set; skipping deploy."; echo "SKIP=1" >> "$GITHUB_ENV"; fi
+      - name: Install Railway CLI
+        if: env.SKIP != '1'
+        run: npm install -g @railway/cli@4
+      - name: Deploy ${{ matrix.service }}
+        if: env.SKIP != '1'
+        run: railway up --service ${{ matrix.service }} --ci --path-as-root ${{ matrix.path }}
+
+  wiki-sync:
+    name: 7 · Publish / wiki to the GitHub wiki
+    needs: [gate, deploy]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
