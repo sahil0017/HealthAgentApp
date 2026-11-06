@@ -54,7 +54,7 @@ def test_standardise_unavailable_without_token(monkeypatch):
 
 
 def test_standardise_returns_names(monkeypatch):
-    async def fake(labels):
+    async def fake(labels, context=None):
         return {"tests": [{"label": labels[0], "name": "Total Cholesterol", "panel": "Lipid Profile"}], "model": "m"}
 
     monkeypatch.setattr(copilot_agent, "standardise_labs", fake)
