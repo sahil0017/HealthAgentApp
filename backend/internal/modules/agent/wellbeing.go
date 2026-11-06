@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"cortex/backend/internal/domain/biomarker"
 	"cortex/backend/internal/domain/lifestyle"
 	"cortex/backend/internal/domain/wellbeing"
 	"cortex/backend/internal/platform/httpx"
+	"cortex/backend/internal/repo/observations"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -57,14 +59,25 @@ func (m *Module) wellbeingPlan(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var cat, day string
 			var v float64
-			if rows.Scan(&cat, &day, &v) == nil {
-				if raw[cat] == nil {
-					raw[cat] = map[string][]float64{}
-				}
-				raw[cat][day] = append(raw[cat][day], v)
+			if err := rows.Scan(&cat, &day, &v); err != nil {
+				rows.Close()
+				httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+				return
 			}
+			if raw[cat] == nil {
+				raw[cat] = map[string][]float64{}
+			}
+			raw[cat][day] = append(raw[cat][day], v)
+		}
+		if rows.Err() != nil {
+			rows.Close()
+			httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+			return
 		}
 		rows.Close()
+	} else {
+		httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+		return
 	}
 	habits := []habitView{}
 	series := []wellbeing.Series{}
@@ -79,45 +92,77 @@ func (m *Module) wellbeingPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Labs.
-	labs, _ := m.labLines(ctx, owner, profileID, "")
-	inRange := 0
+	labs, err := m.labLines(ctx, owner, profileID, "")
+	if err != nil {
+		httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+		return
+	}
+	inRange, unrated := 0, 0
 	byCode := map[string]labLine{}
 	var flagged []labLine
 	for _, l := range labs {
 		byCode[l.Code] = l
 		if isOut(l.Flag) {
 			flagged = append(flagged, l)
-		} else {
+		} else if l.Flag == "within_range" {
 			inRange++
+		} else {
+			unrated++
 		}
 	}
 
 	// Care plan.
 	type goal struct {
-		Code, Title, Unit string
-		Min, Max          *float64
+		ID, Code, Title, Unit string
+		Min, Max              *float64
 	}
 	var goals []goal
-	if rows, err := m.DB.Pool.Query(ctx, `SELECT biomarker_code,title,unit,target_min::float8,target_max::float8 FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active'`, profileID, owner); err == nil {
+	if rows, err := m.DB.Pool.Query(ctx, `SELECT id::text,biomarker_code,title,unit,target_min::float8,target_max::float8 FROM goals WHERE profile_id=$1 AND owner_id=$2 AND status='active' ORDER BY created_at,id`, profileID, owner); err == nil {
 		for rows.Next() {
 			var g goal
-			if rows.Scan(&g.Code, &g.Title, &g.Unit, &g.Min, &g.Max) == nil {
-				goals = append(goals, g)
+			if err := rows.Scan(&g.ID, &g.Code, &g.Title, &g.Unit, &g.Min, &g.Max); err != nil {
+				rows.Close()
+				httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+				return
 			}
+			goals = append(goals, g)
+		}
+		if rows.Err() != nil {
+			rows.Close()
+			httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+			return
 		}
 		rows.Close()
+	} else {
+		httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+		return
 	}
-	var off []goal
-	onTarget := 0
+	type measuredGoal struct {
+		goal
+		Value float64
+	}
+	var off []measuredGoal
+	onTarget, assessed := 0, 0
+	repo := observations.New(m.DB)
 	for _, g := range goals {
 		l, ok := byCode[g.Code]
 		if !ok {
 			continue
 		}
-		if (g.Min == nil || l.Value >= *g.Min) && (g.Max == nil || l.Value <= *g.Max) {
+		known, _, err := repo.LoadKnowledge(ctx, g.Code)
+		if err != nil {
+			httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+			return
+		}
+		value, ok := biomarker.ConvertValue(l.Value, l.Unit, g.Unit, known)
+		if !ok {
+			continue
+		}
+		assessed++
+		if (g.Min == nil || value >= *g.Min) && (g.Max == nil || value <= *g.Max) {
 			onTarget++
 		} else {
-			off = append(off, g)
+			off = append(off, measuredGoal{goal: g, Value: value})
 		}
 	}
 	type followUp struct {
@@ -130,36 +175,48 @@ func (m *Module) wellbeingPlan(w http.ResponseWriter, r *http.Request) {
 		WHERE profile_id=$1 AND owner_id=$2 AND status='open' AND due_on IS NOT NULL`, profileID, owner, today.Format("2006-01-02")); err == nil {
 		for rows.Next() {
 			var f followUp
-			if rows.Scan(&f.ID, &f.Title, &f.Days) == nil {
-				open++
-				if f.Days <= 7 {
-					due = append(due, f)
-				}
+			if err := rows.Scan(&f.ID, &f.Title, &f.Days); err != nil {
+				rows.Close()
+				httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+				return
+			}
+			open++
+			if f.Days <= 7 {
+				due = append(due, f)
 			}
 		}
+		if rows.Err() != nil {
+			rows.Close()
+			httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+			return
+		}
 		rows.Close()
+	} else {
+		httpx.WriteError(w, 500, "WELLBEING_UNAVAILABLE", "Wellbeing data could not be loaded.", nil)
+		return
 	}
 	sort.Slice(due, func(i, j int) bool { return due[i].Days < due[j].Days })
 
 	// Score parts, each only when there is data behind it.
 	parts := []wellbeing.Part{}
-	if len(labs) > 0 {
-		parts = append(parts, wellbeing.Part{Key: "labs", Score: math.Round(100 * float64(inRange) / float64(len(labs))), Weight: 40})
+	rated := inRange + len(flagged)
+	if rated > 0 {
+		parts = append(parts, wellbeing.Part{Key: "labs", Score: math.Round(100 * float64(inRange) / float64(rated)), Weight: 40})
 	}
 	if hs, ok := wellbeing.HabitScore(series); ok {
 		parts = append(parts, wellbeing.Part{Key: "habits", Score: math.Round(hs), Weight: 40})
 	}
 	var care []float64
-	if len(goals) > 0 {
-		care = append(care, 100*float64(onTarget)/float64(len(goals)))
+	overdue := 0
+	for _, f := range due {
+		if f.Days < 0 {
+			overdue++
+		}
+	}
+	if assessed > 0 {
+		care = append(care, 100*float64(onTarget)/float64(assessed))
 	}
 	if open > 0 {
-		overdue := 0
-		for _, f := range due {
-			if f.Days < 0 {
-				overdue++
-			}
-		}
 		care = append(care, 100*float64(open-overdue)/float64(open))
 	}
 	if len(care) > 0 {
@@ -190,8 +247,8 @@ func (m *Module) wellbeingPlan(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		l := byCode[g.Code]
-		tasks = append(tasks, planTask{ID: "goal-" + g.Code, Kind: "goal", Title: "Move " + g.Title + " toward target",
-			Why: fmt.Sprintf("Latest %s %s, target %s.", fmtVal(l.Value), l.Unit, goalRange(g.Min, g.Max)), Action: planAction{Type: "biomarker", Ref: g.Code, Name: l.Name}})
+		tasks = append(tasks, planTask{ID: "goal-" + g.ID, Kind: "goal", Title: "Move " + g.Title + " toward target",
+			Why: fmt.Sprintf("Latest %s %s, target %s.", fmtVal(g.Value), g.Unit, goalRange(g.Min, g.Max)), Action: planAction{Type: "biomarker", Ref: g.Code, Name: l.Name}})
 	}
 	goalCodes := map[string]bool{}
 	for _, g := range off {
@@ -244,8 +301,8 @@ func (m *Module) wellbeingPlan(w http.ResponseWriter, r *http.Request) {
 		"score":  wellbeing.Combine(parts),
 		"parts":  parts,
 		"habits": habits,
-		"labs":   map[string]int{"total": len(labs), "in_range": inRange, "out_of_range": len(flagged)},
-		"care":   map[string]int{"goals": len(goals), "on_target": onTarget, "open_follow_ups": open},
+		"labs":   map[string]int{"total": len(labs), "in_range": inRange, "out_of_range": len(flagged), "unrated": unrated},
+		"care":   map[string]int{"goals": len(goals), "assessed_goals": assessed, "on_target": onTarget, "dated_follow_ups": open, "overdue_follow_ups": overdue, "open_follow_ups": open},
 		"tasks":  tasks,
 		"basis":  "Built from your own labs, habit logs and care plan. Targets are your own best days, not population averages.",
 	})

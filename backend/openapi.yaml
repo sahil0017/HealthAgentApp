@@ -943,6 +943,7 @@ paths:
   /profiles/{profileID}/agent/wellbeing:
     get:
       summary: Summary dashboard. Wellbeing score, habit projections and today's plan, all from the person's own data
+      description: An illustrative weighted snapshot, not a medical assessment. Labs without reference ranges and goals without comparable verified results are excluded. Available parts are reweighted; labs includes unrated counts and care includes assessed_goals and dated_follow_ups.
       parameters: [{ $ref: '#/components/parameters/profileID' }, { name: day, in: query, schema: { type: string, format: date } }]
       responses:
         '200': { $ref: '#/components/responses/Success' }

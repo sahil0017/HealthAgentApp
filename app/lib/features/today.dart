@@ -7,6 +7,7 @@ import '../core/widgets.dart';
 import 'agent_screens.dart';
 import 'dashboard.dart';
 import 'health.dart';
+import 'lab_reports.dart' show labReportsProvider;
 import 'notifications.dart';
 import 'find_care.dart';
 import 'plan.dart';
@@ -26,6 +27,7 @@ class TodayTab extends ConsumerWidget {
         ref.invalidate(wellbeingProvider);
         ref.invalidate(doseScheduleProvider);
         ref.invalidate(profileListProvider('/biomarkers/summary'));
+        ref.invalidate(labReportsProvider);
         ref.invalidate(profileMapProvider('/agent/insights/labs'));
         ref.invalidate(profileMapProvider('/agent/insights/lifestyle'));
         await ref.read(profileMapProvider('/overview').future);
@@ -239,6 +241,7 @@ class _Body extends ConsumerWidget {
           onTap: () => _go(context, const _InsightsScreen()),
         ),
         const SectionTitle('Your health'),
+        const _LatestResultsInsight(),
         const SizedBox(height: 4),
         IntrinsicHeight(
           child: Row(
@@ -276,7 +279,9 @@ class _Body extends ConsumerWidget {
                       ),
                       Text(
                         missing.isEmpty
-                            ? 'Record complete'
+                            ? (score >= 100
+                                  ? 'Record complete'
+                                  : 'Add more information to your record')
                             : 'Next: ${missing.first['label']}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -314,7 +319,7 @@ class _Body extends ConsumerWidget {
                       Text(
                         goals.isEmpty
                             ? 'No goals yet'
-                            : '$onTrack of ${goals.length} goals on target',
+                            : '$onTrack on target · ${goals.length} active goals',
                         style: const TextStyle(fontSize: 11, color: Pal.mut),
                       ),
                       Text(
@@ -358,6 +363,95 @@ class _Body extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _LatestResultsInsight extends ConsumerWidget {
+  const _LatestResultsInsight();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final results = ref.watch(profileListProvider('/biomarkers/summary'));
+    return results.when(
+      loading: () => const SCard(child: Text('Loading your latest results…')),
+      error: (_, _) => SCard(
+        child: Row(
+          children: [
+            const Expanded(child: Text('Latest results could not load.')),
+            TextButton(
+              onPressed: () =>
+                  ref.invalidate(profileListProvider('/biomarkers/summary')),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+      data: (list) {
+        final outside = list
+            .where((b) => outOfRange((b['latest'] as Map?)?['flag'] as String?))
+            .toList();
+        final inside = list
+            .where((b) => inRange((b['latest'] as Map?)?['flag'] as String?))
+            .length;
+        final unknown = list.length - outside.length - inside;
+        final text = list.isEmpty
+            ? 'Verify a report to see your latest results here.'
+            : outside.isNotEmpty
+            ? '${outside.length} result${outside.length == 1 ? '' : 's'} outside the reference range. Review ${outside.take(2).map((b) => '${b['display_name']}').join(' and ')}.'
+            : inside > 0
+            ? '$inside result${inside == 1 ? '' : 's'} within the reference range.'
+            : 'No results have a reference range for comparison.';
+        return SCard(
+          onTap: () => _go(
+            context,
+            Scaffold(
+              appBar: AppBar(title: const Text('Lab Results')),
+              body: const SafeArea(child: HealthTab()),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.biotech_outlined,
+                size: 20,
+                color: outside.isNotEmpty ? Pal.warn : Pal.pri,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Latest lab results',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      text,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Pal.mut,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (unknown > 0 && (outside.isNotEmpty || inside > 0))
+                      Text(
+                        '$unknown without a reference range.',
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Pal.mut),
+            ],
+          ),
+        );
+      },
     );
   }
 }

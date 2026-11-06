@@ -45,37 +45,104 @@ const _partNames = {
   'care': ('Care plan', Icons.checklist),
 };
 
-(String, Color) _band(double s) => s >= 75
-    ? ('Strong', Pal.ok)
-    : s >= 50
-    ? ('Steady', Pal.pri)
-    : ('Needs attention', Pal.warn);
-
 class WellbeingCard extends ConsumerWidget {
   const WellbeingCard({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final d = ref.watch(wellbeingProvider).asData?.value;
-    if (d == null) return const SizedBox.shrink();
-    final parts = _maps(d['parts']);
-    if (parts.isEmpty) {
-      return const SCard(
+    final value = ref.watch(wellbeingProvider);
+    if (value.hasError) {
+      return SCard(
         child: Row(
           children: [
-            Icon(Icons.insights, color: Pal.pri),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Upload a report or log today’s sleep and your wellbeing score appears here.',
-                style: TextStyle(fontSize: 12, height: 1.35),
-              ),
+            const Expanded(child: Text('Your wellbeing score could not load.')),
+            TextButton(
+              onPressed: () => ref.invalidate(wellbeingProvider),
+              child: const Text('Retry'),
             ),
           ],
         ),
       );
     }
-    final score = (numOf(d['score']) ?? 0).toDouble();
-    final (label, color) = _band(score);
+    if (value.isLoading) {
+      return const SCard(child: Text('Loading your wellbeing score…'));
+    }
+    final d = value.requireValue;
+    final parts = _maps(d['parts']);
+    if (parts.isEmpty) {
+      return SCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.insights, color: Pal.pri),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No score yet. Verify a report with reference ranges, or log habits over several days to build a personal baseline.',
+                    style: TextStyle(fontSize: 12, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+            TextButton(
+              onPressed: () => _push(context, const LifestyleScreen()),
+              child: const Text('Log habits'),
+            ),
+          ],
+        ),
+      );
+    }
+    final score = numOf(d['score']);
+    if (score == null) {
+      return const SCard(child: Text('Your wellbeing score is unavailable.'));
+    }
+    final labs = (d['labs'] as Map?)?.cast<String, dynamic>() ?? {};
+    final care = (d['care'] as Map?)?.cast<String, dynamic>() ?? {};
+    final included = parts.map((p) => '${p['key']}').toSet();
+    final totalWeight = parts.fold<double>(
+      0,
+      (sum, p) => sum + (numOf(p['weight'])?.toDouble() ?? 0),
+    );
+    String detail(String key) {
+      if (key == 'labs') {
+        if (numOf(labs['in_range']) == null ||
+            numOf(labs['out_of_range']) == null) {
+          return 'Based on results with reference ranges.';
+        }
+        final inside = numOf(labs['in_range'])?.toInt() ?? 0;
+        final outside = numOf(labs['out_of_range'])?.toInt() ?? 0;
+        final unrated = numOf(labs['unrated'])?.toInt() ?? 0;
+        return '$inside of ${inside + outside} results with ranges are in range'
+            '${unrated > 0 ? '; $unrated without a range not scored' : ''}.';
+      }
+      if (key == 'care') {
+        final assessed = numOf(care['assessed_goals'])?.toInt() ?? 0;
+        final goals = numOf(care['goals'])?.toInt() ?? 0;
+        final onTarget = numOf(care['on_target'])?.toInt() ?? 0;
+        final dated = numOf(care['dated_follow_ups'])?.toInt() ?? 0;
+        final overdue = numOf(care['overdue_follow_ups'])?.toInt();
+        return [
+          if (assessed > 0) '$onTarget of $assessed measurable goals on target',
+          if (goals > assessed)
+            '${goals - assessed} goals without comparable results',
+          if (dated > 0 && overdue != null)
+            '$overdue of $dated dated follow-ups overdue',
+          if (dated > 0 && overdue == null)
+            '$dated dated follow-ups considered',
+        ].join(' · ');
+      }
+      if (key == 'habits') {
+        return 'Based on recent logging and averages compared with your own best days.';
+      }
+      return 'Based on available information.';
+    }
+
+    final missing = [
+      if (!included.contains('labs')) 'lab results with reference ranges',
+      if (!included.contains('habits')) 'habit history',
+      if (!included.contains('care')) 'measurable goals or dated follow-ups',
+    ];
     return SCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,10 +150,10 @@ class WellbeingCard extends ConsumerWidget {
           Row(
             children: [
               Ring(
-                value: score / 100,
+                value: (score / 100).clamp(0, 1).toDouble(),
                 label: '${score.round()}',
                 size: 72,
-                color: color,
+                color: Pal.pri,
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -98,17 +165,14 @@ class WellbeingCard extends ConsumerWidget {
                       style: TextStyle(fontSize: 11, color: Pal.mut),
                     ),
                     Text(
-                      label,
+                      'Your personal snapshot',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: color,
                       ),
                     ),
                     Text(
-                      '${d['basis'] ?? ''}',
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
+                      'Based on ${parts.length} of 3 areas. Not a diagnosis or a measure of overall health.',
                       style: const TextStyle(
                         fontSize: 10,
                         color: Pal.mut,
@@ -123,46 +187,72 @@ class WellbeingCard extends ConsumerWidget {
           const SizedBox(height: 12),
           for (final p in parts)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    (_partNames[p['key']]?.$2) ?? Icons.circle,
-                    size: 14,
-                    color: Pal.mut,
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 82,
-                    child: Text(
-                      _partNames[p['key']]?.$1 ?? '${p['key']}',
-                      style: const TextStyle(fontSize: 11.5),
-                    ),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: ((numOf(p['score']) ?? 0) / 100).toDouble(),
-                        minHeight: 7,
-                        color: _band((numOf(p['score']) ?? 0).toDouble()).$2,
-                        backgroundColor: Pal.line,
+                  Row(
+                    children: [
+                      Icon(
+                        _partNames[p['key']]?.$2 ?? Icons.circle,
+                        size: 15,
+                        color: Pal.pri,
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _partNames[p['key']]?.$1 ?? '${p['key']}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${numOf(p['score'])?.round() ?? '–'}/100'
+                        '${totalWeight > 0 ? ' · ${((numOf(p['weight']) ?? 0) / totalWeight * 100).round()}% weight' : ''}',
+                        style: const TextStyle(fontSize: 11, color: Pal.mut),
+                      ),
+                    ],
                   ),
-                  SizedBox(
-                    width: 36,
+                  Padding(
+                    padding: const EdgeInsets.only(left: 23, top: 3),
                     child: Text(
-                      '${numOf(p['score'])?.round() ?? 0}',
-                      textAlign: TextAlign.end,
+                      detail('${p['key']}'),
                       style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 11,
+                        color: Pal.mut,
+                        height: 1.3,
                       ),
                     ),
                   ),
                 ],
               ),
+            ),
+          if (missing.isNotEmpty)
+            Text(
+              'Not included: ${missing.join(', ')}. Available areas are reweighted.',
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: Pal.mut,
+                height: 1.35,
+              ),
+            ),
+          if (!included.contains('habits') || !included.contains('care'))
+            Wrap(
+              spacing: 8,
+              children: [
+                if (!included.contains('habits'))
+                  TextButton(
+                    onPressed: () => _push(context, const LifestyleScreen()),
+                    child: const Text('Log habits'),
+                  ),
+                if (!included.contains('care'))
+                  TextButton(
+                    onPressed: () => _push(context, const CarePlanScreen()),
+                    child: const Text('Open care plan'),
+                  ),
+              ],
             ),
         ],
       ),
@@ -224,7 +314,7 @@ class TodaysPlan extends ConsumerWidget {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'You are on track. Nothing needs doing today.',
+                    'No actions suggested for today. This does not mean every area has been assessed.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ),

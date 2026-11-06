@@ -388,7 +388,7 @@ func TestLabFallbackFlagsOutOfRangeAndCountsTheRest(t *testing.T) {
 		{Name: "Glucose", Value: 9, Unit: "mmol/L", Flag: "above_range", Range: "3.9-5.6", Previous: &prev},
 		{Name: "TSH", Value: 2, Unit: "mIU/L", Flag: "normal"},
 	})
-	if got.Headline != "1 of 2 results are in range." || len(got.Items) != 2 {
+	if got.Headline != "1 of 2 results with a reference range are in range." || len(got.Items) != 2 {
 		t.Fatalf("unexpected fallback: %+v", got)
 	}
 	if got.Items[0].Tone != "act" || !strings.Contains(got.Items[0].Detail, "previously 4.8") || got.Items[1].Tone != "good" {

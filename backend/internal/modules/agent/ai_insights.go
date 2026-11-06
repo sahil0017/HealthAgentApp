@@ -341,7 +341,7 @@ func (m *Module) insights(w http.ResponseWriter, r *http.Request) {
 // labFallback is the summary built straight from the records, without a model.
 func labFallback(ls []labLine) insightSet {
 	out := insightSet{Items: []insightItem{}}
-	inRange := 0
+	inRange, unrated := 0, 0
 	for _, l := range ls {
 		if isOut(l.Flag) {
 			dir := "above"
@@ -349,13 +349,23 @@ func labFallback(ls []labLine) insightSet {
 				dir = "below"
 			}
 			out.Items = append(out.Items, insightItem{Title: l.Name + " is " + dir + " range", Detail: l.text(), Tone: "act"})
-		} else {
+		} else if l.Flag == "within_range" || l.Flag == "normal" {
 			inRange++
+		} else {
+			unrated++
 		}
 	}
-	out.Headline = fmt.Sprintf("%d of %d results are in range.", inRange, len(ls))
+	rated := len(ls) - unrated
+	if rated == 0 {
+		out.Headline = "No results have a reference range for comparison."
+	} else {
+		out.Headline = fmt.Sprintf("%d of %d results with a reference range are in range.", inRange, rated)
+	}
+	if unrated > 0 {
+		out.Headline += fmt.Sprintf(" %d without a range.", unrated)
+	}
 	if inRange > 0 && len(out.Items) < 8 {
-		out.Items = append(out.Items, insightItem{Title: fmt.Sprintf("%d results look healthy", inRange), Detail: "These sit inside their reference ranges.", Tone: "good"})
+		out.Items = append(out.Items, insightItem{Title: fmt.Sprintf("%d results are in range", inRange), Detail: "These sit inside their reference ranges.", Tone: "good"})
 	}
 	return out
 }
