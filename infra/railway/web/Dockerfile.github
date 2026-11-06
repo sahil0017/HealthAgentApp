@@ -1,0 +1,16 @@
+FROM ubuntu:24.04 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git unzip xz-utils zip libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch 3.47.9 https://github.com/flutter/flutter.git /opt/flutter
+ENV PATH="/opt/flutter/bin:${PATH}"
+WORKDIR /src/app
+COPY app/pubspec.yaml app/pubspec.lock ./
+RUN flutter pub get
+COPY app/ ./
+ARG SEHAT_API=https://web-production-baefd.up.railway.app
+RUN flutter build web --release --no-wasm-dry-run --dart-define="SEHAT_API=${SEHAT_API}"
+
+FROM nginx:1.27-alpine
+COPY infra/railway/web/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /src/app/build/web/ /usr/share/nginx/html/

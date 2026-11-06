@@ -1,6 +1,27 @@
 # Railway deployment
 
-Five services in one project: `postgres` (pgvector, schema baked in), `objectstore` (SeaweedFS S3), `cortex-ai`, `api`, `worker`.
+Six services in one project: `postgres` (pgvector, schema baked in), `objectstore` (SeaweedFS S3), `cortex-ai`, `api`, `worker`, and `web`.
+
+## GitHub Actions deployment
+
+Connect `cortex-ai`, `api`, `worker` and `web` to the repository's `main`
+branch in the production Railway environment. Enable **Wait for CI** on each
+service's GitHub trigger. Railway then waits for the entire GitHub Actions
+workflow to succeed before it builds and deploys the commit. No Railway token
+is needed in GitHub Actions. Pull requests, scheduled and manually dispatched
+runs do not trigger production deploys.
+
+Configure the service root directory as `/cortex-ai` for AI, `/backend` for
+API and worker, and `/` for web. Select `Dockerfile.railway` for AI,
+`Dockerfile` for API, `Dockerfile.worker` for worker, and
+`infra/railway/web/Dockerfile.github` for web. The web Dockerfile builds the
+Flutter app from the repository and defaults to this project's public web
+origin; override its `SEHAT_API` build argument if that origin changes.
+
+Railway reports the deployment result separately from GitHub Actions; a green
+workflow does not by itself prove deployment succeeded. Check each service in
+Railway after CI completes. Leave `postgres` and `objectstore` disconnected
+from GitHub autodeploys.
 
 | Service | Source (`railway up --service X --ci --path-as-root <dir>`) | Notes |
 |---|---|---|
