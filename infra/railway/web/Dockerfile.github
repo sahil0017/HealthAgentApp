@@ -8,9 +8,14 @@ WORKDIR /src/app
 COPY app/pubspec.yaml app/pubspec.lock ./
 RUN flutter pub get
 COPY app/ ./
-ARG SEHAT_API=https://web-production-baefd.up.railway.app
+ARG SEHAT_API=
 RUN flutter build web --release --no-wasm-dry-run --dart-define="SEHAT_API=${SEHAT_API}"
 
 FROM nginx:1.27-alpine
 COPY infra/railway/web/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY infra/railway/web/railway-entrypoint.sh /usr/local/bin/railway-entrypoint.sh
+RUN chmod +x /usr/local/bin/railway-entrypoint.sh
 COPY --from=build /src/app/build/web/ /usr/share/nginx/html/
+ENV NGINX_ENVSUBST_FILTER="^(PORT|NGINX_RESOLVER)$"
+ENTRYPOINT ["/usr/local/bin/railway-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

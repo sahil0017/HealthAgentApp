@@ -15,10 +15,11 @@ import 'features/more.dart';
 import 'features/today.dart';
 import 'features/vault.dart';
 
-const baseUrl = String.fromEnvironment(
-  'SEHAT_API',
-  defaultValue: 'http://localhost:8080',
-);
+const _configuredApi = String.fromEnvironment('SEHAT_API');
+
+String get baseUrl => _configuredApi.isNotEmpty
+    ? _configuredApi
+    : (kIsWeb && kReleaseMode ? Uri.base.origin : 'http://localhost:8080');
 
 String clientLabel() => kIsWeb
     ? 'web'

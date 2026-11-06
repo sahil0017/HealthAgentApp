@@ -15,8 +15,9 @@ Configure the service root directory as `/cortex-ai` for AI, `/backend` for
 API and worker, and `/` for web. Select `Dockerfile.railway` for AI,
 `Dockerfile` for API, `Dockerfile.worker` for worker, and
 `infra/railway/web/Dockerfile.github` for web. The web Dockerfile builds the
-Flutter app from the repository and defaults to this project's public web
-origin; override its `SEHAT_API` build argument if that origin changes.
+Flutter app from the repository. Production web builds use the page's current
+origin for API requests, so the web domain can change without rebuilding with
+a new `SEHAT_API` value.
 
 Railway reports the deployment result separately from GitHub Actions; a green
 workflow does not by itself prove deployment succeeded. Check each service in
@@ -37,10 +38,10 @@ Point the app at it with `flutter run --dart-define=SEHAT_API=https://<api-domai
 
 ## Web app (`web`)
 
-Serves the Flutter web bundle and proxies `/api/` to `api.railway.internal:8080`, so the browser sees one origin.
+Serves the Flutter web bundle and proxies `/api/` to `api.railway.internal:8080`, so the browser sees one origin. The proxy uses Railway's runtime DNS resolver and refreshes the API address every five seconds so API redeploys do not leave the web service pointing at a stale private IP.
 
 ```
-cd app && flutter build web --release --no-wasm-dry-run --dart-define=SEHAT_API=https://<web-domain>
+cd app && flutter build web --release --no-wasm-dry-run
 rm -rf ../infra/railway/web/site && cp -R build/web ../infra/railway/web/site
 railway up --service web --ci --path-as-root infra/railway/web
 ```
