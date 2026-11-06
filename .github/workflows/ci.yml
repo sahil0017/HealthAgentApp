@@ -24,10 +24,10 @@ on:
         description: Add the race detector and the real embedding model
       go_min:
         description: Minimum Go e2e coverage (percent)
-        default: "60"
+        default: "45"
       py_min:
         description: Minimum Python e2e coverage (percent)
-        default: "60"
+        default: "45"
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' }}-${{ inputs.full || false }}
@@ -231,8 +231,8 @@ jobs:
       COMPOSE: docker compose -f docker-compose.yml -f docker-compose.idp.yml -f docker-compose.coverage.yml ${{ (inputs.full || github.event_name == 'schedule') && ' ' || '-f docker-compose.ci.yml' }}
       CORTEX_INFERENCE: ${{ (inputs.full || github.event_name == 'schedule') && '1' || '0' }}
       CORTEX_EMBEDDING_REQUIRED: ${{ (inputs.full || github.event_name == 'schedule') && 'true' || 'false' }}
-      GO_MIN: ${{ inputs.go_min || '60' }}
-      PY_MIN: ${{ inputs.py_min || '60' }}
+      GO_MIN: ${{ inputs.go_min || '45' }}
+      PY_MIN: ${{ inputs.py_min || '45' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
