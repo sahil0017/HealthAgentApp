@@ -64,6 +64,8 @@ jobs:
       - run: go build ./...
       - name: Architecture rules (no cross-module imports, pure domain)
         run: go test -count=1 ./internal/archtest/...
+      - name: Test APK release publisher
+        run: python3 -m unittest discover -s ../scripts/tests -p 'test_publish_apk_release.py'
 
   backend-test:
     name: 2 · Unit tests / Go ${{ matrix.name }}
@@ -164,6 +166,7 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
       name: ${{ steps.ver.outputs.name }}
       tag: ${{ steps.ver.outputs.tag }}
+      signing: ${{ steps.signing.outputs.signing }}
     env:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -199,6 +202,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "tag=v$name-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
       - name: Restore release keystore (optional)
+        id: signing
         working-directory: .
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -206,8 +210,10 @@ jobs:
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "signing=release" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::ANDROID_KEYSTORE_BASE64 not set; the APK is signed with the debug key."
+            echo "signing=debug" >> "$GITHUB_OUTPUT"
           fi
       - run: flutter build apk --release --build-name=${{ steps.ver.outputs.name }} --build-number=${{ github.run_number }} --dart-define=SEHAT_API=https://web-production-baefd.up.railway.app
       - name: Name the APK and write a checksum
@@ -423,11 +429,9 @@ jobs:
           sys.exit(1 if bad else 0)
           PY
 
-  # After the gate and APK build: every green build on main gets a lightweight tag
-  # v<version>-build.<run>. A GitHub Release with the APK is created only for a major change, i.e. when the pubspec version
-  # has no v<version> tag yet. Bump `version:` in app/pubspec.yaml to cut a release; ordinary features only get the build tag.
+  # Publish each gated build under its immutable build tag.
   release:
-    name: 6 · Release / tag every build, GitHub release per version
+    name: 6 · Release / APK for every build
     if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.gate.result == 'success' && needs.app-apk.result == 'success' }}
     needs: [gate, app-apk]
     runs-on: ubuntu-latest
@@ -442,25 +446,12 @@ jobs:
         with:
           name: sehat-android-apk
           path: dist
-      - name: Tag the build, and release when the version is new
+      - name: Publish build release
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ needs.app-apk.outputs.tag }}
-          VERSION: ${{ needs.app-apk.outputs.version }}
-          RELEASE_TAG: v${{ needs.app-apk.outputs.name }}
-        run: |
-          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$BUILD_TAG" >/dev/null 2>&1; then
-            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$BUILD_TAG" -f sha="$GITHUB_SHA" >/dev/null
-          fi
-          echo "- Tagged \`$BUILD_TAG\`" >> "$GITHUB_STEP_SUMMARY"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "- Version $RELEASE_TAG already released; build tag only (APK is in the run artifacts)." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          prev="$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
-          gh release create "$RELEASE_TAG" dist/* --target "$GITHUB_SHA" --title "Sehat ${RELEASE_TAG#v}" \
-            --generate-notes ${prev:+--notes-start-tag "$prev"} --latest
-          echo "- Released \`$RELEASE_TAG\` with the APK ($VERSION)" >> "$GITHUB_STEP_SUMMARY"
+          SIGNING: ${{ needs.app-apk.outputs.signing }}
+        run: python3 scripts/publish-apk-release.py
 
   wiki-sync:
     name: 7 · Publish / wiki to the GitHub wiki

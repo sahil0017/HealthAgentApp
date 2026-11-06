@@ -74,6 +74,15 @@ The Go service is the authorization and data-access boundary. Python receives on
 - Air and weather, and medicine look-up screens.
 - Run it with `cd app && flutter pub get && flutter run` on a connected phone; test with `flutter analyze && flutter test`.
 
+### Android APK downloads
+
+Find the newest APK and earlier builds on the [GitHub Releases page](https://github.com/sahil0017/HealthAgentApp/releases).
+Each main-branch build that passes the release gates is published under its `v<version>-build.<run>` tag with a SHA-256 checksum;
+the build number is the GitHub Actions run number. The existing `v1.0.0` release retains build 95.
+Release notes state whether the APK was debug- or release-signed. Debug keys may differ between builds,
+so Android may require uninstalling an existing installation signed with another key (which can remove local data).
+Configure the Android release keystore secrets for a stable signing identity before distributing production updates.
+
 ### API and data services
 
 - Go + Chi API for profiles, consent, documents, observations, and audit events.
